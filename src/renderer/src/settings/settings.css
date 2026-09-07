@@ -5,13 +5,13 @@
 /* ---------- settings dialog scaffolding ---------- */
 
 .ant-modal-header {
-  border-bottom: 1px solid #2d2d2d;
+  border-bottom: 1px solid var(--chrome-border);
   padding-bottom: 14px;
 }
 
 .ant-modal .ant-tabs-nav {
   margin-bottom: 8px;
-  border-bottom: 1px solid #2d2d2d;
+  border-bottom: 1px solid var(--chrome-border);
 }
 
 .settings-footer {
@@ -116,7 +116,7 @@
   margin-top: 14px;
   border-radius: 6px;
   padding: 12px 14px;
-  border: 1px solid #2d2d2d;
+  border: 1px solid var(--chrome-border);
   overflow: hidden;
 }
 
@@ -139,6 +139,30 @@
 }
 
 /* ---------- theme gallery ---------- */
+
+/* ---- theme tab: accent picker + gallery ---- */
+.theme-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.theme-accent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+}
+
+.theme-accent-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .theme-gallery {
   display: grid;
@@ -333,7 +357,7 @@
 .theme-editor-preview-box {
   border-radius: 6px;
   padding: 10px 14px;
-  border: 1px solid #2d2d2d;
+  border: 1px solid var(--chrome-border);
   font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
   font-size: 12px;
 }
@@ -356,7 +380,7 @@
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: #1e2531;
+  background: var(--chrome-hover);
   color: #3fd06a;
   display: flex;
   align-items: center;

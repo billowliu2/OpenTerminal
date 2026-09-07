@@ -36,6 +36,8 @@ export interface TerminalSettings {
   pasteRiskConfirm: boolean
   /** inline command suggestion popup while typing (history + library) */
   suggestEnabled: boolean
+  /** accent color for the active tab outline, rail indicator and SSH badges */
+  tabAccentColor: string
 }
 
 export interface SystemSettings {
@@ -95,12 +97,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
     cursorBlink: true,
     cursorStyle: 'block',
     cursorInactiveStyle: 'outline',
-    themeId: 'default-dark',
+    themeId: 'material-dark',
     rendererMode: 'auto',
     autoWrap: true,
     copyOnSelect: false,
     pasteRiskConfirm: true,
-    suggestEnabled: true
+    suggestEnabled: true,
+    tabAccentColor: '#3fb950'
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,

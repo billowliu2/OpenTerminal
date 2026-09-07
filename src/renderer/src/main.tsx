@@ -1,12 +1,14 @@
 import ReactDOM from 'react-dom/client'
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd'
 import type { AppApi } from '@shared/api'
 import { DEFAULT_SETTINGS } from '@shared/settings'
+import { getThemeById } from '@shared/theme'
 import App from './App'
 import { ErrorBoundary } from './ErrorBoundary'
 import ZmodemOffers from './workspace/ZmodemOffers'
 import { useSettingsStore } from './settings/store'
+import { mix } from './theme/chrome'
 import './global.css'
 
 // Dev convenience: allow opening the renderer in a plain browser (vite page)
@@ -148,13 +150,33 @@ function FontHotkeyListener(): null {
 // antd <App> provides the context that App.useApp() consumers (workspace
 // message/notification) rely on; without it they get empty stubs and crash.
 // ErrorBoundary keeps any render crash from black-screening the whole window.
+
+/** antd surfaces (settings dialog, menus, popovers) follow the terminal theme:
+ *  base/container/elevated backgrounds derive from the theme's background. */
+function ThemedConfigProvider({ children }: { children: ReactNode }): React.JSX.Element {
+  const themeId = useSettingsStore((s) => s.settings.terminal.themeId)
+  const customThemes = useSettingsStore((s) => s.settings.customThemes)
+  const colors = getThemeById(themeId, customThemes).colors
+  return (
+    <ConfigProvider
+      theme={{
+        algorithm: antdTheme.darkAlgorithm,
+        token: {
+          colorBgBase: colors.background,
+          colorBgContainer: mix(colors.background, colors.foreground, 0.06) ?? '#1f1f1f',
+          colorBgElevated: mix(colors.background, colors.foreground, 0.1) ?? '#252525',
+          colorTextBase: colors.foreground,
+          borderRadius: 6
+        }
+      }}
+    >
+      {children}
+    </ConfigProvider>
+  )
+}
+
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <ConfigProvider
-    theme={{
-      algorithm: antdTheme.darkAlgorithm,
-      token: { colorBgContainer: '#1f1f1f', colorBgElevated: '#252525', borderRadius: 6 }
-    }}
-  >
+  <ThemedConfigProvider>
     <AntdApp>
       <ErrorBoundary>
         <App />
@@ -162,5 +184,5 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
         <FontHotkeyListener />
       </ErrorBoundary>
     </AntdApp>
-  </ConfigProvider>
+  </ThemedConfigProvider>
 )

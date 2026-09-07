@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 import type { AppApi } from '../shared/api'
 
 declare global {

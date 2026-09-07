@@ -20,16 +20,16 @@ body,
   font-size: 13px;
 }
 
-/* App-wide slim dark scrollbars: the native Windows style renders light
+/* App-wide slim slate scrollbars: the native Windows style renders light
    tracks + arrow buttons that look broken on the dark surface. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(121, 121, 121, 0.45) transparent;
+  scrollbar-color: rgba(125, 145, 170, 0.5) transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 
 *::-webkit-scrollbar-track {
@@ -37,12 +37,17 @@ body,
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(121, 121, 121, 0.45);
-  border-radius: 5px;
+  background: rgba(125, 145, 170, 0.5);
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background-clip: padding-box;
+  min-height: 28px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(160, 160, 160, 0.6);
+  background: rgba(150, 172, 200, 0.7);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 *::-webkit-scrollbar-button,
@@ -78,6 +83,14 @@ button {
   user-select: none;
   font-size: 12px;
   letter-spacing: 0.2px;
+}
+
+.app-titlebar-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 7px;
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 .app-titlebar-title {

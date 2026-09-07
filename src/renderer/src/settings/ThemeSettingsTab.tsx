@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Button, Popconfirm } from 'antd'
+import { Button, ColorPicker, Popconfirm } from 'antd'
 import type { TerminalSettings } from '@shared/settings'
 import { DEFAULT_SETTINGS } from '@shared/settings'
 import type { TerminalTheme, ThemeColors } from '@shared/theme'
@@ -46,7 +46,26 @@ export function ThemeSettingsTab({
   }
 
   return (
-    <div className="theme-gallery">
+    <div className="theme-pane">
+      <div className="theme-accent-row">
+        <div>
+          <div className="settings-block-label">标签强调色</div>
+          <div className="settings-block-hint">活动标签边框、侧栏指示条与 SSH 徽章的强调颜色</div>
+        </div>
+        <div className="theme-accent-controls">
+          <ColorPicker
+            value={settings.terminal.tabAccentColor}
+            onChange={(color) => void updateTerminal({ tabAccentColor: color.toHexString() })}
+          />
+          <Button
+            size="small"
+            onClick={() => void updateTerminal({ tabAccentColor: DEFAULT_SETTINGS.terminal.tabAccentColor })}
+          >
+            恢复默认
+          </Button>
+        </div>
+      </div>
+      <div className="theme-gallery">
       {themeCards.map((t) => {
         const selected = t.id === activeTheme.id
         const isCustom = t.builtin === false
@@ -115,6 +134,7 @@ export function ThemeSettingsTab({
       <div className="theme-card theme-card-new" onClick={onCreateTheme}>
         <div className="theme-card-new-icon">+</div>
         <div className="theme-card-new-text">新建主题</div>
+      </div>
       </div>
     </div>
   )

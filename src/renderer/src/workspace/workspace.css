@@ -55,8 +55,8 @@
 /* ---- M6.1 rail active state (mode entries) ---- */
 .workspace-rail-btn.is-active {
   color: var(--dv-active-tab-foreground-color, #e8e8e8);
-  box-shadow: inset 2px 0 0 #3fb950;
-  background: rgba(63, 185, 80, 0.10);
+  box-shadow: inset 2px 0 0 var(--tab-accent, #3fb950);
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 10%, transparent);
 }
 
 .workspace-rail-spacer {
@@ -173,19 +173,22 @@
 /* Align terminal chrome with the app chrome. */
 .dockview-theme-abyss {
   --dv-group-view-background-color: var(--chrome-bg);
-  --dv-tabs-and-actions-container-background-color: #10141a;
-  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tabs-and-actions-container-background-color: var(--chrome-bg-deep, #10141a);
+  --dv-tabs-and-actions-container-height: 28px;
   --dv-tab-divider-color: transparent;
+  /* Pane split dividers: soft slate band at rest, accent blue on hover/drag. */
+  --dv-sash-color: rgba(148, 163, 184, 0.28);
+  --dv-active-sash-color: rgba(59, 142, 234, 0.75);
 }
 
-/* ---- tab polish: rounded pills, quiet inactive, green active ---- */
+/* ---- tab polish: low rectangular tabs, quiet inactive, green active ---- */
 .workspace-dockview .dv-tabs-and-actions-container {
   padding: 4px 5px 0;
   box-sizing: border-box;
 }
 
 .workspace-dockview .dv-tab {
-  border-radius: 9px;
+  border-radius: 3px;
   padding: 0 8px;
   margin-right: 4px;
   background: rgba(255, 255, 255, 0.04);
@@ -202,14 +205,14 @@
 
 /* XTerminal-style active tab: green outline + tinted bg + green title. */
 .workspace-dockview .dv-tab.dv-active-tab {
-  background: rgba(63, 185, 80, 0.10);
-  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.75);
-  color: #3fd06a;
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tab-accent, #3fb950) 75%, transparent);
+  color: var(--tab-accent-fg, #3fd06a);
 }
 
 .workspace-dockview .dv-tab.dv-active-tab:hover {
-  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.95);
-  color: #4ad476;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tab-accent, #3fb950) 95%, transparent);
+  color: var(--tab-accent-fg, #4ad476);
 }
 
 .workspace-dockview .dv-tab .workspace-terminal-tab {
@@ -217,15 +220,15 @@
 }
 
 .workspace-dockview .dv-tab .workspace-terminal-tab-title {
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1;
 }
 
 /* Close glyph as its own mini outlined pill, mirroring the tab border. */
 .workspace-dockview .dv-tab .workspace-terminal-tab-close {
-  width: 17px;
-  height: 17px;
-  border-radius: 4px;
+  width: 15px;
+  height: 15px;
+  border-radius: 2px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
   opacity: 0.8;
   transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
@@ -233,9 +236,9 @@
 
 .workspace-dockview .dv-tab .workspace-terminal-tab-close:hover {
   opacity: 1;
-  color: #3fd06a;
-  background: rgba(63, 185, 80, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.65);
+  color: var(--tab-accent-fg, #3fd06a);
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tab-accent, #3fb950) 65%, transparent);
 }
 
 /* ---- empty state overlay ---- */
@@ -377,11 +380,11 @@ body.ssh-resizing .ssh-bottom-divider {
 .workspace-terminal-tab-icon {
   flex: 0 0 auto;
   font-size: 12px;
-  color: #3fb950;
+  color: var(--tab-accent, #3fb950);
 }
 
 .workspace-dockview .dv-tab .workspace-terminal-tab-ssh {
-  border-left: 2px solid #3fb950;
+  border-left: 2px solid var(--tab-accent, #3fb950);
   padding-left: 5px !important;
   gap: 5px;
 }
@@ -397,9 +400,9 @@ body.ssh-resizing .ssh-bottom-divider {
   padding: 1px 6px 2px;
   box-sizing: border-box;
   border-radius: 9px;
-  border: 1px solid rgba(63, 185, 80, 0.38);
-  background: rgba(63, 185, 80, 0.08);
-  color: #3fb950;
+  border: 1px solid color-mix(in srgb, var(--tab-accent, #3fb950) 38%, transparent);
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 8%, transparent);
+  color: var(--tab-accent, #3fb950);
   font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', monospace;
   font-size: 10.5px;
   line-height: 1;
@@ -407,9 +410,9 @@ body.ssh-resizing .ssh-bottom-divider {
 }
 
 .workspace-dockview .dv-tab.dv-active-tab .workspace-terminal-tab-ssh .ssh-host-badge {
-  border-color: rgba(63, 185, 80, 0.6);
-  background: rgba(63, 185, 80, 0.14);
-  color: #46c96a;
+  border-color: color-mix(in srgb, var(--tab-accent, #3fb950) 60%, transparent);
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 14%, transparent);
+  color: var(--tab-accent-fg, #46c96a);
 }
 
 /* ---- per-group "＋" right after the last tab ----
@@ -438,9 +441,9 @@ body.ssh-resizing .ssh-bottom-divider {
 }
 
 .workspace-tabbar-add:hover {
-  background: rgba(63, 185, 80, 0.08);
-  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.65);
-  color: #3fd06a;
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tab-accent, #3fb950) 65%, transparent);
+  color: var(--tab-accent-fg, #3fd06a);
 }
 
 /* ---- M6 tab-bar workspace actions (broadcast + quick-input) ---- */
@@ -476,15 +479,15 @@ body.ssh-resizing .ssh-bottom-divider {
 }
 
 .workspace-tabbar-btn2.is-active {
-  color: #3fd06a;
-  background: rgba(63, 185, 80, 0.12);
-  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.55);
+  color: var(--tab-accent-fg, #3fd06a);
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tab-accent, #3fb950) 55%, transparent);
 }
 
 .workspace-tabbar-bcast-count {
   font-size: 10px;
   font-weight: 600;
-  color: #3fb950;
+  color: var(--tab-accent, #3fb950);
   line-height: 1;
 }
 
@@ -565,9 +568,9 @@ body.ssh-resizing .ssh-bottom-divider {
   font-size: 10px;
   font-weight: 600;
   line-height: 1;
-  color: #3fb950;
-  background: rgba(63, 185, 80, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.35);
+  color: var(--tab-accent, #3fb950);
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tab-accent, #3fb950) 35%, transparent);
   user-select: none;
 }
 

@@ -44,6 +44,13 @@ const SEARCH_DECORATIONS: NonNullable<NonNullable<Parameters<SearchAddon['findNe
   activeMatchColorOverviewRuler: '#c77800'
 }
 
+// xterm's default overviewRulerBorder (#7f7f7f) renders as a light vertical line
+// on the dark surface once scrollback exists. Force it transparent; search-match
+// marks in the ruler keep their own colors.
+function withChromeColors(colors: ITheme): ITheme {
+  return { ...colors, overviewRulerBorder: '#00000000' }
+}
+
 export interface TerminalHandle {
   focus(): void
   clear(): void
@@ -530,7 +537,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       cursorBlink: tSettings.cursorBlink,
       cursorStyle: tSettings.cursorStyle,
       cursorInactiveStyle: tSettings.cursorInactiveStyle,
-      theme: getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme,
+      theme: withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme),
       allowProposedApi: true,
       overviewRuler: { width: 9, showTopBorder: false, showBottomBorder: false },
       drawBoldTextInBrightColors: true,
@@ -737,7 +744,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     term.options.cursorBlink = tSettings.cursorBlink
     term.options.cursorStyle = tSettings.cursorStyle
     term.options.cursorInactiveStyle = tSettings.cursorInactiveStyle
-    term.options.theme = { ...(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme) }
+    term.options.theme = withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme)
     scheduleFit()
   }, [tSettings, settings.customThemes, scheduleFit])
 

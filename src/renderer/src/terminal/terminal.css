@@ -13,15 +13,24 @@
   height: 100%;
 }
 
-/* Dark slim scrollbar for the xterm viewport — the native Windows one renders
-   light track + arrow buttons that look broken on the dark surface. */
+/* xterm.css defaults .xterm-viewport to #000; when the pane height isn't a
+   multiple of the cell height the leftover bottom strip shows that black.
+   Pin it to the (theme-derived) chrome background so the gap is invisible. */
+.terminal-view .xterm .xterm-viewport {
+  background-color: var(--chrome-bg);
+}
+
+/* Slim slate scrollbar for the xterm viewport — the native Windows one renders
+   light track + arrow buttons that look broken on the dark surface. The thumb
+   sits inset inside a wider grab lane (transparent border + padding-box clip)
+   so it reads as a soft slate bar, never a white line. */
 .terminal-view .xterm-viewport {
   scrollbar-width: thin;
-  scrollbar-color: rgba(121, 121, 121, 0.45) transparent;
+  scrollbar-color: rgba(125, 145, 170, 0.5) transparent;
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar {
-  width: 10px;
+  width: 12px;
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar-track {
@@ -29,12 +38,17 @@
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(121, 121, 121, 0.45);
-  border-radius: 5px;
+  background: rgba(125, 145, 170, 0.5);
+  border: 3px solid transparent;
+  border-radius: 6px;
+  background-clip: padding-box;
+  min-height: 28px;
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(160, 160, 160, 0.6);
+  background: rgba(150, 172, 200, 0.7);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar-button,
