@@ -1,0 +1,34 @@
+# dependencies
+node_modules/
+
+# build output
+out/
+dist/
+tests/.session-e2e.cjs
+tests/.sftp-svc.*
+tests/.hl-smoke.*
+
+# research artifacts (XTerminal reverse-engineering notes, not part of the app)
+research/
+
+# logs / misc
+*.log
+.DS_Store
+
+# credentials (do not commit)
+.env
+
+# ts build info
+*.tsbuildinfo
+.sftp-test-*.bin
+.sftp-dl-*
+
+tests/.commands-store.cjs
+tests/.session-e2e.cjs
+tests/.hl-split-smoke.cjs
+tests/.zmodem-e2e.cjs
+release/
+
+# stray local test artifacts
+.min-test.bin
+.min2-test.bin

@@ -1,0 +1,164 @@
+/* Command history / library sidebar section (commands/**). */
+
+.commands-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.commands-panel .ant-tabs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.commands-panel .ant-tabs-nav {
+  margin: 0;
+}
+
+.commands-panel .ant-tabs-content-holder {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.commands-panel .ant-tabs-content,
+.commands-panel .ant-tabs-tabpane {
+  height: 100%;
+}
+
+.commands-section {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.commands-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 4px 6px;
+}
+
+.commands-section-title {
+  flex: 1 1 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a8a8a;
+  letter-spacing: 0.6px;
+}
+
+.commands-clear-btn {
+  color: #8a8a8a;
+  font-size: 11px;
+  padding: 0 2px;
+}
+
+.commands-clear-btn:hover {
+  color: #cf6679 !important;
+}
+
+.commands-empty {
+  padding: 20px 8px;
+  text-align: center;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.commands-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.commands-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.commands-row:hover {
+  background: var(--chrome-hover);
+}
+
+.commands-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.commands-row-name {
+  font-size: 13px;
+  color: var(--chrome-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commands-row-sub {
+  font-size: 11px;
+  color: #8a8a8a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.commands-row-del {
+  flex: 0 0 auto;
+  display: none;
+  color: #9a9a9a;
+}
+
+.commands-row:hover .commands-row-del {
+  display: inline-flex;
+}
+
+.commands-row-del:hover {
+  color: #cf6679 !important;
+}
+
+/* ---- add-library modal ---- */
+.commands-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.commands-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.commands-field-label {
+  font-size: 12px;
+  color: var(--chrome-fg);
+}
+
+.commands-input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+  font: inherit;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.commands-input:focus {
+  border-color: var(--chrome-accent);
+}

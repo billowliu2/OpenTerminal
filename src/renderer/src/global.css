@@ -1,0 +1,86 @@
+/* Global chrome styles. Terminal-specific styles live in their own modules. */
+:root {
+  --chrome-bg: #181818;
+  --chrome-fg: #cccccc;
+  --chrome-border: #2d2d2d;
+  --chrome-accent: #3b8eea;
+  --chrome-hover: #2a2a2a;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+}
+
+/* App-wide slim dark scrollbars: the native Windows style renders light
+   tracks + arrow buttons that look broken on the dark surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(121, 121, 121, 0.45) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.45);
+  border-radius: 5px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 160, 160, 0.6);
+}
+
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-corner {
+  display: none;
+  background: transparent;
+}
+
+button {
+  font: inherit;
+}
+
+/* antd <App> renders this wrapper between #root and .app-root; without an
+   explicit height the percentage chain breaks and the workspace collapses. */
+.ant-app {
+  height: 100%;
+}
+
+.app-root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- custom window title bar (native buttons via titleBarOverlay) ---- */
+.app-titlebar {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  /* right padding clears the native min/max/close overlay buttons */
+  padding: 0 148px 0 14px;
+  -webkit-app-region: drag;
+  user-select: none;
+  font-size: 12px;
+  letter-spacing: 0.2px;
+}
+
+.app-titlebar-title {
+  opacity: 0.75;
+  font-weight: 500;
+}

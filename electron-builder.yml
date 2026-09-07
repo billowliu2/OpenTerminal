@@ -1,0 +1,50 @@
+appId: site.codingplan.openterminal
+productName: OpenTerminal
+
+directories:
+  output: release
+
+files:
+  - out/**
+  - package.json
+
+asar: true
+asarUnpack:
+  - "**/node_modules/@lydell/node-pty/**"
+  - "**/node_modules/ssh2/**"
+
+# @lydell/node-pty ships prebuilt binaries; do not trigger a rebuild.
+npmRebuild: false
+
+# Electron-updater only supports NSIS auto-updates (MSI has no update channel).
+# The NSIS .exe + latest.yml get uploaded together; MSI is manual/enterprise only.
+win:
+  target:
+    - target: msi
+    - target: nsis
+
+msi:
+  oneClick: false
+  # Fixed upgrade code keeps the upgrade chain consistent across releases.
+  upgradeCode: "{5ab9f79e-e4eb-4052-9df6-3af3a301ab0a}"
+  artifactName: ${productName}-${version}-setup.${ext}
+  # Shortcuts need an <Icon>; build/icon.png (auto-converted to .ico) provides it.
+  # Without an icon the WiX shortcut Icon reference fails to link (LGHT0094).
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: ${productName}-${version}-setup.${ext}
+
+# Declaring a publish provider makes electron-builder emit the update-info file
+# (latest.yml) into directories.output for upload. No token is stored here; the
+# main agent handles feed authentication during upload. Build runs with the
+# default publish policy, so nothing is uploaded from this script.
+publish:
+  provider: generic
+  url: https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/

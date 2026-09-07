@@ -1,0 +1,880 @@
+/* Workspace chrome: top toolbar + dockview layout area. */
+
+.workspace-root {
+  display: flex;
+  flex-direction: row;
+  /* flex child of .app-root below the custom title bar */
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--chrome-bg);
+}
+
+/* ---- left icon rail (XTerminal-style collapsed menu) ---- */
+.workspace-rail {
+  position: relative;
+  z-index: 960;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  padding: 8px 0;
+  gap: 6px;
+  background: var(--chrome-bg);
+  border-right: 1px solid var(--chrome-border);
+  box-sizing: border-box;
+}
+
+.workspace-rail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #9a9a9a;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.workspace-rail-btn:hover {
+  background: var(--chrome-hover);
+  color: #ffffff;
+}
+
+.workspace-rail-divider {
+  width: 20px;
+  height: 1px;
+  background: var(--chrome-border);
+  margin: 2px 0;
+}
+
+/* ---- M6.1 rail active state (mode entries) ---- */
+.workspace-rail-btn.is-active {
+  color: var(--dv-active-tab-foreground-color, #e8e8e8);
+  box-shadow: inset 2px 0 0 #3fb950;
+  background: rgba(63, 185, 80, 0.10);
+}
+
+.workspace-rail-spacer {
+  flex: 1 1 auto;
+}
+
+/* ---- layout flyout (custom panel, dockview-safe) ---- */
+.workspace-flyout-anchor {
+  position: relative;
+  display: flex;
+}
+
+.workspace-flyout {
+  position: absolute;
+  left: calc(100% + 6px);
+  top: 0;
+  z-index: 960;
+  min-width: 148px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #1f1f1f;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.workspace-flyout-item {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.workspace-flyout-item:hover {
+  background: var(--chrome-hover);
+  color: #ffffff;
+}
+
+.workspace-flyout-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--chrome-border);
+}
+
+.workspace-rail-busy {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chrome-accent);
+  animation: workspace-rail-pulse 1s ease-in-out infinite;
+}
+
+@keyframes workspace-rail-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ---- main row: sidebar + dockview ---- */
+.workspace-body {
+  display: flex;
+  flex-direction: row;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* B's sidebar owns the aside chrome; the fallback width below only applies if
+   the className isn't passed — it is, so the 240px lives in connections.css. */
+.workspace-body .connections-sidebar {
+  height: 100%;
+}
+
+/* ---- dockview area ---- */
+.workspace-dockview {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---- per-workspace dockview containers (terminal / ssh).
+   Switching mode toggles `.is-hidden` → display:none. The DockviewReact stays
+   mounted (state/layout preserved) so the switch is instant and free. */
+.workspace-dockview-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+
+.workspace-dockview-container.is-hidden {
+  display: none;
+}
+
+.workspace-dockview-container .dockview-theme-abyss,
+.workspace-dockview-container .dv-dockview {
+  width: 100%;
+  height: 100%;
+}
+
+/* Align terminal chrome with the app chrome. */
+.dockview-theme-abyss {
+  --dv-group-view-background-color: var(--chrome-bg);
+  --dv-tabs-and-actions-container-background-color: #10141a;
+  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tab-divider-color: transparent;
+}
+
+/* ---- tab polish: rounded pills, quiet inactive, green active ---- */
+.workspace-dockview .dv-tabs-and-actions-container {
+  padding: 4px 5px 0;
+  box-sizing: border-box;
+}
+
+.workspace-dockview .dv-tab {
+  border-radius: 9px;
+  padding: 0 8px;
+  margin-right: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+  color: #98a2ab;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.workspace-dockview .dv-tab.dv-inactive-tab:hover {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.20);
+  color: #d0d0d0;
+}
+
+/* XTerminal-style active tab: green outline + tinted bg + green title. */
+.workspace-dockview .dv-tab.dv-active-tab {
+  background: rgba(63, 185, 80, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.75);
+  color: #3fd06a;
+}
+
+.workspace-dockview .dv-tab.dv-active-tab:hover {
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.95);
+  color: #4ad476;
+}
+
+.workspace-dockview .dv-tab .workspace-terminal-tab {
+  gap: 6px;
+}
+
+.workspace-dockview .dv-tab .workspace-terminal-tab-title {
+  font-size: 12.5px;
+  line-height: 1;
+}
+
+/* Close glyph as its own mini outlined pill, mirroring the tab border. */
+.workspace-dockview .dv-tab .workspace-terminal-tab-close {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  opacity: 0.8;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.workspace-dockview .dv-tab .workspace-terminal-tab-close:hover {
+  opacity: 1;
+  color: #3fd06a;
+  background: rgba(63, 185, 80, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.65);
+}
+
+/* ---- empty state overlay ---- */
+.workspace-empty-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--chrome-bg);
+  pointer-events: none;
+}
+
+.workspace-empty-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.workspace-empty-title {
+  color: #8a8a8a;
+  font-size: 14px;
+  user-select: none;
+}
+
+.workspace-empty-hint {
+  color: #6a6a6a;
+  font-size: 12px;
+  user-select: none;
+}
+
+/* ---- terminal panel ---- */
+.workspace-terminal-panel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.workspace-terminal-split {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: row;
+}
+
+.workspace-terminal-view {
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ---- SSH session right dock (M3 monitor, collapsible) ---- */
+.workspace-terminal-panel > .workspace-terminal-split > .mm-root,
+.workspace-terminal-panel > .workspace-terminal-split > .mm-empty {
+  flex: 0 0 300px;
+  width: 300px;
+  min-width: 0;
+}
+
+.workspace-terminal-side {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 300px;
+  width: 300px;
+  min-width: 0;
+  border-left: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.workspace-terminal-side > .mm-root,
+.workspace-terminal-side > .mm-empty {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border-radius: 0;
+}
+
+.workspace-terminal-monitor-toggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 4;
+  color: #8a8a8a;
+  font-size: 13px;
+}
+
+.workspace-terminal-monitor-toggle:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ---- SSH bottom file browser (M8, FileZilla-style resizable bottom panel) ----
+   Flex column: terminal on top (flex 1), 4px drag divider, fixed-height file
+   browser at the bottom. Height is state-driven from SshBottomPanel. */
+.ssh-bottom-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.ssh-bottom-top {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ssh-bottom-divider {
+  flex: 0 0 4px;
+  height: 4px;
+  background: var(--chrome-border);
+  cursor: row-resize;
+  box-sizing: border-box;
+  touch-action: none;
+}
+
+.ssh-bottom-divider:hover,
+.ssh-bottom-divider.is-resizing,
+body.ssh-resizing .ssh-bottom-divider {
+  background: var(--chrome-accent);
+}
+
+.ssh-bottom-files {
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+/* ---- term tab: SSH accent ---- */
+.workspace-terminal-tab-icon {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #3fb950;
+}
+
+.workspace-dockview .dv-tab .workspace-terminal-tab-ssh {
+  border-left: 2px solid #3fb950;
+  padding-left: 5px !important;
+  gap: 5px;
+}
+
+/* Host label pill on SSH tabs: faint green outline, green monospace text. */
+.workspace-dockview .dv-tab .workspace-terminal-tab-ssh .ssh-host-badge {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px 2px;
+  box-sizing: border-box;
+  border-radius: 9px;
+  border: 1px solid rgba(63, 185, 80, 0.38);
+  background: rgba(63, 185, 80, 0.08);
+  color: #3fb950;
+  font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', monospace;
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.workspace-dockview .dv-tab.dv-active-tab .workspace-terminal-tab-ssh .ssh-host-badge {
+  border-color: rgba(63, 185, 80, 0.6);
+  background: rgba(63, 185, 80, 0.14);
+  color: #46c96a;
+}
+
+/* ---- per-group "＋" right after the last tab ----
+   Push the flexible drag-target void to the far end so the right-actions
+   slot (the ＋ button) hugs the tabs, XTerminal-style. */
+.workspace-dockview .dv-void-container {
+  order: 3;
+}
+
+.workspace-tabbar-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0 6px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: #98a2ab;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.workspace-tabbar-add:hover {
+  background: rgba(63, 185, 80, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.65);
+  color: #3fd06a;
+}
+
+/* ---- M6 tab-bar workspace actions (broadcast + quick-input) ---- */
+.workspace-tabbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspace-tabbar-btn2 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 22px;
+  height: 22px;
+  margin: 0 2px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  background: transparent;
+  color: #98a2ab;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.workspace-tabbar-btn2:hover {
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+  color: #ffffff;
+}
+
+.workspace-tabbar-btn2.is-active {
+  color: #3fd06a;
+  background: rgba(63, 185, 80, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.55);
+}
+
+.workspace-tabbar-bcast-count {
+  font-size: 10px;
+  font-weight: 600;
+  color: #3fb950;
+  line-height: 1;
+}
+
+/* ---- broadcast popover ---- */
+.workspace-bcast-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+
+.workspace-bcast-pop-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.workspace-bcast-pop-mode {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chrome-fg);
+}
+
+.workspace-bcast-pop-label {
+  font-size: 12px;
+  color: var(--chrome-fg);
+}
+
+.workspace-bcast-pop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.workspace-bcast-pop-item {
+  padding: 2px 0;
+}
+
+.workspace-bcast-pop-item .ant-checkbox-wrapper {
+  font-size: 12px;
+  color: var(--chrome-fg);
+}
+
+.workspace-bcast-pop-empty {
+  padding: 10px 0;
+  text-align: center;
+  color: #8a8a8a;
+  font-size: 12px;
+}
+
+.workspace-bcast-pop-hint {
+  font-size: 11px;
+  color: #8a8a8a;
+  line-height: 1.4;
+  border-top: 1px solid var(--chrome-border);
+  padding-top: 6px;
+}
+
+/* ---- tab broadcast-target badge ----
+   A small "播" pill coordinated with the SSH host-label pill so both can sit
+   on an SSH tab (SSH left accent + host pill left-ish + bcast pill right)
+   without visual clutter. */
+.workspace-dockview .dv-tab .workspace-terminal-tab-bcast {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.35);
+  user-select: none;
+}
+
+/* ---- M6 quick-input floating panel (bottom-right) ----
+   bottom: 44px so it clears the sftp transfer overlay (right/bottom 14px). */
+.quick-input-panel {
+  position: fixed;
+  right: 14px;
+  bottom: 44px;
+  z-index: 950;
+  width: 320px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #1f1f1f;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+  color: var(--chrome-fg);
+}
+
+.quick-input-headbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quick-input-headbar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--chrome-fg);
+}
+
+.quick-input-close {
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.quick-input-close:hover {
+  color: #ffffff;
+}
+
+.quick-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quick-input-field .ant-input {
+  background: var(--chrome-bg);
+  border-color: var(--chrome-border);
+  color: var(--chrome-fg);
+}
+
+.quick-input-autoenter {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #9a9a9a;
+  cursor: pointer;
+  user-select: none;
+}
+
+.quick-input-autoenter input {
+  accent-color: var(--chrome-accent);
+}
+
+.quick-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.quick-input-head {
+  font-size: 11px;
+  color: #8a8a8a;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.quick-input-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.quick-input-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--chrome-fg);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.quick-input-item:hover {
+  background: rgba(59, 142, 234, 0.18);
+  color: #ffffff;
+}
+
+.quick-input-item-cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', monospace;
+}
+
+.quick-input-item-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #9a9a9a;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.quick-input-empty {
+  padding: 8px 4px;
+  color: #8a8a8a;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---- custom tab (title + close + context menu) ---- */
+.workspace-terminal-tab {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  gap: 4px;
+}
+
+.workspace-terminal-tab-title {
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-terminal-tab-close {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.workspace-terminal-tab-close:hover {
+  background: var(--dv-icon-hover-background-color, rgba(90, 93, 94, 0.31));
+}
+
+/* ---- template modals ---- */
+.workspace-template-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.workspace-template-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.workspace-template-item:last-child {
+  border-bottom: none;
+}
+
+.workspace-template-meta {
+  min-width: 0;
+}
+
+.workspace-template-name {
+  color: var(--chrome-fg);
+  font-size: 13px;
+}
+
+.workspace-template-time {
+  color: #8a8a8a;
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.workspace-template-empty {
+  padding: 24px 0;
+  text-align: center;
+  color: #8a8a8a;
+}
+
+/* ---- SSH connect flow modals ---- */
+.connect-flow-connecting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.connect-flow-connecting-text {
+  color: var(--chrome-fg);
+  font-size: 13px;
+}
+
+.connect-flow-secret {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.connect-flow-secret-target {
+  color: var(--chrome-fg);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+/* ---- host key verification modal ---- */
+.hostkey-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hostkey-changed-title {
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+.hostkey-desc {
+  color: var(--chrome-fg);
+}
+
+.hostkey-target,
+.hostkey-fingerprint {
+  font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', monospace;
+  font-size: 12px;
+  color: var(--chrome-fg);
+  word-break: break-all;
+  user-select: text;
+}
+/* M6.1 sidebar current-mode title: small, quiet, aligned to the sections. */
+.connections-mode-title {
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: #8a8a8a;
+  padding: 10px 14px 2px;
+  user-select: none;
+}
+
+/* M6.1 command-panel current-mode badge (shared workspace mode affordance). */
+.commands-mode-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 8px;
+}
+.commands-mode-badge-text {
+  font-size: 11px;
+  color: #8a8a8a;
+  letter-spacing: 0.4px;
+}
+.commands-mode-badge-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 8px;
+  line-height: 16px;
+}
+.commands-mode-badge--terminal .commands-mode-badge-tag {
+  color: #4cc38a;
+  background: rgba(76, 195, 138, 0.14);
+}
+.commands-mode-badge--ssh .commands-mode-badge-tag {
+  color: #6aa9ff;
+  background: rgba(106, 169, 255, 0.14);
+}

@@ -1,0 +1,333 @@
+/* Terminal surface */
+.terminal-view {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--chrome-bg);
+}
+
+.terminal-view .xterm {
+  height: 100%;
+}
+
+/* Dark slim scrollbar for the xterm viewport — the native Windows one renders
+   light track + arrow buttons that look broken on the dark surface. */
+.terminal-view .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(121, 121, 121, 0.45) transparent;
+}
+
+.terminal-view .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.terminal-view .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-view .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.45);
+  border-radius: 5px;
+}
+
+.terminal-view .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background: rgba(160, 160, 160, 0.6);
+}
+
+.terminal-view .xterm-viewport::-webkit-scrollbar-button,
+.terminal-view .xterm-viewport::-webkit-scrollbar-corner {
+  display: none;
+  background: transparent;
+}
+
+/* ---- search bar ---- */
+.term-searchbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 4px 8px;
+  background: var(--chrome-hover);
+  border-bottom: 1px solid var(--chrome-border);
+  font-size: 12px;
+  color: var(--chrome-fg);
+}
+
+.term-searchbar-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+  font: inherit;
+  outline: none;
+}
+
+.term-searchbar-input:focus {
+  border-color: var(--chrome-accent);
+}
+
+.term-searchbar-btn {
+  flex: none;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--chrome-fg);
+  cursor: pointer;
+  font: inherit;
+}
+
+.term-searchbar-btn:hover:not(:disabled),
+.term-searchbar-btn:focus-visible {
+  background: var(--chrome-hover);
+  color: var(--chrome-accent);
+}
+
+.term-searchbar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.term-searchbar-count {
+  flex: none;
+  min-width: 48px;
+  text-align: center;
+  color: var(--chrome-fg);
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- session log record / open-dir buttons (floating, top-left) ---- */
+.term-recbar {
+  position: absolute;
+  top: 4px;
+  right: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: rgba(24, 26, 31, 0.85);
+  border: 1px solid var(--chrome-border);
+  /* Hidden until the terminal is hovered — it must not sit over the output. */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.terminal-view:hover .term-recbar,
+.term-recbar:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.term-rec-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #8a8a8a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.term-rec-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.term-rec-btn.is-recording {
+  color: var(--chrome-accent);
+}
+
+/* While a log is recording, keep the bar visible so the state is obvious. */
+.term-recbar:has(.term-rec-btn.is-recording) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ---- M5 inline command-completion floating popup ----
+   Absolutely positioned inside .term-suggest-hook (the box that wraps the
+   terminal surface), so it tracks the text cursor and is never clipped by the
+   terminal-view's own overflow. The list scrolls internally when too tall. */
+.term-suggest-hook {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+}
+
+.term-suggestbar {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  min-width: 240px;
+  max-width: 420px;
+  max-height: 200px;
+  padding: 5px 6px 6px;
+  overflow-y: auto;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.term-suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+.term-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--chrome-fg);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.term-suggest-item:hover,
+.term-suggest-item.is-active {
+  background: rgba(59, 142, 234, 0.18);
+  color: #ffffff;
+}
+
+.term-suggest-cmd {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Cascadia Mono', 'Consolas', 'SFMono-Regular', monospace;
+}
+
+.term-suggest-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #9a9a9a;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.term-suggest-hint {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #8a8a8a;
+  opacity: 0.9;
+  padding-top: 4px;
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+/* ---- paste risk confirm bar ---- */
+.term-pastebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 4px 8px;
+  background: #3a2e1a;
+  border-bottom: 1px solid #5c4a26;
+  font-size: 12px;
+  color: #e8d9a8;
+}
+
+.term-pastebar-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.term-pastebar-btn {
+  flex: none;
+  padding: 3px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.term-pastebar-btn-ok {
+  background: var(--chrome-accent);
+  color: #fff;
+}
+
+.term-pastebar-btn-ok:hover {
+  filter: brightness(1.1);
+}
+
+.term-pastebar-btn-cancel {
+  background: transparent;
+  color: var(--chrome-fg);
+}
+
+.term-pastebar-btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ---- terminal docked area (flex:1) ---- */
+.terminal-view-dock {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+}
+
+/* ---- dead process overlay ---- */
+.term-dead-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 14px;
+}
+
+.term-dead-btn {
+  padding: 6px 24px;
+  border: none;
+  border-radius: 4px;
+  background: var(--chrome-accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.term-dead-btn:hover {
+  filter: brightness(1.1);
+}

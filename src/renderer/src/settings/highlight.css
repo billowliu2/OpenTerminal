@@ -1,0 +1,221 @@
+/* ============================================================
+   Highlight settings tab + rule editor (settings/highlight.css)
+   ============================================================ */
+
+.hl-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.hl-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}
+
+.hl-table .ant-table {
+  background: transparent;
+}
+
+.hl-table .ant-table-thead > tr > th {
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--chrome-border);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+}
+
+.hl-table .ant-table-tbody > tr > td {
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hl-table .ant-table-tbody > tr:hover > td {
+  background: var(--chrome-hover) !important;
+}
+
+/* ---- regex cell ---- */
+
+.hl-pattern-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hl-pattern-text {
+  font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.88);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hl-pattern-bad {
+  color: #f85149;
+}
+
+.hl-warn-icon {
+  flex: 0 0 auto;
+  color: #f85149;
+  font-size: 12px;
+  line-height: 1;
+  cursor: help;
+}
+
+/* ---- misc cells ---- */
+
+.hl-cell-priority {
+  font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.hl-cell-note {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.hl-cell-empty {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.hl-preview-text {
+  display: inline-block;
+  font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  min-width: 74px;
+}
+
+.hl-actions {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ---- rule editor ---- */
+
+.hl-editor {
+  padding-top: 4px;
+}
+
+.hl-editor-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.hl-editor-label {
+  flex: 0 0 56px;
+  color: rgba(255, 255, 255, 0.88);
+  padding-top: 5px;
+}
+
+.hl-editor-control {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hl-editor-hint {
+  align-self: center;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.hl-editor-error {
+  font-size: 12px;
+  color: #f85149;
+}
+
+.hl-editor-input-bad {
+  border-color: #f85149;
+}
+
+.hl-editor-input-bad:hover,
+.hl-editor-input-bad:focus {
+  border-color: #f85149;
+  box-shadow: 0 0 0 2px rgba(248, 81, 73, 0.2);
+}
+
+.hl-editor-sub-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.hl-editor-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hl-color-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hl-color-input {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.hl-color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+
+.hl-color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+/* ---- palette swatches (16px, radius 3px, clickable) ---- */
+
+.hl-palette {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.hl-palette-tag {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-right: 2px;
+}
+
+.hl-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  display: inline-block;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.hl-swatch:hover {
+  transform: scale(1.15);
+}
+
+.hl-swatch-selected {
+  box-shadow: 0 0 0 2px var(--chrome-accent) inset;
+  border-color: var(--chrome-accent);
+}

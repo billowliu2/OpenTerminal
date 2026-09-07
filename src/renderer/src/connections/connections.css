@@ -1,0 +1,439 @@
+/* ============================================================
+   Connection manager UI (connections/**): sidebar + edit dialog.
+   Palette is driven by the global chrome variables (global.css).
+   ============================================================ */
+
+/* ---------- sidebar shell ---------- */
+
+.connections-sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--chrome-bg);
+  border-right: 1px solid var(--chrome-border);
+  box-sizing: border-box;
+}
+
+.connections-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+  height: 34px;
+  box-sizing: border-box;
+}
+
+.connections-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--chrome-fg);
+  letter-spacing: 0.5px;
+}
+
+.connections-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 8px 12px;
+  box-sizing: border-box;
+}
+
+/* ---------- grouped accordion ---------- */
+
+.connections-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.connections-group-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--chrome-fg);
+}
+
+.connections-group-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #8a8a8a;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 0 7px;
+  line-height: 18px;
+}
+
+.connections-collapse .ant-collapse-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.connections-collapse .ant-collapse-item:last-child {
+  border-bottom: none;
+}
+
+.connections-collapse .ant-collapse-header {
+  align-items: center;
+  padding: 7px 4px;
+}
+
+.connections-collapse .ant-collapse-content > .ant-collapse-content-box {
+  padding: 0 0 6px;
+}
+
+/* ---------- connection rows ---------- */
+
+.connections-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.connections-row:hover {
+  background: var(--chrome-hover);
+}
+
+.connections-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.connections-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--chrome-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.connections-row-sub {
+  font-size: 11px;
+  color: #8a8a8a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+/* text-only auth badge: 密码 / 私钥 / Agent */
+.connections-auth-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #9a9a9a;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.connections-row-actions {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  gap: 0;
+}
+
+.connections-row:hover .connections-row-actions {
+  display: inline-flex;
+}
+
+.connections-row-actions .ant-btn {
+  color: #9a9a9a;
+}
+
+.connections-row-actions .ant-btn-text:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* ---------- empty state ---------- */
+
+.connections-empty {
+  padding: 28px 8px;
+  text-align: center;
+  color: #8a8a8a;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+/* ---------- edit dialog ---------- */
+
+.connections-dialog .connections-auth-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.connections-form-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.connections-form-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.5px;
+  margin: 10px 0 0;
+}
+
+.connections-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 14px;
+}
+
+.connections-switch-label {
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 13px;
+}
+
+.connections-switch-hint {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.connections-dialog .ant-form-item {
+  margin-bottom: 14px;
+}
+
+.connections-dialog .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.connections-dialog .ant-alert {
+  font-size: 12px;
+}
+
+.connections-secret-note {
+  margin-bottom: 12px;
+}
+
+.connections-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.connections-dialog-error {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: #cf6679;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.connections-empty-create {
+  border: none;
+  background: none;
+  color: #8a8a8a;
+  font: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.connections-empty-create:hover {
+  color: #ffffff;
+  background: var(--chrome-hover);
+}
+
+.connections-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- dual sections: 终端 / SSH 服务器 ---------- */
+
+.connections-section {
+  margin-bottom: 12px;
+}
+
+.connections-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 6px;
+}
+
+.connections-section-title {
+  flex: 1 1 auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a8a8a;
+  letter-spacing: 0.6px;
+}
+
+.connections-section-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #8a8a8a;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 9px;
+  padding: 0 7px;
+  line-height: 18px;
+}
+
+.connections-section-empty {
+  padding: 10px 8px;
+  color: #6a6a6a;
+  font-size: 12px;
+}
+
+/* local terminal list — capped height + inner scroll so many panes never
+   crowd out the SSH/command sections below. */
+.connections-local-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.connections-local-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.connections-local-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.connections-local-list::-webkit-scrollbar-thumb {
+  background: rgba(121, 121, 121, 0.45);
+  border-radius: 4px;
+}
+
+.connections-local-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.connections-local-item:hover {
+  background: var(--chrome-hover);
+}
+
+.connections-local-item.is-active {
+  background: rgba(63, 185, 80, 0.12);
+}
+
+.connections-local-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--chrome-fg);
+}
+
+.connections-local-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: #9a9a9a;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* recent sessions */
+.connections-recent {
+  margin-top: 8px;
+}
+
+.connections-recent-head {
+  padding: 2px 4px 4px;
+}
+
+.connections-recent-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #8a8a8a;
+  letter-spacing: 0.6px;
+}
+
+.connections-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  padding: 5px 6px 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--chrome-fg);
+}
+
+.connections-recent-item:hover {
+  background: var(--chrome-hover);
+}
+
+.connections-recent-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.connections-recent-time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: #6a6a6a;
+}
+
+/* [M5] command history/library sidebar section fills the rest of the list. */
+.commands-sidebar-section {
+  flex: 1 1 0;
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
+.commands-sidebar-section .connections-section-head {
+  flex: 0 0 auto;
+}
+
+.commands-sidebar-section .commands-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
