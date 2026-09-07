@@ -32,3 +32,6 @@ release/
 # stray local test artifacts
 .min-test.bin
 .min2-test.bin
+
+# release notes draft (consumed by scripts/release.cjs)
+RELEASE_NOTES.md
