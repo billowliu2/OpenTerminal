@@ -6,6 +6,7 @@ import { useSettingsStore } from './store'
 import { CursorSettingsTab, FontSettingsTab, RenderSettingsTab, SystemSettingsTab } from './SettingsTabs'
 import { ThemeSettingsTab } from './ThemeSettingsTab'
 import { HighlightTab } from './HighlightTab'
+import { AboutTab } from './AboutTab'
 import { ThemeEditor } from '../theme/editor/ThemeEditor'
 import './settings.css'
 
@@ -35,7 +36,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
         />
       )
     },
-    { key: 'system', label: '系统', children: <SystemSettingsTab /> }
+    { key: 'system', label: '系统', children: <SystemSettingsTab /> },
+    { key: 'about', label: '关于', children: <AboutTab /> }
   ]
 
   const closeEditor = (): void => setEditorState((prev) => (prev.open ? { ...prev, open: false } : prev))

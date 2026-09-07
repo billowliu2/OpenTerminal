@@ -21,7 +21,8 @@ const DEFAULT_SYSTEM: SystemSettings = {
   launchAtLogin: false,
   preventSleep: false,
   globalShowHide: '',
-  closeAction: 'ask'
+  closeAction: 'ask',
+  autoCheckUpdate: true
 }
 
 const TERMINAL_KEYS = new Set(Object.keys(DEFAULT_SETTINGS.terminal) as (keyof TerminalSettings)[])
@@ -91,7 +92,8 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         launchAtLogin: candidate.launchAtLogin === true,
         preventSleep: candidate.preventSleep === true,
         globalShowHide,
-        closeAction
+        closeAction,
+        autoCheckUpdate: candidate.autoCheckUpdate !== false
       }
     }
   }

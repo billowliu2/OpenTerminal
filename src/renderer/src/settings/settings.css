@@ -344,3 +344,102 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* ---- about / updater tab ---- */
+.about-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.about-logo {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #1e2531;
+  color: #3fd06a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.about-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.about-version {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 3px;
+}
+
+.about-status {
+  margin-left: 10px;
+}
+
+.about-status.is-new {
+  color: #3fd06a;
+}
+
+.about-error {
+  color: #f85149;
+  margin-top: 4px;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.about-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.about-autocheck {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.about-changelog {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+}
+
+.about-changelog-title {
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.about-changelog-empty {
+  opacity: 0.5;
+  font-size: 12px;
+}
+
+.about-release {
+  margin-bottom: 14px;
+}
+
+.about-release-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.about-release-date {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.about-release-body {
+  font-size: 12px;
+  opacity: 0.85;
+  white-space: pre-wrap;
+  line-height: 1.6;
+}

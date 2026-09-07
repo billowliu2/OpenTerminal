@@ -8,6 +8,7 @@ import type {
   SessionOpenResult
 } from './ipc'
 import type { AppSettings } from './settings'
+import type { ReleaseNote, UpdateState } from './ipc'
 import type {
   HostKeyAction,
   HostKeyPromptEvent,
@@ -105,4 +106,11 @@ export interface AppApi {
   /** json = serialized dockview layout (DockviewApi.toJSON()) */
   saveLayout(meta: LayoutMeta, json: string): Promise<void>
   deleteLayout(id: string): Promise<void>
+
+  // ---- updater (domestic feed first, GitHub fallback) ----
+  updateCheck(): Promise<UpdateState>
+  updateDownload(): Promise<void>
+  updateInstall(): void
+  updateChangelog(): Promise<ReleaseNote[]>
+  onUpdateState(cb: (s: UpdateState) => void): () => void
 }

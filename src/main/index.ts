@@ -5,7 +5,7 @@ import { registerIpc } from './ipc'
 import { killAllPtys } from './pty'
 import { applyStartupSystemSettings, loadSettings } from './settingsStore'
 import { initTray, markQuitting, onMainWindowClose } from './tray'
-import { configureAutoUpdater } from './updater'
+import { configureAutoUpdater, registerUpdateIpc } from './updater'
 import { applyWindowChrome } from './windowChrome'
 import { getThemeById } from '@shared/theme'
 

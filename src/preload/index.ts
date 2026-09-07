@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { Ipc } from '../shared/ipc'
 import type { AppSettings } from '../shared/settings'
 import type { AppApi } from '../shared/api'
-import type { LayoutMeta, PtyCreateOptions, PtyDataEvent, PtyExitEvent, ZmodemOfferEvent, ZmodemResponse, ZmodemDoneEvent } from '../shared/ipc'
+import type { LayoutMeta, PtyCreateOptions, PtyDataEvent, PtyExitEvent, ReleaseNote, UpdateState, ZmodemOfferEvent, ZmodemResponse, ZmodemDoneEvent } from '../shared/ipc'
 import type {
   HostKeyAction,
   HostKeyPromptEvent,
@@ -117,7 +117,17 @@ const api: AppApi = {
   listLayouts: () => ipcRenderer.invoke(Ipc.LAYOUTS_LIST),
   getLayout: (id: string) => ipcRenderer.invoke(Ipc.LAYOUTS_GET, id),
   saveLayout: (meta: LayoutMeta, json: string) => ipcRenderer.invoke(Ipc.LAYOUTS_SAVE, meta, json),
-  deleteLayout: (id: string) => ipcRenderer.invoke(Ipc.LAYOUTS_DELETE, id)
+  deleteLayout: (id: string) => ipcRenderer.invoke(Ipc.LAYOUTS_DELETE, id),
+
+  updateCheck: () => ipcRenderer.invoke(Ipc.UPDATE_CHECK),
+  updateDownload: () => ipcRenderer.invoke(Ipc.UPDATE_DOWNLOAD),
+  updateInstall: () => ipcRenderer.send(Ipc.UPDATE_INSTALL),
+  updateChangelog: () => ipcRenderer.invoke(Ipc.UPDATE_CHANGELOG),
+  onUpdateState: (cb: (s: UpdateState) => void) => {
+    const listener = (_: unknown, s: UpdateState): void => cb(s)
+    ipcRenderer.on(Ipc.UPDATE_STATE, listener)
+    return () => ipcRenderer.removeListener(Ipc.UPDATE_STATE, listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

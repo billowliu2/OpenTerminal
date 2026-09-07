@@ -90,7 +90,15 @@ export const Ipc = {
   ZMODEM_DONE: 'zmodem:done',
 
   // ---- misc ----
-  APP_INFO: 'app:info'
+  APP_INFO: 'app:info',
+
+  // ---- updater (check/download/install + state broadcast) ----
+  UPDATE_CHECK: 'update:check',
+  UPDATE_DOWNLOAD: 'update:download',
+  UPDATE_INSTALL: 'update:install',
+  UPDATE_CHANGELOG: 'update:changelog',
+  /** main -> renderer broadcast: UpdateState */
+  UPDATE_STATE: 'update:state'
 } as const
 
 export interface PtyCreateOptions {
@@ -120,6 +128,37 @@ export interface AppInfo {
   platform: NodeJS.Platform | string
   appVersion: string
   homeDir: string
+}
+
+// ---- updater ----
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'latest'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  /** dev builds have no update channel */
+  | 'dev'
+
+export interface UpdateState {
+  status: UpdateStatus
+  /** running app version */
+  currentVersion: string
+  /** newer version when available/downloading/downloaded */
+  version?: string
+  /** 0-100 while downloading */
+  percent?: number
+  error?: string
+  /** which feed served the last check: domestic Gitea first, GitHub fallback */
+  feed?: 'gitea' | 'github'
+}
+
+export interface ReleaseNote {
+  version: string
+  date: string
+  body: string
 }
 
 export interface LayoutMeta {

@@ -84,7 +84,12 @@ if (typeof window !== 'undefined' && !window.api) {
     listLayouts: async () => [],
     getLayout: async () => null,
     saveLayout: async () => undefined,
-    deleteLayout: async () => undefined
+    deleteLayout: async () => undefined,
+    updateCheck: async () => ({ status: 'dev' as const, currentVersion: 'dev' }),
+    updateDownload: async () => undefined,
+    updateInstall: noop,
+    updateChangelog: async () => [],
+    onUpdateState: () => noop
   }
   ;(window as unknown as { api: AppApi }).api = api
 }

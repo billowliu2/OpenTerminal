@@ -47,6 +47,8 @@ export interface SystemSettings {
   globalShowHide?: string
   /** close-button behavior: prompt every time / hide to tray / quit directly */
   closeAction?: 'ask' | 'tray' | 'exit'
+  /** check for updates shortly after startup (manual check always available) */
+  autoCheckUpdate?: boolean
 }
 
 export interface AppSettings {
@@ -102,5 +104,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
-  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'ask' }
+  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'ask', autoCheckUpdate: true }
 }
