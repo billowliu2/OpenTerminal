@@ -75,7 +75,7 @@ async function giteaChannel() {
   const base = 'https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable'
   const del = await fetch(base, { method: 'DELETE', headers: { Authorization: `token ${env.GIT_TOKEN}` } })
   console.log('  delete old stable:', del.status)
-  const channelFiles: Array<[string, string]> = [
+  const channelFiles = [
     [path.join(R, 'latest.yml'), 'latest.yml'],
     [path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), `OpenTerminal-${V}-setup.exe.blockmap`],
     [path.join(R, `OpenTerminal-${V}-setup.exe`), `OpenTerminal-${V}-setup.exe`],
