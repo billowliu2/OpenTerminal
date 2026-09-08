@@ -35,3 +35,5 @@ release/
 
 # release notes draft (consumed by scripts/release.cjs)
 RELEASE_NOTES.md
+
+tmp-test/
