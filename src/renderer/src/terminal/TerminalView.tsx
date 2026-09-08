@@ -6,7 +6,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
-import { FolderOpenOutlined, PauseOutlined, SoundOutlined } from '@ant-design/icons'
+import { ClearOutlined, CopyOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
 import { getThemeById } from '@shared/theme'
 import type { CommandItem } from '@shared/commands'
 import type { PtyDataEvent, PtyExitEvent } from '@shared/ipc'
@@ -280,6 +280,10 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [resultInfo, setResultInfo] = useState('')
+  // Right-click context menu: position + whether a selection existed at open
+  // time (decides if 复制 is enabled).
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
+  const [menuHasSel, setMenuHasSel] = useState(false)
   const [paste, setPaste] = useState<string | null>(null)
   const [dead, setDead] = useState(false)
   const [exitCode, setExitCode] = useState(0)
@@ -338,6 +342,40 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       }
     })
   }, [sessionId])
+
+  const openSearch = useCallback(() => {
+    searchOpenRef.current = true
+    setSearchOpen(true)
+  }, [])
+
+  const openContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setMenuHasSel(Boolean(termRef.current?.getSelection()))
+    // Clamp so the menu never overflows the window edge.
+    const x = Math.min(e.clientX, window.innerWidth - 216)
+    const y = Math.min(e.clientY, window.innerHeight - 200)
+    setMenuPos({ x: Math.max(x, 4), y: Math.max(y, 4) })
+  }, [])
+
+  // Global dismiss: Escape / scroll / window blur close the context menu.
+  useEffect(() => {
+    if (!menuPos) return
+    const close = (): void => setMenuPos(null)
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        close()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('wheel', close, true)
+    window.addEventListener('blur', close)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('wheel', close, true)
+      window.removeEventListener('blur', close)
+    }
+  }, [menuPos])
 
   const closeSearch = useCallback(() => {
     searchOpenRef.current = false
@@ -470,8 +508,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       }
       const mod = navigator.platform.toLowerCase().includes('mac') ? e.metaKey : e.ctrlKey
       if ((e.key === 'f' || e.key === 'F') && mod && !e.altKey) {
-        searchOpenRef.current = true
-        setSearchOpen(true)
+        openSearch()
         return false
       }
       if (isModShiftChord(e, 'c')) {
@@ -521,7 +558,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       }
       return true
     },
-    [closeSearch, copySelection, pasteFromClipboard, moveSelection, handleTab]
+    [closeSearch, openSearch, copySelection, pasteFromClipboard, moveSelection, handleTab]
   )
 
   // ---- terminal instance: built once per session ----
@@ -834,8 +871,73 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     searchTermRef.current = value
   }, [])
 
+  const runMenuAction = useCallback(
+    (action: () => void) => {
+      setMenuPos(null)
+      action()
+      termRef.current?.focus()
+    },
+    []
+  )
+
   return (
-    <div className={terminalClassName} onMouseDown={() => termRef.current?.focus()}>
+    <div className={terminalClassName} onMouseDown={() => termRef.current?.focus()} onContextMenu={openContextMenu}>
+      {menuPos && (
+        <>
+          <div
+            className="term-menu-overlay"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuPos(null)
+              termRef.current?.focus()
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              setMenuPos(null)
+            }}
+          />
+          <div className="term-menu" style={{ left: menuPos.x, top: menuPos.y }}>
+            <button
+              type="button"
+              className="term-menu-item"
+              disabled={!menuHasSel}
+              onClick={() => runMenuAction(() => void copySelection())}
+            >
+              <CopyOutlined />
+              <span className="term-menu-label">复制</span>
+              <kbd>Ctrl+Shift+C</kbd>
+            </button>
+            <button
+              type="button"
+              className="term-menu-item"
+              disabled={dead}
+              onClick={() => runMenuAction(() => void pasteFromClipboard())}
+            >
+              <SnippetsOutlined />
+              <span className="term-menu-label">粘贴</span>
+              <kbd>Ctrl+Shift+V</kbd>
+            </button>
+            <div className="term-menu-sep" />
+            <button type="button" className="term-menu-item" onClick={() => runMenuAction(openSearch)}>
+              <SearchOutlined />
+              <span className="term-menu-label">查找</span>
+              <kbd>Ctrl+F</kbd>
+            </button>
+            <button type="button" className="term-menu-item" onClick={() => runMenuAction(() => termRef.current?.selectAll())}>
+              <SelectOutlined />
+              <span className="term-menu-label">全选</span>
+              <kbd />
+            </button>
+            <button type="button" className="term-menu-item" onClick={() => runMenuAction(() => termRef.current?.clear())}>
+              <ClearOutlined />
+              <span className="term-menu-label">清屏</span>
+              <kbd />
+            </button>
+          </div>
+        </>
+      )}
       {searchOpen && (
         <SearchBar
           value={searchTerm}

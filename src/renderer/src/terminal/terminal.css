@@ -118,6 +118,73 @@
   white-space: nowrap;
 }
 
+/* ---- right-click context menu ---- */
+.term-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.term-menu {
+  position: fixed;
+  z-index: 41;
+  min-width: 200px;
+  padding: 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background: var(--chrome-bg-deep);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  color: var(--chrome-fg);
+  user-select: none;
+}
+
+.term-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--chrome-fg);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.term-menu-item:hover:not(:disabled),
+.term-menu-item:focus-visible {
+  background: var(--chrome-hover);
+  color: var(--chrome-accent);
+}
+
+.term-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.term-menu-label {
+  flex: 1;
+  text-align: left;
+}
+
+.term-menu-item > kbd {
+  border: none;
+  background: transparent;
+  color: var(--chrome-fg);
+  opacity: 0.55;
+  font: inherit;
+  font-size: 11px;
+}
+
+.term-menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--chrome-border);
+}
+
 /* ---- session log record / open-dir buttons (floating, top-left) ---- */
 .term-recbar {
   position: absolute;
