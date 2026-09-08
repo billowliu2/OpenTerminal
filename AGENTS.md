@@ -25,11 +25,17 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 1. `package.json` 版本号 +1，写 `RELEASE_NOTES.md`（仓库根，已 gitignore）
 2. `npm run dist` 构建
 3. `node scripts/release.cjs <版本号>`，例如 `node scripts/release.cjs 1.0.2`
-   - 依次完成：Gitea release（含 msi/exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`，更新 latest.yml/blockmap/exe）→ GitHub release
+   - 依次完成：Gitea release（含 msi/exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`，更新 latest.yml/blockmap/exe/release-notes.md）→ GitHub release
    - 可用 `--skip-github` / `--skip-gitea` 跳过某步
    - 访问 GitHub API 不通时，设 `HTTPS_PROXY=http://127.0.0.1:7897` 再走代理
 4. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
 5. `git tag v<版本号>` 并推送两个远程
+
+## 更新机制
+
+- 检查更新：先 Gitea 更新通道（强制直连，不走系统代理），失败回退 GitHub（走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
+- 更新日志：Gitea 仓库是私有的（匿名 API 404），改为从更新通道的 `release-notes.md` 读取（直连 session `openterminal-update-direct`），再回退 Gitea/GitHub releases API
+- electron-updater 不支持 MSI 自动更新，自动更新只走 NSIS exe
 
 ## 主题机制
 
