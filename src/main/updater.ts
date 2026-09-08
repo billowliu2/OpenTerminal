@@ -1,4 +1,4 @@
-import { app, ipcMain, net } from 'electron'
+import { app, ipcMain, net, session } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { Ipc, type ReleaseNote, type UpdateState } from '../shared/ipc'
 import { broadcast } from './broadcast'
@@ -30,6 +30,8 @@ function setState(patch: Partial<UpdateState>): void {
 function useFeed(feed: 'gitea' | 'github'): void {
   activeFeed = feed
   if (feed === 'gitea') {
+    // Domestic feed: always direct — a system proxy only breaks it.
+    void autoUpdater.netSession.setProxy({ mode: 'direct' })
     const token = process.env.OT_UPDATE_TOKEN
     autoUpdater.setFeedURL({
       provider: 'generic',
@@ -37,6 +39,8 @@ function useFeed(feed: 'gitea' | 'github'): void {
       ...(token ? { requestHeaders: { Authorization: `token ${token}` } } : {})
     })
   } else {
+    // GitHub usually needs the system proxy (when one is enabled).
+    void autoUpdater.netSession.setProxy({ mode: 'system' })
     autoUpdater.setFeedURL({ provider: 'github', ...GITHUB_REPO })
   }
 }
@@ -67,8 +71,14 @@ async function checkWithFallback(): Promise<void> {
   } catch (err) {
     if (activeFeed !== 'gitea') throw err
     console.warn('[updater] gitea feed failed, falling back to github:', err)
+    const giteaErr = err instanceof Error ? err.message : String(err)
     useFeed('github')
-    await autoUpdater.checkForUpdates()
+    try {
+      await autoUpdater.checkForUpdates()
+    } catch (err2) {
+      const ghErr = err2 instanceof Error ? err2.message : String(err2)
+      throw new Error(`国内源: ${giteaErr}；GitHub: ${ghErr}`)
+    }
   }
 }
 
@@ -96,8 +106,35 @@ async function handleDownload(): Promise<void> {
   }
 }
 
-/** Gitea releases first, GitHub releases as fallback; both are public reads. */
+/** Direct-connection fetch for the domestic update channel (ignores system proxy). */
+async function directFetch(url: string): Promise<Response> {
+  const s = session.fromPartition('openterminal-update-direct', { cache: false })
+  await s.setProxy({ mode: 'direct' })
+  return s.fetch(url, { headers: { 'User-Agent': 'OpenTerminal' } })
+}
+
+/**
+ * Changelog sources, in order:
+ * 1. update channel's release-notes.md — the Gitea repo itself is private
+ *    (anonymous API reads 404), but the generic package is publicly readable.
+ * 2. Gitea / GitHub releases APIs (full history when reachable).
+ */
 async function fetchChangelog(): Promise<ReleaseNote[]> {
+  try {
+    const [notesResp, ymlResp] = await Promise.all([
+      directFetch(`${GITEA_FEED}release-notes.md`),
+      directFetch(`${GITEA_FEED}latest.yml`)
+    ])
+    if (notesResp.ok) {
+      const body = await notesResp.text()
+      const yml = ymlResp.ok ? await ymlResp.text() : ''
+      const version = yml.match(/^version:\s*(\S+)/m)?.[1] ?? ''
+      const date = yml.match(/^releaseDate:\s*'?(\S+?)'?$/m)?.[1]?.slice(0, 10) ?? ''
+      if (body.trim()) return [{ version: version ? `v${version}` : 'latest', date, body }]
+    }
+  } catch {
+    // fall through to releases APIs
+  }
   for (const url of [GITEA_RELEASES_API, GITHUB_RELEASES_API]) {
     try {
       const resp = await net.fetch(url, { headers: { 'User-Agent': 'OpenTerminal' } })

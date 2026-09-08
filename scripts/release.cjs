@@ -75,8 +75,15 @@ async function giteaChannel() {
   const base = 'https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable'
   const del = await fetch(base, { method: 'DELETE', headers: { Authorization: `token ${env.GIT_TOKEN}` } })
   console.log('  delete old stable:', del.status)
-  for (const f of [path.join(R, 'latest.yml'), path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), path.join(R, `OpenTerminal-${V}-setup.exe`)]) {
-    const name = path.basename(f)
+  const channelFiles: Array<[string, string]> = [
+    [path.join(R, 'latest.yml'), 'latest.yml'],
+    [path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), `OpenTerminal-${V}-setup.exe.blockmap`],
+    [path.join(R, `OpenTerminal-${V}-setup.exe`), `OpenTerminal-${V}-setup.exe`],
+    // Changelog served from the channel: the Gitea repo is private (anonymous
+    // releases API 404s), but the generic package is publicly readable.
+    [path.join(ROOT, 'RELEASE_NOTES.md'), 'release-notes.md']
+  ]
+  for (const [f, name] of channelFiles) {
     const stat = fs.statSync(f)
     const resp = await fetch(`${base}/${encodeURIComponent(name)}`, {
       method: 'PUT',
