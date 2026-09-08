@@ -1,7 +1,7 @@
 {
   "name": "open-terminal",
   "productName": "OpenTerminal",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Open-source terminal with SSH, split panes, themes and fonts",
   "main": "out/main/index.js",
   "author": "Bill",

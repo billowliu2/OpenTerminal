@@ -98,6 +98,7 @@ process.on('uncaughtException', (err) => {
 
 app.whenReady().then(() => {
   registerIpc()
+  registerUpdateIpc()
   // OS-level effects (login item, sleep blocker) must apply even if the
   // settings dialog is never opened this run.
   applyStartupSystemSettings(loadSettings())
