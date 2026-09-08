@@ -107,5 +107,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
-  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'ask', autoCheckUpdate: true }
+  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true }
 }

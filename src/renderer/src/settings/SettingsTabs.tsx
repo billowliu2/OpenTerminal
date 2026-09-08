@@ -318,6 +318,22 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
+        label="关闭按钮行为"
+        desc="点击窗口关闭按钮时的动作；最小化到托盘后可在托盘图标右键菜单中退出"
+        control={
+          <Select
+            className="settings-select"
+            value={settings.system.closeAction ?? 'tray'}
+            onChange={(value) => void updateSystem({ closeAction: value })}
+            options={[
+              { value: 'tray', label: '最小化到托盘' },
+              { value: 'exit', label: '直接退出' },
+              { value: 'ask', label: '每次询问' }
+            ]}
+          />
+        }
+      />
+      <SettingRow
         label="全局唤起快捷键"
         desc="Control+Shift+Alt+T 等，留空禁用"
         control={

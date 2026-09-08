@@ -34,7 +34,7 @@ function showMainWindow(showOrCreate: () => void): void {
 /** Rebuild the context menu so the close-action radio items reflect settings. */
 function refreshContextMenu(showOrCreate: () => void): void {
   if (!tray) return
-  const action = loadSettings().system.closeAction ?? 'ask'
+  const action = loadSettings().system.closeAction ?? 'tray'
   const setAction = (value: CloseAction) => (): void => {
     persistCloseAction(value)
     refreshContextMenu(showOrCreate)
@@ -86,7 +86,7 @@ function hideToTray(win: BrowserWindow): void {
  */
 export async function onMainWindowClose(win: BrowserWindow, e: Electron.Event, showOrCreate: () => void): Promise<void> {
   if (quitting) return
-  const action = loadSettings().system.closeAction ?? 'ask'
+  const action = loadSettings().system.closeAction ?? 'tray'
   if (action === 'tray') {
     e.preventDefault()
     hideToTray(win)
