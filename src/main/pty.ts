@@ -148,6 +148,13 @@ export function createPty(opts: PtyCreateOptions = {}): PtyCreateResult {
     TERM_PROGRAM: 'OpenTerminal',
     ...opts.env
   } as Record<string, string>
+  // NO_COLOR (no-color.org) leaks in from whatever launched the app — an agent
+  // CLI, an IDE, a CI shell. Every library that honors it (chalk and friends)
+  // then prints uncolored output, which reads as "this terminal is broken".
+  // The pty we hand out does truecolor, so the opt-out is dropped. Same for the
+  // explicit FORCE_COLOR=0 form of the same request.
+  delete env.NO_COLOR
+  if (env.FORCE_COLOR === '0') delete env.FORCE_COLOR
 
   const pty = spawn(shell, [], { name: 'xterm-256color', cols: 80, rows: 24, cwd, env })
   sessions.set(id, { kind: 'local', pty })
