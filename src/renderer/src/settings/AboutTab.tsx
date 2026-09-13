@@ -67,7 +67,7 @@ export function AboutTab(): React.JSX.Element {
           </Button>
         )}
         {status === 'downloaded' && (
-          <Button type="primary" onClick={() => window.api.updateInstall()}>
+          <Button type="primary" onClick={() => void window.api.updateInstall()}>
             重启安装
           </Button>
         )}

@@ -309,6 +309,17 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
         engine.mode = role === 'receive' ? 'receive' : 'send'
         engine.detection = detection
         engine.active = true
+        // A detect is the start of a fresh transfer on this session, so the
+        // one-shot flags of the previous one must go with it. Leaving `confirmed`
+        // set made the *second* `sz`/`rz` on a session a no-op: respondZmodem
+        // bailed out, the engine stayed `active` (swallowing every keystroke and
+        // all terminal data) until the stall timer finally fired.
+        engine.confirmed = false
+        engine.progressEmitted = false
+        engine.doneEmitted = false
+        engine.dir = null
+        engine.session = null
+        engine.receiveStream = null
         engine.transferId = `zm-${sessionId}`
         emitProgress(engine, { file: '', bytes: 0, totalBytes: 0 })
         try {

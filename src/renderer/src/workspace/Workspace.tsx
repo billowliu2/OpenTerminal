@@ -243,9 +243,35 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       if (mode === 'terminal') terminalApiRef.current = api
       else sshApiRef.current = api
 
+      // One pty/ssh session can back several panels — an SSH split mirrors a
+      // single session on purpose. So closing a panel must not kill a session
+      // another panel is still showing; count the panels per session (seeding
+      // from the panels already present, e.g. a restored layout) and kill only
+      // when the last one goes away.
+      const useCount = new Map<string, number>()
+      for (const existing of api.panels) {
+        const sid = sessionIdOf(existing)
+        if (sid) useCount.set(sid, (useCount.get(sid) ?? 0) + 1)
+      }
+      const countPanel = (panel: IDockviewPanel): void => {
+        const sid = sessionIdOf(panel)
+        if (sid) useCount.set(sid, (useCount.get(sid) ?? 0) + 1)
+      }
+      const releaseSession = (panel: IDockviewPanel): void => {
+        const sid = sessionIdOf(panel)
+        if (!sid) return
+        const left = (useCount.get(sid) ?? 1) - 1
+        if (left > 0) {
+          useCount.set(sid, left)
+          return
+        }
+        useCount.delete(sid)
+        killSession(sid)
+      }
+
       const cleanups = [
         api.onDidRemovePanel((panel: IDockviewPanel) => {
-          killSession(sessionIdOf(panel))
+          releaseSession(panel)
           recomputeLocalPanels()
           recountAll()
         }),
@@ -261,7 +287,10 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           recomputeLocalPanels()
           recountAll()
         }),
-        api.onDidAddPanel(() => recountAll())
+        api.onDidAddPanel((panel: IDockviewPanel) => {
+          countPanel(panel)
+          recountAll()
+        })
       ]
       disposablesRef.current.push(...cleanups)
     },

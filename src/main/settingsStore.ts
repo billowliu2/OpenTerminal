@@ -21,7 +21,9 @@ const DEFAULT_SYSTEM: SystemSettings = {
   launchAtLogin: false,
   preventSleep: false,
   globalShowHide: '',
-  closeAction: 'ask',
+  // Must match DEFAULT_SETTINGS.system in @shared/settings — an "ask" here made
+  // a fresh install prompt on close while the docs and UI promised tray.
+  closeAction: 'tray',
   autoCheckUpdate: true
 }
 
@@ -43,9 +45,11 @@ function isHighlightRule(value: unknown): value is HighlightRule {
 }
 
 function sanitizeRules(value: unknown): HighlightRule[] {
+  // An explicit empty array is a valid choice ("no highlighting"); only
+  // malformed data falls back to the built-in rules. Returning the defaults for
+  // [] made deleting the last rule look like it silently failed.
   if (!Array.isArray(value)) return DEFAULT_HIGHLIGHT_RULES
-  const rules = value.filter(isHighlightRule)
-  return rules.length > 0 ? rules : DEFAULT_HIGHLIGHT_RULES
+  return value.filter(isHighlightRule)
 }
 
 function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {

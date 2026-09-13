@@ -31,6 +31,22 @@ const files = [
 for (const f of files) {
   if (!fs.existsSync(f)) { console.error('missing build artifact:', f); process.exit(1) }
 }
+// Guard rails: the artifacts must belong to the version being published, and
+// the tag must not exist yet — otherwise a re-run silently republishes a
+// *different* binary under an already-released version number, and installed
+// clients never see it (their version check compares numbers, not hashes).
+const pkgVersion = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version
+if (pkgVersion !== V) {
+  console.error(`package.json is ${pkgVersion} but you asked to publish ${V}`)
+  process.exit(1)
+}
+const ymlPath = path.join(R, 'latest.yml')
+if (!fs.existsSync(ymlPath)) { console.error('missing release/latest.yml — run npm run dist first'); process.exit(1) }
+const ymlVersion = fs.readFileSync(ymlPath, 'utf8').match(/^version:\s*(\S+)/m)?.[1]
+if (ymlVersion !== V) {
+  console.error(`release/latest.yml says ${ymlVersion} but you asked to publish ${V} — rebuild first`)
+  process.exit(1)
+}
 
 const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || env.HTTPS_PROXY || env.PROXY
 if (proxy) {
@@ -53,7 +69,10 @@ async function upload(url, file, token, authScheme) {
     duplex: 'half'
   })
   console.log(`  upload ${name}: HTTP ${resp.status}`)
-  if (!resp.ok) console.log('  ', (await resp.text()).slice(0, 300))
+  if (!resp.ok) {
+    const body = (await resp.text()).slice(0, 300)
+    throw new Error(`upload failed (${resp.status}) for ${name}: ${body}`)
+  }
 }
 
 async function gitea() {
@@ -64,7 +83,7 @@ async function gitea() {
     headers: { Authorization: `token ${env.GIT_TOKEN}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ tag_name: `v${V}`, name: `OpenTerminal v${V}`, body: notes, draft: false, prerelease: false })
   })
-  if (!resp.ok) { console.log('create failed:', resp.status, (await resp.text()).slice(0, 300)); return }
+  if (!resp.ok) { throw new Error(`Gitea release create failed: ${resp.status} ${(await resp.text()).slice(0, 300)}`) }
   const rel = await resp.json()
   console.log('release created, id =', rel.id)
   for (const f of files) await upload(`${base}/releases/${rel.id}/assets`, f, env.GIT_TOKEN, 'token')
@@ -73,8 +92,6 @@ async function gitea() {
 async function giteaChannel() {
   console.log('=== Gitea update channel ===')
   const base = 'https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable'
-  const del = await fetch(base, { method: 'DELETE', headers: { Authorization: `token ${env.GIT_TOKEN}` } })
-  console.log('  delete old stable:', del.status)
   const channelFiles = [
     [path.join(R, 'latest.yml'), 'latest.yml'],
     [path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), `OpenTerminal-${V}-setup.exe.blockmap`],
@@ -83,7 +100,20 @@ async function giteaChannel() {
     // releases API 404s), but the generic package is publicly readable.
     [path.join(ROOT, 'RELEASE_NOTES.md'), 'release-notes.md']
   ]
-  for (const [f, name] of channelFiles) {
+  // Validate before touching the channel: a missing file after the DELETE would
+  // leave the update channel empty (clients then fall back to GitHub, which is
+  // unreachable in China for most users).
+  for (const [f] of channelFiles) {
+    if (!fs.existsSync(f)) throw new Error(`missing channel file: ${f}`)
+  }
+  // latest.yml goes last: it is what makes clients start downloading, so the
+  // payload must already be in place.
+  const isLatest = ([f]) => path.basename(f) === 'latest.yml'
+  const ordered = [...channelFiles.filter((e) => !isLatest(e)), ...channelFiles.filter(isLatest)]
+  // Replace the version only once every file is known to be present on disk.
+  const del = await fetch(base, { method: 'DELETE', headers: { Authorization: `token ${env.GIT_TOKEN}` } })
+  console.log('  delete old stable:', del.status)
+  for (const [f, name] of ordered) {
     const stat = fs.statSync(f)
     const resp = await fetch(`${base}/${encodeURIComponent(name)}`, {
       method: 'PUT',
@@ -92,6 +122,7 @@ async function giteaChannel() {
       duplex: 'half'
     })
     console.log(`  put ${name}: HTTP ${resp.status}`)
+    if (!resp.ok) throw new Error(`channel put failed (${resp.status}) for ${name}: ${(await resp.text()).slice(0, 200)}`)
   }
 }
 
@@ -107,7 +138,7 @@ async function github() {
     },
     body: JSON.stringify({ tag_name: `v${V}`, name: `OpenTerminal v${V}`, body: notes, draft: false, prerelease: false })
   })
-  if (!resp.ok) { console.log('create failed:', resp.status, (await resp.text()).slice(0, 300)); return }
+  if (!resp.ok) { throw new Error(`GitHub release create failed: ${resp.status} ${(await resp.text()).slice(0, 300)}`) }
   const rel = await resp.json()
   console.log('release created, id =', rel.id)
   const up = `https://uploads.github.com/repos/billowliu2/OpenTerminal/releases/${rel.id}/assets`

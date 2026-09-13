@@ -173,6 +173,9 @@ export function createPty(opts: PtyCreateOptions = {}): PtyCreateResult {
   pty.onExit(({ exitCode }) => {
     try {
       sessions.delete(id)
+      // The session is gone: drop its replay buffer too (killPty was the only
+      // path that did, so naturally-exiting shells leaked up to 64KB each).
+      replayBuffers.delete(id)
       safeStopLog(id)
       broadcast(Ipc.PTY_EXIT, { id, exitCode })
     } catch {
@@ -258,6 +261,7 @@ export async function openSession(opts: SessionOpenOptions): Promise<{ id: strin
       detachZmodem(handle.id)
       safeStopLog(handle.id)
       sessions.delete(handle.id)
+      replayBuffers.delete(handle.id)
       deps.broadcast(Ipc.PTY_EXIT, { id: handle.id, exitCode: 0 })
     } catch {
       // never crash the event loop

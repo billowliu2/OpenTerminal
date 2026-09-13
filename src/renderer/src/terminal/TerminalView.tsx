@@ -154,7 +154,7 @@ function stepLineBuffer(
   // clear-line) only removes buffer content; never appends.
   const first = data[0]
   if (b === '' && first === '\x1b') return { line: '' }
-  if (first === '\r') return submitOr(b)
+  if (first === '\r') return submitOr(outBuf, b)
   if (first === '\x7f') {
     outBuf.current = b.slice(0, -1)
     return { line: outBuf.current }
@@ -168,8 +168,12 @@ function stepLineBuffer(
   return { line: outBuf.current }
 }
 
-function submitOr(b: string): { line: string; submit?: string } {
+function submitOr(outBuf: React.MutableRefObject<string>, b: string): { line: string; submit?: string } {
   const t = b.trim()
+  // Commit the line out of the buffer: the shell has it now, and anything typed
+  // next belongs to a fresh line. Leaving it in made every following command
+  // accumulate onto the previous one (`ls` + `pwd` → `lspwd` in the history).
+  outBuf.current = ''
   return t ? { line: '', submit: t } : { line: '', submit: '' }
 }
 
@@ -684,6 +688,21 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
         // now so this redraw chunk replaces (not appends to) the line buffer.
         const consumeRewrite = diffRewriteRef.current
         diffRewriteRef.current = false
+        // Full-screen TUIs (vim, Claude Code, …) own the alternate buffer, their
+        // own key handling and their own cursor: the line buffer, the command
+        // history and the completion popup have no business there. Interfering
+        // swallowed ↑/↓/Tab/Esc (Esc could not even leave vim's insert mode) and
+        // wrote TUI keystrokes into the command history.
+        if (term.buffer.active.type === 'alternate') {
+          lineBufRef.current = ''
+          if (suggestionsRef.current.length > 0) {
+            suggestionsRef.current = []
+            selIndexRef.current = 0
+            setSuggestions([])
+            setSuggestionIndex(0)
+          }
+          return
+        }
         // M5: line capture → recordCommand + inline completion overlay.
         const step = stepLineBuffer(lineBufRef, data, consumeRewrite)
         if (typeof step.submit === 'string' && step.submit) {
@@ -810,6 +829,9 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     term.options.cursorBlink = tSettings.cursorBlink
     term.options.cursorStyle = tSettings.cursorStyle
     term.options.cursorInactiveStyle = tSettings.cursorInactiveStyle
+    // Live-appliable in xterm 6: without this the setting only took effect for
+    // terminals opened after the change, which reads as "the setting is broken".
+    term.options.scrollback = tSettings.scrollback
     term.options.theme = withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme)
     scheduleFit()
   }, [tSettings, settings.customThemes, scheduleFit])

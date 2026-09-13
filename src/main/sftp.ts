@@ -195,13 +195,23 @@ export function deleteRemote(sessionId: string, paths: string[]): Promise<void> 
  * chmod/chown run over an exec channel: the JD test server's sftp subsystem
  * accepts SETSTAT but silently ignores it, while shell chmod/chown work.
  */
+/**
+ * POSIX single-quote escaping. `JSON.stringify` only escapes `"`, so a remote
+ * file name containing `$`, a backtick or a quote would still be expanded by the
+ * far-side shell — that is remote command execution triggered by a file name.
+ */
+function shQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
 export function chmodRemote(sessionId: string, path: string, mode: string): Promise<void> {
   if (!/^[0-7]{1,4}$/.test(mode)) throw new Error(`非法权限值: ${mode}`)
-  return execQuiet(sessionId, `chmod ${mode} ${JSON.stringify(path)}`)
+  return execQuiet(sessionId, `chmod ${mode} ${shQuote(path)}`)
 }
 
 export function chownRemote(sessionId: string, path: string, uid: number, gid: number): Promise<void> {
-  return execQuiet(sessionId, `chown ${uid}:${gid} ${JSON.stringify(path)}`)
+  if (!Number.isInteger(uid) || !Number.isInteger(gid)) throw new Error('非法 uid/gid')
+  return execQuiet(sessionId, `chown ${uid}:${gid} ${shQuote(path)}`)
 }
 
 /** Run a command on the session's shell channel and wait for it to finish. */

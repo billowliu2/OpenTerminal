@@ -110,7 +110,7 @@ export interface AppApi {
   // ---- updater (domestic feed first, GitHub fallback) ----
   updateCheck(): Promise<UpdateState>
   updateDownload(): Promise<void>
-  updateInstall(): void
+  updateInstall(): Promise<void>
   updateChangelog(): Promise<ReleaseNote[]>
   onUpdateState(cb: (s: UpdateState) => void): () => void
 }

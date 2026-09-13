@@ -89,7 +89,7 @@ if (typeof window !== 'undefined' && !window.api) {
     deleteLayout: async () => undefined,
     updateCheck: async () => ({ status: 'dev' as const, currentVersion: 'dev' }),
     updateDownload: async () => undefined,
-    updateInstall: noop,
+    updateInstall: async () => undefined,
     updateChangelog: async () => [],
     onUpdateState: () => noop
   }

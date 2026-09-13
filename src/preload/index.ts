@@ -121,7 +121,7 @@ const api: AppApi = {
 
   updateCheck: () => ipcRenderer.invoke(Ipc.UPDATE_CHECK),
   updateDownload: () => ipcRenderer.invoke(Ipc.UPDATE_DOWNLOAD),
-  updateInstall: () => ipcRenderer.send(Ipc.UPDATE_INSTALL),
+  updateInstall: () => ipcRenderer.invoke(Ipc.UPDATE_INSTALL),
   updateChangelog: () => ipcRenderer.invoke(Ipc.UPDATE_CHANGELOG),
   onUpdateState: (cb: (s: UpdateState) => void) => {
     const listener = (_: unknown, s: UpdateState): void => cb(s)
