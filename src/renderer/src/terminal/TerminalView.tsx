@@ -348,17 +348,25 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       // The xterm grid is already correct; only tell the pty once it settles.
       const last = ptySizeRef.current
       if (last && last.cols === term.cols && last.rows === term.rows) return
-      window.clearTimeout(ptyTimerRef.current)
-      ptyTimerRef.current = window.setTimeout(() => {
+      const send = (): void => {
         const live = termRef.current
         if (!live || deadRef.current) return
         if (live.cols === ptySizeRef.current?.cols && live.rows === ptySizeRef.current?.rows) return
         ptySizeRef.current = { cols: live.cols, rows: live.rows }
         window.api.resizePty(sessionId, live.cols, live.rows)
-        // 100ms mirrors what other Electron terminals use: long enough to swallow
-        // a maximize/restore animation tick storm, short enough that a plain
-        // window drag does not visibly wrap against a stale width.
-      }, 100)
+      }
+      window.clearTimeout(ptyTimerRef.current)
+      // First size for a session goes out immediately (the pty spawns at a
+      // placeholder 80x24 and a shell may already be drawing); later changes —
+      // window drags, maximize/restore — wait for the layout to settle.
+      if (!last) {
+        send()
+        return
+      }
+      // 100ms mirrors what other Electron terminals use: long enough to swallow
+      // a maximize/restore animation tick storm, short enough that a plain
+      // window drag does not visibly wrap against a stale width.
+      ptyTimerRef.current = window.setTimeout(send, 100)
     })
   }, [sessionId])
 
