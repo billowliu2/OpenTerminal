@@ -41,3 +41,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 - 终端主题由 xterm 主题派生 UI 配色：`src/renderer/src/theme/chrome.ts` 的 `applyChromeTheme` 写入 `--chrome-bg/-bg-deep/-border/-hover` CSS 变量，antd token 在 `main.tsx` ThemedConfigProvider 派生
 - 标签强调色：`settings.tabAccentColor`（默认 `#3fb950`），经 `--tab-accent` CSS 变量生效
+
+## 终端尺寸同步
+
+- `TerminalView.scheduleFit`：fit 后**去抖 100ms** 再把 cols/rows 发给 PTY，并跳过与上次相同的尺寸。每次 ResizeObserver 都戳 PTY 会让全屏 TUI（Claude Code 等）在最大化/还原的中间尺寸上反复重绘，留下重复帧
+- 拖动窗口期间 xterm 网格立即更新，PTY 尺寸在停止后 100ms 生效

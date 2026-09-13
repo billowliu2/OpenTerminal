@@ -226,6 +226,13 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   const searchRef = useRef<SearchAddon | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
   const timerRef = useRef<number>(0)
+  // PTY resize bookkeeping: `ptyTimerRef` debounces the resize while a window
+  // drag/maximize settles, `ptySizeRef` drops the no-op resizes in between.
+  // Poking the pty on every intermediate layout tick makes full-screen TUIs
+  // (Claude Code et al.) redraw repeatedly at half-settled sizes, which is what
+  // leaves duplicated frames behind in the scrollback.
+  const ptyTimerRef = useRef<number>(0)
+  const ptySizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const deadRef = useRef(false)
   const searchOpenRef = useRef(false)
   const searchTermRef = useRef('')
@@ -337,9 +344,21 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
         return
       }
       const term = termRef.current
-      if (term && !deadRef.current) {
-        window.api.resizePty(sessionId, term.cols, term.rows)
-      }
+      if (!term || deadRef.current) return
+      // The xterm grid is already correct; only tell the pty once it settles.
+      const last = ptySizeRef.current
+      if (last && last.cols === term.cols && last.rows === term.rows) return
+      window.clearTimeout(ptyTimerRef.current)
+      ptyTimerRef.current = window.setTimeout(() => {
+        const live = termRef.current
+        if (!live || deadRef.current) return
+        if (live.cols === ptySizeRef.current?.cols && live.rows === ptySizeRef.current?.rows) return
+        ptySizeRef.current = { cols: live.cols, rows: live.rows }
+        window.api.resizePty(sessionId, live.cols, live.rows)
+        // 100ms mirrors what other Electron terminals use: long enough to swallow
+        // a maximize/restore animation tick storm, short enough that a plain
+        // window drag does not visibly wrap against a stale width.
+      }, 100)
     })
   }, [sessionId])
 
@@ -616,6 +635,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     // M5: reset per-session state on (re)bind — fresh line buffer, no leftovers
     // from a template apply or panel reuse; recording resumes idle.
     lineBufRef.current = ''
+    ptySizeRef.current = null
     setSuggestions([])
     setSuggestionIndex(0)
     if (recordingRef.current) {
@@ -746,6 +766,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
 
     return () => {
       if (carryTimer !== undefined) window.clearTimeout(carryTimer)
+      if (ptyTimerRef.current) window.clearTimeout(ptyTimerRef.current)
       for (const unsubscribe of unsubscribes) unsubscribe()
       for (const disposable of disposables) disposable.dispose()
       observer?.disconnect()
