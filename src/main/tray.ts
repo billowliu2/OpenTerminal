@@ -74,8 +74,10 @@ function hideToTray(win: BrowserWindow): void {
     balloonShown = true
     tray.displayBalloon({
       iconType: 'info',
-      title: 'OpenTerminal 仍在运行',
-      content: '已最小化到系统托盘，终端会话保持运行。点击托盘图标可恢复窗口。'
+      // The Windows toast already prints the app name as its header, so the
+      // balloon title carries the state only — no "OpenTerminal" twice.
+      title: '已最小化到托盘',
+      content: '终端会话仍在后台运行，点击托盘图标可恢复窗口。'
     })
   }
 }
