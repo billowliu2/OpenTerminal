@@ -12,7 +12,12 @@
   display: flex;
   flex-direction: column;
   background: var(--chrome-bg);
+  /* Framed like the dockview area: the right edge was the only border, which
+     left the sidebar's top (against the title bar) and bottom (against the
+     window edge) looking unfinished next to the neighbouring separators. */
   border-right: 1px solid var(--chrome-border);
+  border-top: 1px solid var(--chrome-border);
+  border-bottom: 1px solid var(--chrome-border);
   box-sizing: border-box;
 }
 
