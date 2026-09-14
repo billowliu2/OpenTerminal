@@ -71,6 +71,18 @@ function nextTerminalTitle(): string {
   return `终端 ${titleSeqHolder.__otTitleSeq}`
 }
 
+/**
+ * Lift the counter past every "终端 N" currently on screen. The counter lives
+ * only in memory, so after a session restore / template apply it is behind the
+ * restored titles and the next new terminal duplicates one (`终端 2` twice).
+ */
+function syncTitleSeq(titles: Iterable<string | undefined>): void {
+  for (const title of titles) {
+    const n = title?.match(/^终端 (\d+)$/)?.[1]
+    if (n) titleSeqHolder.__otTitleSeq = Math.max(titleSeqHolder.__otTitleSeq ?? 0, Number(n))
+  }
+}
+
 function sessionIdOf(panel: IDockviewPanel | undefined): string | undefined {
   return (panel?.params as TerminalParams | undefined)?.sessionId
 }
@@ -861,6 +873,18 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const renames = new Map([...terminalLayout.renames, ...sshLayout.renames])
       await rebindSessionPanels(terminal, snapshot, true, renames)
       await rebindSessionPanels(ssh, snapshot, true, renames)
+      const allPanels = [...(terminal?.panels ?? []), ...(ssh?.panels ?? [])]
+      syncTitleSeq(allPanels.map((p) => p.title))
+      // Retitle duplicates left over from the counter bug (the snapshot the bug
+      // wrote keeps colliding titles forever otherwise): first panel keeps the
+      // title, later ones get a fresh number past the restored maximum.
+      const seenTitles = new Set<string>()
+      for (const p of allPanels) {
+        const t = p.title ?? ''
+        if (!t) continue
+        if (seenTitles.has(t)) p.setTitle(nextTerminalTitle())
+        else seenTitles.add(t)
+      }
       lastLocalCwdRef.current = snapshot.lastLocalCwd ?? lastLocalCwdRef.current
       useWorkspaceModeStore.getState().setMode(snapshot.mode)
       recountAll()
@@ -908,6 +932,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       // Fresh sessions for every restored terminal panel in both workspaces.
       if (terminalApiRef.current) await rebindRestoredPanels(terminalApiRef.current)
       if (sshApiRef.current) await rebindRestoredPanels(sshApiRef.current)
+      syncTitleSeq(
+        [...(terminalApiRef.current?.panels ?? []), ...(sshApiRef.current?.panels ?? [])].map((p) => p.title)
+      )
 
       // Old sessions are unreachable after the layout swap — kill them.
       for (const sid of previousSessions) killSession(sid)
