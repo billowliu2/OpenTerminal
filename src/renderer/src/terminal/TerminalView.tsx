@@ -9,11 +9,11 @@ import '@xterm/xterm/css/xterm.css'
 import { ClearOutlined, CopyOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
 import { getThemeById } from '@shared/theme'
 import type { CommandItem } from '@shared/commands'
-import type { PtyDataEvent, PtyExitEvent } from '@shared/ipc'
 import type { TerminalSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/settings/store'
 import { writeBroadcast } from '@renderer/workspace/broadcastStore'
 import { compileRules, HighlightStream, type CompiledRule } from './highlightEngine'
+import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
 import { getSessionCwd, setSessionCwd } from '@renderer/workspace/sessionCwdStore'
 import './terminal.css'
@@ -792,18 +792,19 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     let replayDone = false
     const pending: string[] = []
     const unsubscribes: (() => void)[] = [
-      window.api.onPtyData((e: PtyDataEvent) => {
-        if (e.id !== sessionId || deadRef.current) return
+      // Routed via the shared dispatcher (one IPC listener for all panes)
+      // instead of a per-pane global listener.
+      subscribePtyData(sessionId, (data: string) => {
+        if (deadRef.current) return
         if (!replayDone) {
-          pending.push(e.data)
+          pending.push(data)
           return
         }
-        writeHighlighted(e.data)
+        writeHighlighted(data)
       }),
-      window.api.onPtyExit((e: PtyExitEvent) => {
-        if (e.id !== sessionId) return
+      subscribePtyExit(sessionId, (code: number) => {
         deadRef.current = true
-        setExitCode(e.exitCode)
+        setExitCode(code)
         setDead(true)
       })
     ]
