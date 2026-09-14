@@ -37,6 +37,13 @@ export function resolveCwd(current: string | undefined, rawArg: string): string 
   }
   // `cd -` means the shell's previous directory, which we cannot know here.
   if (arg === '-') return null
+  // Drive-relative `cd d:` (cmd/PowerShell): the target is the drive's
+  // current directory, which the shell never tells us — path.isAbsolute('d:')
+  // is false, so without this branch it resolves against the base and dies on
+  // a nonexistent `<base>\d:`. The drive root is the fresh-shell answer.
+  if (process.platform === 'win32' && /^[a-zA-Z]:$/.test(arg)) {
+    return existingDir(`${arg.toUpperCase()}\\`)
+  }
 
   const base = current && current.trim() ? current : homedir()
   // An absolute argument wins; otherwise resolve against the base. Both forms
