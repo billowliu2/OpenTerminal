@@ -37,6 +37,9 @@ nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   perMachine: false
+  # Installed shortcuts read "OTerminal"; productName stays OpenTerminal so the
+  # userData dir and window title are untouched.
+  shortcutName: OTerminal
   createDesktopShortcut: true
   createStartMenuShortcut: true
   artifactName: ${productName}-${version}-setup.${ext}
