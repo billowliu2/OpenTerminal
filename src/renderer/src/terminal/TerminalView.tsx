@@ -152,6 +152,15 @@ function stepLineBuffer(
     outBuf.current = ''
     return { line: '' }
   }
+  // xterm-native paste (plain Ctrl+V): with the shell's bracketed-paste mode
+  // on, the pasted block arrives wrapped in \x1b[200~ / \x1b[201~ and the chunk
+  // starts with ESC, which the guards below would drop wholesale. Strip the
+  // markers and keep the pasted text as ordinary input.
+  if (data.includes('\x1b[200~') || data.includes('\x1b[201~')) {
+    const text = data.replace(/\x1b\[20[01]~/g, '')
+    if (text) outBuf.current = b + text
+    return { line: outBuf.current }
+  }
   // A chunk that begins with escape/control sequences (e.g. the terminal's
   // clear-line) only removes buffer content; never appends.
   const first = data[0]
@@ -429,15 +438,59 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     setResultInfo(found ? '已找到' : '未找到')
   }, [])
 
+  /** Record a submitted command line; cd-style lines also update cwd memory. */
+  const trackSubmittedLine = useCallback(
+    (submit: string): void => {
+      void window.api.recordCommand(submit).catch(() => undefined)
+      // Remember the directory for the next launch: a cd-style line is
+      // resolved in the main process (the only side with node's `path`).
+      const cdArg = cdArgument(submit)
+      if (cdArg !== null) {
+        void window.api
+          .resolveCwd(getSessionCwd(sessionId), cdArg)
+          .then((next: string | null) => {
+            if (next) setSessionCwd(sessionId, next)
+          })
+          .catch(() => undefined)
+      }
+    },
+    [sessionId]
+  )
+
+  /**
+   * Pasted text is written straight to the pty (confirmPaste → writeBroadcast),
+   * bypassing xterm's onData, so the line buffer / history / cwd tracker would
+   * never see it — a pasted `cd X` used to be recorded as the bare prefix typed
+   * before it. Mirror the shell: each completed line is a submitted command,
+   * the trailing partial line stays pending in the buffer.
+   */
+  const trackPastedText = useCallback(
+    (data: string): void => {
+      if (termRef.current?.buffer.active.type === 'alternate') return
+      const parts = data.replace(/\r\n/g, '\n').split('\n')
+      const tail = parts.pop() ?? ''
+      for (const line of parts) {
+        const t = line.trim()
+        lineBufRef.current = ''
+        if (t) trackSubmittedLine(t)
+      }
+      if (tail) lineBufRef.current += tail
+    },
+    [trackSubmittedLine]
+  )
+
   const confirmPaste = useCallback(
     (text: string) => {
       const data = nativePasteRef.current ?? text
       nativePasteRef.current = null
       setPaste(null)
-      if (!deadRef.current) writeBroadcast(sessionId, data)
+      if (!deadRef.current) {
+        writeBroadcast(sessionId, data)
+        trackPastedText(data)
+      }
       termRef.current?.focus()
     },
-    [sessionId]
+    [sessionId, trackPastedText]
   )
 
   const cancelPaste = useCallback(() => {
@@ -732,18 +785,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
         // M5: line capture → recordCommand + inline completion overlay.
         const step = stepLineBuffer(lineBufRef, data, consumeRewrite)
         if (typeof step.submit === 'string' && step.submit) {
-          void window.api.recordCommand(step.submit).catch(() => undefined)
-          // Remember the directory for the next launch: a cd-style line is
-          // resolved in the main process (the only side with node's `path`).
-          const cdArg = cdArgument(step.submit)
-          if (cdArg !== null) {
-            void window.api
-              .resolveCwd(getSessionCwd(sessionId), cdArg)
-              .then((next: string | null) => {
-                if (next) setSessionCwd(sessionId, next)
-              })
-              .catch(() => undefined)
-          }
+          trackSubmittedLine(step.submit)
         }
         if (deadRef.current) {
           suggestionsRef.current = []
