@@ -7,6 +7,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { ClearOutlined, CopyOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
+import { Checkbox, Modal } from 'antd'
 import { getThemeById } from '@shared/theme'
 import type { CommandItem } from '@shared/commands'
 import type { TerminalSettings } from '@shared/settings'
@@ -36,6 +37,13 @@ function isRiskyPaste(text: string): boolean {
   if (text.includes('\n') || text.includes('\r')) return true
   return text.length > 100
 }
+
+/**
+ * "本次会话不再提示" from the paste confirmation dialog. Deliberately in memory
+ * only: it lasts until the app exits and never becomes a stored preference
+ * (that is what 关闭后续粘贴检测 in the dialog is for).
+ */
+let pasteConfirmedForSession = false
 
 const SEARCH_DECORATIONS: NonNullable<NonNullable<Parameters<SearchAddon['findNext']>[1]>['decorations']> = {
   matchBackground: '#3b8eea',
@@ -306,7 +314,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // time (decides if 复制 is enabled).
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
   const [menuHasSel, setMenuHasSel] = useState(false)
-  const [paste, setPaste] = useState<string | null>(null)
+  const [paste, setPaste] = useState<{ noPrompt: boolean; disableDetection: boolean } | null>(null)
   const [dead, setDead] = useState(false)
   const [exitCode, setExitCode] = useState(0)
   const [recording, setRecording] = useState(false)
@@ -457,40 +465,20 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     [sessionId]
   )
 
-  /**
-   * Pasted text is written straight to the pty (confirmPaste → writeBroadcast),
-   * bypassing xterm's onData, so the line buffer / history / cwd tracker would
-   * never see it — a pasted `cd X` used to be recorded as the bare prefix typed
-   * before it. Mirror the shell: each completed line is a submitted command,
-   * the trailing partial line stays pending in the buffer.
-   */
-  const trackPastedText = useCallback(
-    (data: string): void => {
-      if (termRef.current?.buffer.active.type === 'alternate') return
-      const parts = data.replace(/\r\n/g, '\n').split('\n')
-      const tail = parts.pop() ?? ''
-      for (const line of parts) {
-        const t = line.trim()
-        lineBufRef.current = ''
-        if (t) trackSubmittedLine(t)
-      }
-      if (tail) lineBufRef.current += tail
-    },
-    [trackSubmittedLine]
-  )
-
   const confirmPaste = useCallback(
     (text: string) => {
       const data = nativePasteRef.current ?? text
       nativePasteRef.current = null
       setPaste(null)
-      if (!deadRef.current) {
-        writeBroadcast(sessionId, data)
-        trackPastedText(data)
-      }
+      // Route through xterm's own paste: when the shell asked for bracketed
+      // paste (PSReadLine does), the text is wrapped in \x1b[200~ / \x1b[201~
+      // and inserted as ONE edit instead of executing line by line — which is
+      // what a large multi-line paste needs. It also feeds onData, so the line
+      // buffer, command history and cwd memory see the pasted text.
+      if (!deadRef.current) termRef.current?.paste(data)
       termRef.current?.focus()
     },
-    [sessionId, trackPastedText]
+    []
   )
 
   const cancelPaste = useCallback(() => {
@@ -523,15 +511,29 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
 
   const beginPaste = useCallback(
     (text: string) => {
-      if (!deadRef.current && settings.terminal.pasteRiskConfirm && isRiskyPaste(text)) {
+      if (
+        !deadRef.current &&
+        settings.terminal.pasteRiskConfirm &&
+        !pasteConfirmedForSession &&
+        isRiskyPaste(text)
+      ) {
         nativePasteRef.current = text
-        setPaste(text)
+        setPaste({ noPrompt: false, disableDetection: false })
         return
       }
       confirmPaste(text)
     },
     [settings.terminal.pasteRiskConfirm, confirmPaste]
   )
+
+  /** Confirm the risky-paste dialog: apply its choices, then paste. */
+  const acceptPaste = useCallback((): void => {
+    if (paste?.noPrompt) pasteConfirmedForSession = true
+    if (paste?.disableDetection) {
+      void useSettingsStore.getState().updateTerminal({ pasteRiskConfirm: false })
+    }
+    confirmPaste(nativePasteRef.current ?? '')
+  }, [paste, confirmPaste])
 
   const copySelection = useCallback(async () => {
     const term = termRef.current
@@ -1103,17 +1105,33 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           <FolderOpenOutlined />
         </button>
       </div>
-      {paste !== null && !dead && (
-        <div className="term-pastebar">
-          <span className="term-pastebar-text">检测到多行/长文本粘贴</span>
-          <button type="button" className="term-pastebar-btn term-pastebar-btn-ok" onClick={() => confirmPaste(paste)}>
-            粘贴
-          </button>
-          <button type="button" className="term-pastebar-btn term-pastebar-btn-cancel" onClick={cancelPaste}>
-            取消
-          </button>
+      <Modal
+        open={paste !== null}
+        title="确认粘贴"
+        okText="粘贴"
+        cancelText="取消"
+        width={420}
+        maskClosable={false}
+        onOk={acceptPaste}
+        onCancel={cancelPaste}
+      >
+        <div className="term-paste-confirm">
+          <p>检测到多行或潜在危险命令，确定要粘贴到终端吗？</p>
+          <Checkbox
+            checked={paste?.noPrompt ?? false}
+            onChange={(e) => setPaste((prev) => (prev ? { ...prev, noPrompt: e.target.checked } : prev))}
+          >
+            本次会话不再提示
+          </Checkbox>
+          <Checkbox
+            checked={paste?.disableDetection ?? false}
+            onChange={(e) => setPaste((prev) => (prev ? { ...prev, disableDetection: e.target.checked } : prev))}
+          >
+            关闭后续粘贴检测
+          </Checkbox>
+          <p className="term-paste-confirm-hint">可在通用终端设置中重新开启或切换检测策略。</p>
         </div>
-      )}
+      </Modal>
       {/* Relative-positioned wrapper around the xterm surface: the suggestion
           popup anchors to this box, so its coordinates start at the terminal
           content rows (the search bar above never offsets the top). */}
