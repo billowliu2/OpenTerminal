@@ -48,14 +48,16 @@ if (ymlVersion !== V) {
   process.exit(1)
 }
 
+// Proxy applies to GitHub only. The domestic Gitea host is fastest — and most
+// reliable — over a direct connection; routing it through a local proxy is
+// what once broke a channel upload (ECONNRESET mid-PUT), and a proxy that is
+// down would take the domestic channel with it. So no global dispatcher here:
+// the agent is passed explicitly on GitHub requests.
 const proxy = process.env.HTTPS_PROXY || process.env.https_proxy || env.HTTPS_PROXY || env.PROXY
-if (proxy) {
-  const { ProxyAgent, setGlobalDispatcher } = require('undici')
-  setGlobalDispatcher(new ProxyAgent(proxy))
-  console.log('using proxy:', proxy)
-}
+const proxyAgent = proxy ? new (require('undici').ProxyAgent)(proxy) : undefined
+if (proxy) console.log('proxy for GitHub only:', proxy)
 
-async function upload(url, file, token, authScheme) {
+async function upload(url, file, token, authScheme, viaProxy = false) {
   const name = path.basename(file)
   const stat = fs.statSync(file)
   const resp = await fetch(`${url}${url.includes('?') ? '&' : '?'}name=${encodeURIComponent(name)}`, {
@@ -66,7 +68,8 @@ async function upload(url, file, token, authScheme) {
       'Content-Length': String(stat.size)
     },
     body: fs.createReadStream(file),
-    duplex: 'half'
+    duplex: 'half',
+    ...(viaProxy && proxyAgent ? { dispatcher: proxyAgent } : {})
   })
   console.log(`  upload ${name}: HTTP ${resp.status}`)
   if (!resp.ok) {
@@ -136,14 +139,15 @@ async function github() {
       'User-Agent': 'OpenTerminal',
       Accept: 'application/vnd.github+json'
     },
-    body: JSON.stringify({ tag_name: `v${V}`, name: `OpenTerminal v${V}`, body: notes, draft: false, prerelease: false })
+    body: JSON.stringify({ tag_name: `v${V}`, name: `OpenTerminal v${V}`, body: notes, draft: false, prerelease: false }),
+    ...(proxyAgent ? { dispatcher: proxyAgent } : {})
   })
   if (!resp.ok) { throw new Error(`GitHub release create failed: ${resp.status} ${(await resp.text()).slice(0, 300)}`) }
   const rel = await resp.json()
   console.log('release created, id =', rel.id)
   const up = `https://uploads.github.com/repos/billowliu2/OpenTerminal/releases/${rel.id}/assets`
   for (const f of [...files, path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), path.join(R, 'latest.yml')]) {
-    await upload(up, f, env.GH_TOKEN, 'Bearer')
+    await upload(up, f, env.GH_TOKEN, 'Bearer', true)
   }
 }
 
