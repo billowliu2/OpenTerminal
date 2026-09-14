@@ -20,6 +20,15 @@ function showOrCreate(): void {
   }
 }
 
+// Dev runs get their own userData directory (settings, session snapshot,
+// command history, logs) *and* their own single-instance lock — both are keyed
+// on that path. Without this a dev instance fights the installed build: it
+// takes the lock, so the other side is refused / must be killed, and it writes
+// test data straight into the real profile. Must run before the lock below.
+if (!app.isPackaged) {
+  app.setPath('userData', join(app.getPath('appData'), 'OpenTerminal-dev'))
+}
+
 // Single instance: a second launch just surfaces the existing window (pulls
 // it out of the tray if hidden there) instead of starting another process.
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
@@ -63,6 +72,15 @@ function createWindow(): void {
   })
 
   win.on('ready-to-show', () => win.show())
+
+  // Dev window wears a "(dev)" tag so it is never confused with the installed
+  // build sitting next to it (they no longer share userData — see above).
+  if (!app.isPackaged) {
+    win.on('page-title-updated', (e) => {
+      e.preventDefault()
+      win.setTitle('OpenTerminal (dev)')
+    })
+  }
 
   // Close button → tray / exit per the closeAction setting (ask by default).
   win.on('close', (e) => {

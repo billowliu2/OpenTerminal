@@ -5,6 +5,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 ## 常用命令
 
 - 开发：`npm run dev`（主进程改动不热重建，需重启）
+- dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npx tsc --noEmit -p tsconfig.web.json`
 - 打包：`npm run dist`，产物在 `release/`（msi + exe + latest.yml + blockmap）
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
