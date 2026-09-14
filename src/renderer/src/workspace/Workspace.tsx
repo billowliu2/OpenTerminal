@@ -10,8 +10,7 @@ import {
   MenuUnfoldOutlined,
   PlusOutlined,
   SettingOutlined,
-  ShareAltOutlined,
-  ThunderboltOutlined
+  ShareAltOutlined
 } from '@ant-design/icons'
 import { DockviewReact } from 'dockview-react'
 import type {
@@ -33,7 +32,6 @@ import { HostKeyModal } from './HostKeyModal'
 import { TerminalPanel } from './TerminalPanel'
 import { ApplyTemplateModal, SaveTemplateModal, TerminalTab } from './TerminalTab'
 import { useBroadcastStore, writeBroadcast } from './broadcastStore'
-import { QuickInputPanel, useQuickInputStore } from './QuickInputPanel'
 import { forgetSessionCwd, getSessionCwd, onSessionCwdChange, setSessionCwd } from './sessionCwdStore'
 import { useSettingsStore } from '@renderer/settings/store'
 import type { SessionSnapshot, SessionPanelState } from '@shared/ipc'
@@ -201,7 +199,6 @@ function createTabActions(mode: WorkspaceMode): (props: IDockviewHeaderActionsPr
       <div className="workspace-tabbar-actions">
         <AddTerminalGroupButton onClick={handleAdd} />
         <BroadcastToggleButton />
-        <QuickInputToggleButton />
       </div>
     )
   }
@@ -240,7 +237,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   /** Per-workspace active panel used as the split anchor. */
   const activeTerminalPanelRef = useRef<IDockviewPanel | undefined>(undefined)
   const activeSshPanelRef = useRef<IDockviewPanel | undefined>(undefined)
-  /** The currently-visible mode's active panel (broadcast / quick-input target). */
+  /** The currently-visible mode's active panel (broadcast target). */
   const activePanelRef = useRef<IDockviewPanel | undefined>(undefined)
 
   /** Sessions we already asked to kill — kill once, never twice. */
@@ -961,13 +958,6 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
     }
   }
 
-  /** Session id of the currently active, visible terminal panel ('' when none). */
-  const resolveActiveSessionId = useCallback((): string => {
-    const panel = activePanelRef.current
-    if (!panel) return ''
-    return sessionIdOf(panel) ?? ''
-  }, [])
-
   return (
     <div className="workspace-root">
       <IconRail
@@ -1055,11 +1045,6 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           </div>
         </div>
       </div>
-
-      {/* M6: floating quick-input panel (bottom-right). Sends to the active
-          session; broadcast target → fan-out. Sits above the sftp transfer
-          overlay's 14px bottom offset so the two never overlap. */}
-      <QuickInputPanel onResolveActiveSession={resolveActiveSessionId} />
 
       {/* SSH connect flow: secret prompt (cancellable) → connecting modal (not). */}
       {requestedConn != null && (
@@ -1203,25 +1188,6 @@ function WorkspaceBroadcastPopover({
       </div>
       <div className="workspace-bcast-pop-hint">选择 ≥2 个终端后广播自动开启；关闭任意一个使目标少于 2 个时自动关闭。仅当前模式组的会话可被勾选。</div>
     </div>
-  )
-}
-
-/** 快捷输入 panel toggle (ThunderboltOutlined) — state lives in the shared store. */
-function QuickInputToggleButton(): React.JSX.Element {
-  const toggle = useQuickInputStore((s) => s.toggle)
-  const open = useQuickInputStore((s) => s.open)
-  return (
-    <Tooltip title={open ? '收起快捷输入面板' : '打开快捷输入面板'}>
-      <button
-        type="button"
-        className={['workspace-tabbar-btn2', open ? ' is-active' : ''].join('')}
-        aria-label="快捷输入面板"
-        aria-pressed={open}
-        onClick={toggle}
-      >
-        <ThunderboltOutlined />
-      </button>
-    </Tooltip>
   )
 }
 
