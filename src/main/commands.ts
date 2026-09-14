@@ -26,6 +26,7 @@ import { join } from 'path'
 import type { CommandItem, SessionLogMeta } from '../shared/commands'
 import { DEFAULT_SETTINGS } from '../shared/settings'
 import { loadSettings } from './settingsStore'
+import { LogSanitizer } from './logSanitizer'
 
 /** Upper bound on recorded history entries when no limit is configured. */
 const HISTORY_CAP = 500
@@ -77,6 +78,8 @@ export class CommandsStore {
    * onto the previous one keeps the file append-only in call order.
    */
   private readonly pendingAppends = new Map<string, Promise<void>>()
+  /** Plain-text transformer per actively-logged session (see logSanitizer). */
+  private readonly sanitizers = new Map<string, LogSanitizer>()
 
   constructor(userData?: string, openPathImpl?: (p: string) => Promise<unknown>) {
     const ud = userData ?? app.getPath('userData')
@@ -269,6 +272,7 @@ export class CommandsStore {
     const meta: SessionLogMeta = { sessionId, file, fileName, startedAt: Date.now() }
     this.metasByFile.set(file, meta)
     this.activeBySession.set(sessionId, meta)
+    this.sanitizers.set(sessionId, new LogSanitizer())
     this.persistIndex()
     return meta
   }
@@ -280,9 +284,12 @@ export class CommandsStore {
       // not logging (or already stopped) -> ignore, prevents stop/append race
       return
     }
+    // Raw PTY output is escape-sequence soup in a text file; log plain text.
+    const clean = this.sanitizers.get(sessionId)?.push(data) ?? ''
+    if (!clean) return
     // Chain onto any in-flight append so rapid writes land in call order.
     const prev = this.pendingAppends.get(meta.file) ?? Promise.resolve()
-    const next = prev.then(() => appendFile(meta.file, data, 'utf8')).then(
+    const next = prev.then(() => appendFile(meta.file, clean, 'utf8')).then(
       () => undefined,
       () => {
         // file may have been removed after stop -> ignore
@@ -299,6 +306,17 @@ export class CommandsStore {
   logStop(sessionId: string): void {
     const meta = this.activeBySession.get(sessionId)
     if (!meta) return
+    const tail = this.sanitizers.get(sessionId)?.flush() ?? ''
+    this.sanitizers.delete(sessionId)
+    if (tail) {
+      // Best effort: the trailing partial line belongs in the file too.
+      const prev = this.pendingAppends.get(meta.file) ?? Promise.resolve()
+      const next = prev.then(() => appendFile(meta.file, tail, 'utf8')).then(
+        () => undefined,
+        () => undefined
+      )
+      this.pendingAppends.set(meta.file, next)
+    }
     this.finishLog(meta)
   }
 
