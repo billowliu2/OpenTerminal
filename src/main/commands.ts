@@ -24,9 +24,13 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs'
 import { appendFile } from 'fs/promises'
 import { join } from 'path'
 import type { CommandItem, SessionLogMeta } from '../shared/commands'
+import { DEFAULT_SETTINGS } from '../shared/settings'
+import { loadSettings } from './settingsStore'
 
-/** Upper bound on recorded history entries. */
+/** Upper bound on recorded history entries when no limit is configured. */
 const HISTORY_CAP = 500
+/** Hard ceiling: the history is also the completion source, so it stays small. */
+export const HISTORY_LIMIT_MAX = 500
 
 interface CommandsFile {
   history: CommandItem[]
@@ -67,6 +71,12 @@ export class CommandsStore {
   private readonly metasByFile = new Map<string, SessionLogMeta>()
   /** Logs currently accumulating output, keyed by sessionId. */
   private readonly activeBySession = new Map<string, SessionLogMeta>()
+  /**
+   * Pending append per log file. appendFile is async, so two rapid logWrite
+   * calls would otherwise race and land out of order. Chaining each new append
+   * onto the previous one keeps the file append-only in call order.
+   */
+  private readonly pendingAppends = new Map<string, Promise<void>>()
 
   constructor(userData?: string, openPathImpl?: (p: string) => Promise<unknown>) {
     const ud = userData ?? app.getPath('userData')
@@ -100,15 +110,32 @@ export class CommandsStore {
     writeFileSync(this.file, JSON.stringify(data, null, 2), 'utf8')
   }
 
-  /** Record one executed command: trim; dedupe vs newest; move to front; cap. */
+  /**
+   * Record one executed command.
+   *
+   * Deduplication is over the *whole* history, not just the newest entry: a
+   * command used three commands ago is the same command, so re-running it moves
+   * the existing entry to the front (refreshing `lastUsedAt`) instead of adding
+   * a second copy. History reads back sorted by `lastUsedAt`, so hoisting is
+   * exactly what "most recently used" means — and it keeps the list from
+   * filling up with one line repeated.
+   *
+   * Silently does nothing when 设置 → 终端 → 记录命令历史 is off: the setting is
+   * read here (not at the call site) so every recording path honours it, and
+   * existing history is left untouched rather than cleared.
+   */
   recordCommand(cmd: string): void {
     const trimmed = cmd.trim()
     if (!trimmed) return
+    const { historyEnabled, historyLimit } = loadHistoryPrefs()
+    if (!historyEnabled) return
+    const cap = normalizeLimit(historyLimit)
     const data = this.loadCommands()
-    const top = data.history[0]
-    if (top && top.command === trimmed) {
-      // Same as the newest entry: refresh its recency (already at the front).
-      top.lastUsedAt = Date.now()
+    const existing = data.history.findIndex((item) => item.command === trimmed)
+    if (existing >= 0) {
+      const [item] = data.history.splice(existing, 1)
+      item.lastUsedAt = Date.now()
+      data.history.unshift(item)
     } else {
       data.history.unshift({
         id: randomUUID(),
@@ -116,16 +143,23 @@ export class CommandsStore {
         createdAt: Date.now(),
         lastUsedAt: Date.now()
       })
-      if (data.history.length > HISTORY_CAP) data.history.length = HISTORY_CAP
     }
+    if (data.history.length > cap) data.history.length = cap
     this.saveCommands(data)
   }
 
-  /** History sorted by most recently used. */
+  /**
+   * History sorted by most recently used, trimmed to the configured limit.
+   *
+   * The trim happens on read as well as on write so lowering the limit in
+   * settings takes effect at once instead of waiting for the next command.
+   */
   listHistory(): CommandItem[] {
+    const { historyLimit } = loadHistoryPrefs()
     return this.loadCommands()
       .history.slice()
       .sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0))
+      .slice(0, normalizeLimit(historyLimit))
   }
 
   clearHistory(): void {
@@ -246,8 +280,18 @@ export class CommandsStore {
       // not logging (or already stopped) -> ignore, prevents stop/append race
       return
     }
-    appendFile(meta.file, data, 'utf8').catch(() => {
-      // file may have been removed after stop -> ignore
+    // Chain onto any in-flight append so rapid writes land in call order.
+    const prev = this.pendingAppends.get(meta.file) ?? Promise.resolve()
+    const next = prev.then(() => appendFile(meta.file, data, 'utf8')).then(
+      () => undefined,
+      () => {
+        // file may have been removed after stop -> ignore
+      }
+    )
+    this.pendingAppends.set(meta.file, next)
+    // Avoid unbounded growth of the chain map once the file settles.
+    next.finally(() => {
+      if (this.pendingAppends.get(meta.file) === next) this.pendingAppends.delete(meta.file)
     })
   }
 
@@ -285,4 +329,36 @@ function describeFile(p: string): void {
   } catch {
     // best effort; appends will also create it lazily
   }
+}
+
+/**
+ * History preferences straight from settings.
+ *
+ * Read on every use rather than cached: the store is constructed once at boot
+ * but the user can flip the switch at any time, and a stale copy would keep
+ * recording after they turned it off.
+ */
+function loadHistoryPrefs(): { historyEnabled: boolean; historyLimit: number } {
+  try {
+    const terminal = loadSettings().terminal
+    return {
+      historyEnabled: terminal.historyEnabled !== false,
+      historyLimit: normalizeLimit(terminal.historyLimit)
+    }
+  } catch {
+    // Settings unreadable (e.g. store used outside Electron in a test): fall
+    // back to the same defaults the app ships with.
+    return {
+      historyEnabled: DEFAULT_SETTINGS.terminal.historyEnabled,
+      historyLimit: DEFAULT_SETTINGS.terminal.historyLimit
+    }
+  }
+}
+
+/** Clamp a configured limit into 1..HISTORY_LIMIT_MAX; unusable → the default. */
+function normalizeLimit(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_SETTINGS.terminal.historyLimit
+  const rounded = Math.floor(value)
+  if (rounded < 1) return 1
+  return Math.min(rounded, HISTORY_LIMIT_MAX)
 }

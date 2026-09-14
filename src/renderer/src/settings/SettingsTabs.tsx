@@ -288,6 +288,33 @@ export function RenderSettingsTab(): React.JSX.Element {
           />
         }
       />
+      <SettingRow
+        label="记录命令历史"
+        desc="关闭后不再记录新命令；已保存的历史仍然保留"
+        control={
+          <Switch
+            checked={settings.terminal.historyEnabled !== false}
+            onChange={(checked) => void updateTerminal({ historyEnabled: checked })}
+          />
+        }
+      />
+      <SettingRow
+        label="历史条数上限"
+        desc="命令历史最多保留多少条，重复命令只记一次"
+        control={
+          <InputNumber
+            min={1}
+            max={500}
+            step={10}
+            value={settings.terminal.historyLimit}
+            disabled={settings.terminal.historyEnabled === false}
+            onChange={(value) => {
+              if (typeof value === 'number') void updateTerminal({ historyLimit: value })
+            }}
+            style={{ width: 110 }}
+          />
+        }
+      />
     </div>
   )
 }

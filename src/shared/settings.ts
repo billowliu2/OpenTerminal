@@ -36,6 +36,10 @@ export interface TerminalSettings {
   pasteRiskConfirm: boolean
   /** inline command suggestion popup while typing (history + library) */
   suggestEnabled: boolean
+  /** record executed commands into the history panel */
+  historyEnabled: boolean
+  /** max entries kept in command history */
+  historyLimit: number
   /** accent color for the active tab outline, rail indicator and SSH badges */
   tabAccentColor: string
 }
@@ -114,6 +118,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     copyOnSelect: false,
     pasteRiskConfirm: true,
     suggestEnabled: true,
+    historyEnabled: true,
+    historyLimit: 100,
     tabAccentColor: '#3fb950'
   },
   customThemes: [],
