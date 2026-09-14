@@ -61,26 +61,20 @@ const TERMINAL_COMPONENT = 'terminal'
 const TERMINAL_TAB_COMPONENT = 'terminal-tab'
 
 /**
- * Per-workspace monotonic title counter for "终端 N". Lives on `window` so
- * dev hot-reloads (which reset module state) don't restart the numbering and
- * produce duplicate tab titles.
+ * "终端 N" titles fill the lowest free number among live panels: closing a
+ * pane frees its number for the next new terminal, and a session restore can
+ * no longer leave the numbering behind (the old in-memory counter restarted
+ * at zero on launch and produced duplicate titles).
  */
-const titleSeqHolder = window as unknown as { __otTitleSeq?: number }
-function nextTerminalTitle(): string {
-  titleSeqHolder.__otTitleSeq = (titleSeqHolder.__otTitleSeq ?? 0) + 1
-  return `终端 ${titleSeqHolder.__otTitleSeq}`
-}
-
-/**
- * Lift the counter past every "终端 N" currently on screen. The counter lives
- * only in memory, so after a session restore / template apply it is behind the
- * restored titles and the next new terminal duplicates one (`终端 2` twice).
- */
-function syncTitleSeq(titles: Iterable<string | undefined>): void {
-  for (const title of titles) {
+function nextTerminalTitle(existing: Iterable<string | undefined>): string {
+  const used = new Set<number>()
+  for (const title of existing) {
     const n = title?.match(/^终端 (\d+)$/)?.[1]
-    if (n) titleSeqHolder.__otTitleSeq = Math.max(titleSeqHolder.__otTitleSeq ?? 0, Number(n))
+    if (n) used.add(Number(n))
   }
+  let n = 1
+  while (used.has(n)) n++
+  return `终端 ${n}`
 }
 
 function sessionIdOf(panel: IDockviewPanel | undefined): string | undefined {
@@ -200,7 +194,7 @@ function createTabActions(mode: WorkspaceMode): (props: IDockviewHeaderActionsPr
           id: panelId(),
           component: TERMINAL_COMPONENT,
           tabComponent: TERMINAL_TAB_COMPONENT,
-          title: nextTerminalTitle(),
+          title: nextTerminalTitle(containerApi.panels.map((p) => p.title)),
           params: { sessionId: result.id, sessionKind: 'local' },
           position: { referenceGroup: group.id, direction: 'within' }
         })
@@ -630,7 +624,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         id: panelId(),
         component: TERMINAL_COMPONENT,
         tabComponent: TERMINAL_TAB_COMPONENT,
-        title: nextTerminalTitle(),
+        title: nextTerminalTitle(current.panels.map((p) => p.title)),
         params: { sessionId, sessionKind: 'local' },
         position:
           reference && direction
@@ -873,17 +867,18 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const renames = new Map([...terminalLayout.renames, ...sshLayout.renames])
       await rebindSessionPanels(terminal, snapshot, true, renames)
       await rebindSessionPanels(ssh, snapshot, true, renames)
-      const allPanels = [...(terminal?.panels ?? []), ...(ssh?.panels ?? [])]
-      syncTitleSeq(allPanels.map((p) => p.title))
-      // Retitle duplicates left over from the counter bug (the snapshot the bug
-      // wrote keeps colliding titles forever otherwise): first panel keeps the
-      // title, later ones get a fresh number past the restored maximum.
+      // Retitle duplicates left over from the old counter bug (the snapshot it
+      // wrote keeps colliding titles forever otherwise): the first panel keeps
+      // the title, later ones get the lowest free number.
       const seenTitles = new Set<string>()
-      for (const p of allPanels) {
+      for (const p of [...(terminal?.panels ?? []), ...(ssh?.panels ?? [])]) {
         const t = p.title ?? ''
         if (!t) continue
-        if (seenTitles.has(t)) p.setTitle(nextTerminalTitle())
-        else seenTitles.add(t)
+        if (seenTitles.has(t)) {
+          const fresh = nextTerminalTitle(seenTitles)
+          p.setTitle(fresh)
+          seenTitles.add(fresh)
+        } else seenTitles.add(t)
       }
       lastLocalCwdRef.current = snapshot.lastLocalCwd ?? lastLocalCwdRef.current
       useWorkspaceModeStore.getState().setMode(snapshot.mode)
@@ -932,9 +927,6 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       // Fresh sessions for every restored terminal panel in both workspaces.
       if (terminalApiRef.current) await rebindRestoredPanels(terminalApiRef.current)
       if (sshApiRef.current) await rebindRestoredPanels(sshApiRef.current)
-      syncTitleSeq(
-        [...(terminalApiRef.current?.panels ?? []), ...(sshApiRef.current?.panels ?? [])].map((p) => p.title)
-      )
 
       // Old sessions are unreachable after the layout swap — kill them.
       for (const sid of previousSessions) killSession(sid)
