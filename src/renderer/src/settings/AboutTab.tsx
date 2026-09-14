@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Progress, Select, Switch, Tag } from 'antd'
 import type { AppInfo, ReleaseNote, UpdateState, UpdateStatus } from '@shared/ipc'
 import { useSettingsStore } from './store'
+import appIconUrl from '../../../../build/icon.png'
 
 const STATUS_TEXT: Record<UpdateStatus, string> = {
   idle: '点击检查更新',
@@ -34,7 +35,7 @@ export function AboutTab(): React.JSX.Element {
   return (
     <div className="about-tab">
       <div className="about-header">
-        <div className="about-logo">OT</div>
+        <img className="about-logo" src={appIconUrl} alt="OpenTerminal" draggable={false} />
         <div>
           <div className="about-name">OpenTerminal</div>
           <div className="about-version">

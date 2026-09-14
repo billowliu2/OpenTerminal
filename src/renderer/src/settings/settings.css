@@ -380,13 +380,8 @@
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: var(--chrome-hover);
-  color: #3fd06a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 18px;
+  object-fit: cover;
+  display: block;
 }
 
 .about-name {
