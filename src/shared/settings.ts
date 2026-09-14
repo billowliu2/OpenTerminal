@@ -51,6 +51,17 @@ export interface SystemSettings {
   closeAction?: 'ask' | 'tray' | 'exit'
   /** check for updates shortly after startup (manual check always available) */
   autoCheckUpdate?: boolean
+  /**
+   * Restore the previous layout and each pane's working directory on launch
+   * (see the session snapshot). On by default — that is the point of it.
+   */
+  restoreSession?: boolean
+  /**
+   * Let the shell announce its cwd over OSC 7 (shell integration). Exact, but
+   * it wraps the user's prompt, so it is opt-in; without it the app falls back
+   * to parsing typed `cd` commands.
+   */
+  shellIntegration?: boolean
 }
 
 export interface AppSettings {
@@ -107,5 +118,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
-  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true }
+  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true, restoreSession: true, shellIntegration: false }
 }

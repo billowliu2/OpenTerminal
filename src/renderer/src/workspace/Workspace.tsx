@@ -16,6 +16,7 @@ import {
 import { DockviewReact } from 'dockview-react'
 import type {
   DockviewApi,
+  DockviewPanelApi,
   DockviewReadyEvent,
   IDockviewHeaderActionsProps,
   IDockviewPanel,
@@ -33,6 +34,9 @@ import { TerminalPanel } from './TerminalPanel'
 import { ApplyTemplateModal, SaveTemplateModal, TerminalTab } from './TerminalTab'
 import { useBroadcastStore, writeBroadcast } from './broadcastStore'
 import { QuickInputPanel, useQuickInputStore } from './QuickInputPanel'
+import { forgetSessionCwd, getSessionCwd, onSessionCwdChange, setSessionCwd } from './sessionCwdStore'
+import { useSettingsStore } from '@renderer/settings/store'
+import type { SessionSnapshot, SessionPanelState } from '@shared/ipc'
 import type { WorkspaceMode } from './workspaceMode'
 import { useWorkspaceModeStore } from './workspaceModeStore'
 import './workspace.css'
@@ -69,8 +73,97 @@ function nextTerminalTitle(): string {
   return `终端 ${titleSeqHolder.__otTitleSeq}`
 }
 
-function sessionIdOf(panel: IDockviewPanel): string | undefined {
-  return (panel.params as TerminalParams | undefined)?.sessionId
+function sessionIdOf(panel: IDockviewPanel | undefined): string | undefined {
+  return (panel?.params as TerminalParams | undefined)?.sessionId
+}
+
+/**
+ * A dockview panel id.
+ *
+ * Panel ids must never be reused as pty session ids. `updateParameters` can
+ * swap the session behind a panel, but the panel id is fixed for the panel's
+ * whole life, so an id that doubles as a session id goes stale the moment the
+ * pane is rebound: the restored pane would be addressed by an id that no longer
+ * names any session, and it comes up with no pty behind it. Ids here are opaque
+ * and distinct from any session id by construction.
+ */
+function panelId(): string {
+  return `p-${window.crypto.randomUUID().slice(0, 8)}`
+}
+
+interface RawLayout {
+  grid?: unknown
+  panels?: Record<string, { id?: string; params?: { sessionId?: string } }>
+  activeGroup?: string
+}
+
+interface RenamedLayout {
+  layout: unknown
+  /** old panel id → new panel id, so a caller holding a snapshot keyed by the
+   *  old ids can still find a panel's recorded state afterwards. */
+  renames: Map<string, string>
+}
+
+/**
+ * Rewrite a snapshot layout so no panel id equals its session id.
+ *
+ * Older builds created panels with `id: sessionId`, and those snapshots are
+ * still on disk. `updateParameters` cannot rename a panel, so the id has to be
+ * swapped in the serialized layout where it appears in all three places that
+ * must agree: the `panels` map key, the panel's own `id`, and every `views`
+ * entry in the grid tree.
+ *
+ * Returns the layout untouched when no collision exists (the common case), so
+ * the fast path stays a plain object reference.
+ */
+function breakIdCoincidence(layout: unknown): RenamedLayout {
+  if (!layout || typeof layout !== 'object') return { layout, renames: new Map() }
+  const raw = layout as RawLayout
+  const panels = raw.panels
+  if (!panels) return { layout, renames: new Map() }
+  const renames = new Map<string, string>()
+  for (const [key, panel] of Object.entries(panels)) {
+    const sessionId = panel?.params?.sessionId
+    if (sessionId && key === sessionId) renames.set(key, panelId())
+  }
+  if (renames.size === 0) return { layout, renames }
+
+  const next: RawLayout = { ...raw, panels: {} }
+  for (const [key, panel] of Object.entries(panels)) {
+    const target = renames.get(key)
+    next.panels![target ?? key] = target ? { ...panel, id: target } : panel
+  }
+  // `views` / `activeView` are the only fields naming panels. Three shapes to
+  // tell apart, and the walk must preserve whichever is present:
+  //   grid   { root, width, height, orientation }
+  //   branch { type: 'branch', data: node[], size }
+  //   leaf   { type: 'leaf', data: { views, activeView, id }, size }
+  const renameLeaf = (leaf: Record<string, unknown>): Record<string, unknown> => {
+    if (!Array.isArray(leaf.views)) return leaf
+    return {
+      ...leaf,
+      views: leaf.views.map((v) => (typeof v === 'string' ? renames.get(v) ?? v : v)),
+      activeView:
+        typeof leaf.activeView === 'string' ? renames.get(leaf.activeView) ?? leaf.activeView : leaf.activeView
+    }
+  }
+  const renameNode = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(renameNode)
+    if (!node || typeof node !== 'object') return node
+    const entry = node as Record<string, unknown>
+    if (entry.type === 'leaf' || entry.type === 'branch') {
+      const data = entry.data
+      if (entry.type === 'leaf' && data && typeof data === 'object' && !Array.isArray(data)) {
+        return { ...entry, data: renameLeaf(data as Record<string, unknown>) }
+      }
+      return { ...entry, data: renameNode(data) }
+    }
+    // The grid wrapper (and anything else shaped like it) keys its tree on `root`.
+    if (entry.root !== undefined) return { ...entry, root: renameNode(entry.root) }
+    return node
+  }
+  next.grid = renameNode(raw.grid)
+  return { layout: next, renames }
 }
 
 /** The dockview api that owns a given workspace mode. */
@@ -92,8 +185,9 @@ function createTabActions(mode: WorkspaceMode): (props: IDockviewHeaderActionsPr
       }
       void (async (): Promise<void> => {
         const result = await window.api.createPty()
+        setSessionCwd(result.id, result.cwd)
         containerApi.addPanel<TerminalParams>({
-          id: result.id,
+          id: panelId(),
           component: TERMINAL_COMPONENT,
           tabComponent: TERMINAL_TAB_COMPONENT,
           title: nextTerminalTitle(),
@@ -185,6 +279,54 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   /** B's sidebar handle; refresh() after a successful SSH connect */
   const sidebarRef = useRef<ConnectionSidebarHandle>(null)
 
+  // ---- session memory (restore last layout + per-pane cwd) ----
+  /** Set once the boot pass has read the snapshot; saves stay quiet until then. */
+  const bootDoneRef = useRef(false)
+  /** Debounce handle for the snapshot write. */
+  const saveTimerRef = useRef(0)
+  /** Newest local directory seen — seeds brand-new terminals. */
+  const lastLocalCwdRef = useRef<string | null>(null)
+
+  /** Assemble what the next launch needs: both layouts, every pane's kind and
+   *  directory, and the workspace the user was in. */
+  const buildSnapshot = useCallback((): SessionSnapshot => {
+    const collect = (api: DockviewApi | undefined): SessionPanelState[] => {
+      if (!api) return []
+      return api.panels.map((panel) => {
+        const params = panel.params as TerminalParams | undefined
+        return {
+          panelId: panel.id,
+          title: panel.title ?? '',
+          kind: params?.sessionKind === 'ssh' ? 'ssh' : 'local',
+          cwd: getSessionCwd(params?.sessionId),
+          hostLabel: params?.hostLabel
+        }
+      })
+    }
+    return {
+      version: 1,
+      savedAt: Date.now(),
+      mode: useWorkspaceModeStore.getState().mode,
+      layouts: {
+        terminal: terminalApiRef.current?.toJSON(),
+        ssh: sshApiRef.current?.toJSON()
+      },
+      panels: [...collect(terminalApiRef.current), ...collect(sshApiRef.current)],
+      lastLocalCwd: lastLocalCwdRef.current ?? undefined
+    }
+  }, [])
+
+  /** Debounced write (layout changes stream during window drags). */
+  const scheduleSave = useCallback((): void => {
+    // Never overwrite the snapshot before the boot pass has read it — an empty
+    // layout would otherwise erase the very thing we are about to restore.
+    if (!bootDoneRef.current) return
+    window.clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = window.setTimeout(() => {
+      void window.api.saveSessionState(buildSnapshot()).catch(() => undefined)
+    }, 500)
+  }, [buildSnapshot])
+
   /** Idempotently kill a pty session. */
   const killSession = useCallback((sessionId: string | undefined): void => {
     if (!sessionId) return
@@ -198,8 +340,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
     deadSessionsRef.current.add(sessionId)
   }, [])
 
-  const createSession = useCallback(async (): Promise<string> => {
-    const result = await window.api.createPty()
+  const createSession = useCallback(async (cwd?: string): Promise<string> => {
+    // `cwd` is the memory hook: a restored pane and a freshly opened one both
+    // start where the user left off. The main process validates the path and
+    // answers with the directory it actually used, which seeds the cwd store so
+    // an immediate snapshot save already reflects it.
+    const result = await window.api.createPty(cwd ? { cwd } : {})
+    setSessionCwd(result.id, result.cwd)
     return result.id
   }, [])
 
@@ -271,9 +418,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
 
       const cleanups = [
         api.onDidRemovePanel((panel: IDockviewPanel) => {
+          // Closing a pane keeps its directory as the seed for the next one.
+          const closing = getSessionCwd(sessionIdOf(panel))
+          if (closing) lastLocalCwdRef.current = closing
           releaseSession(panel)
           recomputeLocalPanels()
           recountAll()
+          scheduleSave()
         }),
         api.onDidActivePanelChange((event) => {
           if (mode === 'terminal') activeTerminalPanelRef.current = event.panel ?? undefined
@@ -286,15 +437,17 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         api.onDidLayoutChange(() => {
           recomputeLocalPanels()
           recountAll()
+          scheduleSave()
         }),
         api.onDidAddPanel((panel: IDockviewPanel) => {
           countPanel(panel)
           recountAll()
+          scheduleSave()
         })
       ]
       disposablesRef.current.push(...cleanups)
     },
-    [killSession, recomputeLocalPanels, recountAll]
+    [killSession, recomputeLocalPanels, recountAll, scheduleSave]
   )
 
   const handleTerminalReady = useCallback(
@@ -338,14 +491,46 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
     return useWorkspaceModeStore.subscribe(sync)
   }, [])
 
-  /** First run: seed one local terminal so the terminal workspace is never
-   *  empty on launch. Runs once, after the terminal dockview is ready. */
+  /** Session memory follows the directories the panes report and the workspace
+   *  the user is in — both feed the debounced snapshot write. */
+  useEffect(() => {
+    const offCwd = onSessionCwdChange(() => {
+      const active = getSessionCwd(sessionIdOf(activeTerminalPanelRef.current))
+      if (active) lastLocalCwdRef.current = active
+      scheduleSave()
+    })
+    const offMode = useWorkspaceModeStore.subscribe(() => scheduleSave())
+    return () => {
+      offCwd()
+      offMode()
+    }
+  }, [scheduleSave])
+
+  /**
+   * Boot pass: pick up where the user left off — layout plus each pane's
+   * directory — when 设置 → 系统 → 启动时恢复上次会话 is on. Otherwise (or when no
+   * snapshot exists) seed one terminal. Either way the workspace is never empty.
+   */
   useEffect(() => {
     if (!terminalReady) return
-    const current = terminalApiRef.current
-    if (current && !current.panels.some((p) => sessionIdOf(p))) void addTerminal()
-    // seed the terminal workspace exactly once, on first ready
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let cancelled = false
+    void (async (): Promise<void> => {
+      const current = terminalApiRef.current
+      if (!current) return
+      const restoreOn = useSettingsStore.getState().settings.system.restoreSession !== false
+      const snapshot = restoreOn ? await window.api.getSessionState().catch(() => null) : null
+      if (cancelled) return
+      const restorable = Boolean(snapshot && (snapshot.layouts.terminal || snapshot.panels.length > 0))
+      const restored = snapshot && restorable ? await restoreFromSnapshot(snapshot) : false
+      if (cancelled) return
+      if (!restored && !current.panels.some((p) => sessionIdOf(p))) void addTerminal()
+      bootDoneRef.current = true
+      scheduleSave()
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot exactly once, on first ready
   }, [terminalReady])
 
   /** Kill remaining sessions on window close. */
@@ -425,11 +610,15 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const current = terminalApiRef.current
       if (!current) return
       useWorkspaceModeStore.getState().setMode('terminal')
-      const sessionId = await createSession()
+      // Start where the user already is: the active pane's directory, else the
+      // most recent one we saw (e.g. the pane they just closed).
+      const inherit =
+        getSessionCwd(sessionIdOf(activeTerminalPanelRef.current)) ?? lastLocalCwdRef.current ?? undefined
+      const sessionId = await createSession(inherit)
       const reference = activeTerminalPanelRef.current
 
       current.addPanel<TerminalParams>({
-        id: sessionId,
+        id: panelId(),
         component: TERMINAL_COMPONENT,
         tabComponent: TERMINAL_TAB_COMPONENT,
         title: nextTerminalTitle(),
@@ -464,7 +653,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         // is visible once added.
         useWorkspaceModeStore.getState().setMode('ssh')
         current.addPanel<TerminalParams>({
-          id: result.id,
+          id: panelId(),
           component: TERMINAL_COMPONENT,
           tabComponent: TERMINAL_TAB_COMPONENT,
           title: conn.name,
@@ -549,7 +738,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       if (!sessionId) return
       const refParams = reference.params as TerminalParams | undefined
       current.addPanel<TerminalParams>({
-        id: `ssh-${sessionId}-${window.crypto.randomUUID().slice(0, 8)}`,
+        id: panelId(),
         component: TERMINAL_COMPONENT,
         tabComponent: TERMINAL_TAB_COMPONENT,
         title: reference.title,
@@ -575,23 +764,113 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   }, [])
 
   /**
-   * Rebind every restored session panel to a fresh local pty. Templates cannot
-   * carry live session state (SSH needs credentials not stored in the layout),
-   * so sessions are recreated as local terminals in whichever workspace the
-   * layout put them.
+   * Replace the pty behind an existing panel, in place.
+   *
+   * Panel identity and session identity are deliberately separate: a panel keeps
+   * its parameters object across `updateParameters`, so React re-renders the
+   * panel's `<TerminalView>` with the new `sessionId` prop exactly the way it
+   * does when the user switches terminals — its bind effect tears the old xterm
+   * down and replays the new session's output.
    */
-  const rebindRestoredPanels = useCallback(
-    async (api: DockviewApi): Promise<void> => {
+  const bindPanelSession = useCallback(
+    async (panel: DockviewPanelApi | undefined, currentSessionId: string, cwd?: string): Promise<void> => {
+      if (!panel) return
+      const nextSessionId = await createSession(cwd)
+      panel.updateParameters({ sessionId: nextSessionId, sessionKind: 'local' })
+      deadSessionsRef.current.delete(currentSessionId)
+      forgetSessionCwd(currentSessionId)
+    },
+    [createSession]
+  )
+
+  /**
+   * Rebind restored panels to fresh ptys.
+   *
+   * Templates cannot carry live session state (SSH needs credentials that are
+   * never stored in a layout), so their panels are recreated as local terminals
+   * in whichever workspace the layout put them.
+   *
+   * The automatic snapshot additionally carries each pane's last working
+   * directory, and `dropSsh` closes ssh panes rather than faking them as local
+   * terminals — a restored ssh pane has no session to show yet (the reconnect
+   * placeholder is a follow-up).
+   *
+   * `renames` bridges the id rewrite the caller applied to the layout: the
+   * snapshot is keyed by the panel ids *as they were written*, but the panels
+   * now carry fresh ids, so a lookup by the new id would always miss and the
+   * pane would silently lose its remembered directory.
+   */
+  const rebindSessionPanels = useCallback(
+    async (
+      api: DockviewApi | undefined,
+      snapshot?: SessionSnapshot,
+      dropSsh = false,
+      renames?: Map<string, string>
+    ): Promise<void> => {
+      if (!api) return
+      const recorded = new Map((snapshot?.panels ?? []).map((p) => [p.panelId, p]))
+      const lookup = (panelId: string): SessionPanelState | undefined => {
+        const direct = recorded.get(panelId)
+        if (direct) return direct
+        for (const [oldId, newId] of renames ?? []) {
+          if (newId === panelId) return recorded.get(oldId)
+        }
+        return undefined
+      }
       for (const panel of api.panels) {
         const id = sessionIdOf(panel)
-        if (id && panel.view.contentComponent === TERMINAL_COMPONENT) {
-          const newSessionId = (await window.api.createPty()).id
-          panel.api.updateParameters({ sessionId: newSessionId, sessionKind: 'local' })
-          deadSessionsRef.current.delete(id)
+        if (!id || panel.view.contentComponent !== TERMINAL_COMPONENT) continue
+        if (dropSsh && (panel.params as TerminalParams | undefined)?.sessionKind === 'ssh') {
+          panel.api.close()
+          continue
         }
+        await bindPanelSession(panel.api, id, lookup(panel.id)?.cwd)
       }
     },
-    []
+    [bindPanelSession]
+  )
+
+  const rebindRestoredPanels = useCallback(
+    async (api: DockviewApi): Promise<void> => {
+      await rebindSessionPanels(api)
+    },
+    [rebindSessionPanels]
+  )
+
+  /**
+   * Restore the previous layout and drop every pane back into the directory it
+   * was left in. Returns false when the snapshot cannot be applied (an
+   * incompatible dockview layout), so the caller falls back to a fresh terminal.
+   *
+   * The layout is rewritten before `fromJSON` sees it: a snapshot written by an
+   * older build has `panelId === sessionId` for every pane (panel ids used to be
+   * session ids), which is a state the restore can no longer represent — it
+   * would reinstate a panel whose id names a session that does not exist, and
+   * the pane stays dead. `breakIdCoincidence` gives those panels fresh ids up
+   * front, so the reapplied layout always satisfies panel id ≠ session id.
+   */
+  const restoreFromSnapshot = useCallback(
+    async (snapshot: SessionSnapshot): Promise<boolean> => {
+      const terminal = terminalApiRef.current
+      const ssh = sshApiRef.current
+      const terminalLayout = breakIdCoincidence(snapshot.layouts.terminal)
+      const sshLayout = breakIdCoincidence(snapshot.layouts.ssh)
+      try {
+        if (terminalLayout.layout) terminal?.fromJSON(terminalLayout.layout as never)
+        if (sshLayout.layout) ssh?.fromJSON(sshLayout.layout as never)
+      } catch {
+        return false
+      }
+      const renames = new Map([...terminalLayout.renames, ...sshLayout.renames])
+      await rebindSessionPanels(terminal, snapshot, true, renames)
+      await rebindSessionPanels(ssh, snapshot, true, renames)
+      lastLocalCwdRef.current = snapshot.lastLocalCwd ?? lastLocalCwdRef.current
+      useWorkspaceModeStore.getState().setMode(snapshot.mode)
+      recountAll()
+      recomputeLocalPanels()
+      return true
+    },
+    [rebindSessionPanels, recountAll, recomputeLocalPanels]
   )
 
   const handleApplyTemplate = useCallback(

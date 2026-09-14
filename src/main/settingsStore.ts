@@ -91,13 +91,16 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
       const closeAction =
         candidate.closeAction === 'tray' || candidate.closeAction === 'exit'
           ? candidate.closeAction
-          : 'ask'
+          : 'tray'
       system = {
         launchAtLogin: candidate.launchAtLogin === true,
         preventSleep: candidate.preventSleep === true,
         globalShowHide,
         closeAction,
-        autoCheckUpdate: candidate.autoCheckUpdate !== false
+        autoCheckUpdate: candidate.autoCheckUpdate !== false,
+        // Both default on/off as in DEFAULT_SETTINGS; absent means "not chosen".
+        restoreSession: candidate.restoreSession !== false,
+        shellIntegration: candidate.shellIntegration === true
       }
     }
   }

@@ -14,6 +14,8 @@ import type { TerminalSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/settings/store'
 import { writeBroadcast } from '@renderer/workspace/broadcastStore'
 import { compileRules, HighlightStream, type CompiledRule } from './highlightEngine'
+import { cdArgument, conemuCwd } from './cwdTracker'
+import { getSessionCwd, setSessionCwd } from '@renderer/workspace/sessionCwdStore'
 import './terminal.css'
 
 /** Platform-modifier-based chord (Cmd on macOS, Ctrl elsewhere), plus Shift. */
@@ -638,6 +640,29 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     term.loadAddon(searchAddon)
     searchRef.current = searchAddon
 
+    // cwd reports straight from the shell: OSC 7 is the portable form (bash,
+    // zsh, fish, iTerm2, WezTerm, kitty all speak it), OSC 9;9 is ConEmu's,
+    // used by the Windows shells. Normalization happens in the main process.
+    const reportCwd = (payload: string): void => {
+      void window.api
+        .reportCwd(payload)
+        .then((cwd: string | null) => {
+          if (cwd) setSessionCwd(sessionId, cwd)
+        })
+        .catch(() => undefined)
+    }
+    const oscDisposables = [
+      term.parser.registerOscHandler(7, (payload) => {
+        reportCwd(payload)
+        return true
+      }),
+      term.parser.registerOscHandler(9, (payload) => {
+        const value = conemuCwd(payload)
+        if (value) reportCwd(value)
+        return true
+      })
+    ]
+
     termRef.current = term
     // Rebind (e.g. template apply) must clear a death marker left by the
     // previous session's exit — otherwise the pane stays under the dead mask.
@@ -682,6 +707,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       scheduleCarryFlush()
     }
     const disposables: { dispose(): void }[] = [
+      ...oscDisposables,
       term.onData((data) => {
         if (!deadRef.current) writeBroadcast(sessionId, data)
         // M5: a completion acceptance rewrite armed `diffRewriteRef`; consume it
@@ -707,6 +733,17 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
         const step = stepLineBuffer(lineBufRef, data, consumeRewrite)
         if (typeof step.submit === 'string' && step.submit) {
           void window.api.recordCommand(step.submit).catch(() => undefined)
+          // Remember the directory for the next launch: a cd-style line is
+          // resolved in the main process (the only side with node's `path`).
+          const cdArg = cdArgument(step.submit)
+          if (cdArg !== null) {
+            void window.api
+              .resolveCwd(getSessionCwd(sessionId), cdArg)
+              .then((next: string | null) => {
+                if (next) setSessionCwd(sessionId, next)
+              })
+              .catch(() => undefined)
+          }
         }
         if (deadRef.current) {
           suggestionsRef.current = []

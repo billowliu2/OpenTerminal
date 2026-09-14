@@ -9,6 +9,9 @@ import type { HostKeyCheckResult } from './knownHosts'
 import { configureSysinfo, registerSysinfoClient, stopPolling } from './sysinfo'
 import { registerSftpClientProvider, closeSftp } from './sftp'
 import { attachZmodem, detachZmodem, feedZmodem, isZmodemActive } from './zmodem'
+import { pickAdapter } from './shellIntegration'
+import { loadSettings } from './settingsStore'
+import { statSync } from 'fs'
 
 // Re-export so the session-layer loopback bundle (tests/*-e2e.mjs) can drive the
 // M3 polling engine without importing src/main/sysinfo.ts separately.
@@ -124,6 +127,15 @@ export function configureSessionRuntime(deps: SessionRuntimeDeps): void {
   })
 }
 
+function existingDir(candidate: string | undefined): string | null {
+  if (!candidate || !candidate.trim()) return null
+  try {
+    return statSync(candidate).isDirectory() ? candidate : null
+  } catch {
+    return null
+  }
+}
+
 function defaultShell(): string {
   switch (process.platform) {
     case 'win32':
@@ -138,7 +150,10 @@ function defaultShell(): string {
 export function createPty(opts: PtyCreateOptions = {}): PtyCreateResult {
   const id = randomUUID()
   const shell = opts.shell ?? defaultShell()
-  const cwd = opts.cwd ?? homedir()
+  // A remembered directory can be gone by the next launch (renamed, unmounted,
+  // another machine's path after syncing settings) — fall back to home rather
+  // than failing the spawn.
+  const cwd = existingDir(opts.cwd) ?? homedir()
   // Advertise color capability + terminal identity so TUIs (e.g. kimi CLI)
   // use their full-color theme instead of the degraded white/amber fallback.
   const env = {
@@ -156,7 +171,19 @@ export function createPty(opts: PtyCreateOptions = {}): PtyCreateResult {
   delete env.NO_COLOR
   if (env.FORCE_COLOR === '0') delete env.FORCE_COLOR
 
-  const pty = spawn(shell, [], { name: 'xterm-256color', cols: 80, rows: 24, cwd, env })
+  // Shell integration (opt-in): let the shell announce its own cwd over OSC 7 so
+  // the remembered path is exact instead of inferred from typed `cd` commands.
+  // Every platform/shell difference lives in the adapter table, not here.
+  const args = [...(opts.shellArgs ?? [])]
+  if (opts.shellArgs === undefined && loadSettings().system.shellIntegration) {
+    const adapter = pickAdapter(shell)
+    if (adapter) {
+      args.push(...adapter.args(shell))
+      Object.assign(env, adapter.env?.() ?? {})
+    }
+  }
+
+  const pty = spawn(shell, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd, env })
   sessions.set(id, { kind: 'local', pty })
   replayBuffers.set(id, '')
 

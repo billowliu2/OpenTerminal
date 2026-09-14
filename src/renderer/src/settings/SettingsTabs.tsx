@@ -318,6 +318,26 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
+        label="启动时恢复上次会话"
+        desc="下次启动恢复分屏布局，并让每个终端回到它上次所在的目录；关闭则每次都以单个终端启动"
+        control={
+          <Switch
+            checked={settings.system.restoreSession !== false}
+            onChange={(checked) => void updateSystem({ restoreSession: checked })}
+          />
+        }
+      />
+      <SettingRow
+        label="Shell 集成"
+        desc="让 shell 主动上报工作目录（OSC 7），路径记忆更精确（含脚本内的 cd）；会包装你的命令提示符，遇到提示符主题异常时关掉即可"
+        control={
+          <Switch
+            checked={settings.system.shellIntegration === true}
+            onChange={(checked) => void updateSystem({ shellIntegration: checked })}
+          />
+        }
+      />
+      <SettingRow
         label="关闭按钮行为"
         desc="点击窗口关闭按钮时的动作；最小化到托盘后可在托盘图标右键菜单中退出"
         control={

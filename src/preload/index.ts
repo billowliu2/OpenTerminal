@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { Ipc } from '../shared/ipc'
 import type { AppSettings } from '../shared/settings'
 import type { AppApi } from '../shared/api'
-import type { LayoutMeta, PtyCreateOptions, PtyDataEvent, PtyExitEvent, ReleaseNote, UpdateState, ZmodemOfferEvent, ZmodemResponse, ZmodemDoneEvent } from '../shared/ipc'
+import type { LayoutMeta, PtyCreateOptions, PtyDataEvent, PtyExitEvent, ReleaseNote, SessionSnapshot, UpdateState, ZmodemOfferEvent, ZmodemResponse, ZmodemDoneEvent } from '../shared/ipc'
 import type {
   HostKeyAction,
   HostKeyPromptEvent,
@@ -127,7 +127,12 @@ const api: AppApi = {
     const listener = (_: unknown, s: UpdateState): void => cb(s)
     ipcRenderer.on(Ipc.UPDATE_STATE, listener)
     return () => ipcRenderer.removeListener(Ipc.UPDATE_STATE, listener)
-  }
+  },
+
+  getSessionState: () => ipcRenderer.invoke(Ipc.SESSION_STATE_GET),
+  saveSessionState: (snapshot: SessionSnapshot) => ipcRenderer.invoke(Ipc.SESSION_STATE_SET, snapshot),
+  resolveCwd: (current: string | undefined, arg: string) => ipcRenderer.invoke(Ipc.CWD_RESOLVE, current, arg),
+  reportCwd: (payload: string) => ipcRenderer.invoke(Ipc.CWD_REPORT, payload)
 }
 
 contextBridge.exposeInMainWorld('api', api)

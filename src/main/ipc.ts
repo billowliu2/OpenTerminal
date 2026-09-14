@@ -6,6 +6,8 @@ import type { HostKeyAction, SessionOpenOptions, SshConnection, SshConnectionInp
 import { getLayout, listLayouts, saveLayout, deleteLayout } from './layouts'
 import { startPolling, stopPolling } from './sysinfo'
 import { registerSettingsIpc } from './settingsStore'
+import { registerSessionStateIpc } from './sessionState'
+import { normalizeReportedCwd, resolveCwd } from './cwd'
 import { ConnectionsStore, defaultConnectionsPath } from './connectionsStore'
 import { KnownHostsStore, defaultKnownHostsPath } from './knownHosts'
 import { resolveHostKey } from './ssh'
@@ -171,4 +173,12 @@ export function registerIpc(): void {
   ipcMain.on(Ipc.LOG_OPEN_DIR, () => cmds.openLogsDir())
 
   registerSettingsIpc()
+  registerSessionStateIpc()
+
+  // Resolve a cd-style argument against the current cwd (platform-aware; only
+  // the main process has node's `path`).
+  ipcMain.handle(Ipc.CWD_RESOLVE, (_event, current: string | undefined, arg: string) =>
+    resolveCwd(current, arg)
+  )
+  ipcMain.handle(Ipc.CWD_REPORT, (_event, payload: string) => normalizeReportedCwd(payload))
 }

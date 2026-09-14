@@ -91,7 +91,11 @@ if (typeof window !== 'undefined' && !window.api) {
     updateDownload: async () => undefined,
     updateInstall: async () => undefined,
     updateChangelog: async () => [],
-    onUpdateState: () => noop
+    onUpdateState: () => noop,
+    getSessionState: async () => null,
+    saveSessionState: async () => null,
+    resolveCwd: async () => null,
+    reportCwd: async () => null
   }
   ;(window as unknown as { api: AppApi }).api = api
 }

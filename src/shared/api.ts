@@ -5,7 +5,8 @@ import type {
   PtyCreateResult,
   PtyDataEvent,
   PtyExitEvent,
-  SessionOpenResult
+  SessionOpenResult,
+  SessionSnapshot
 } from './ipc'
 import type { AppSettings } from './settings'
 import type { ReleaseNote, UpdateState } from './ipc'
@@ -113,4 +114,12 @@ export interface AppApi {
   updateInstall(): Promise<void>
   updateChangelog(): Promise<ReleaseNote[]>
   onUpdateState(cb: (s: UpdateState) => void): () => void
+
+  // ---- session snapshot (restore last layout + per-pane cwd) ----
+  getSessionState(): Promise<SessionSnapshot | null>
+  saveSessionState(snapshot: SessionSnapshot): Promise<SessionSnapshot | null>
+  /** resolve a cd-style argument against the current cwd (platform-aware) */
+  resolveCwd(current: string | undefined, arg: string): Promise<string | null>
+  /** normalize a shell-reported cwd payload (OSC 7 / OSC 9;9) */
+  reportCwd(payload: string): Promise<string | null>
 }

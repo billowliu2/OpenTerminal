@@ -98,13 +98,23 @@ export const Ipc = {
   UPDATE_INSTALL: 'update:install',
   UPDATE_CHANGELOG: 'update:changelog',
   /** main -> renderer broadcast: UpdateState */
-  UPDATE_STATE: 'update:state'
+  UPDATE_STATE: 'update:state',
+
+  // ---- session snapshot (last layout + per-pane cwd) ----
+  SESSION_STATE_GET: 'session:stateGet',
+  SESSION_STATE_SET: 'session:stateSet',
+  /** resolve a cd-style argument against the current cwd, platform-aware */
+  CWD_RESOLVE: 'session:cwdResolve',
+  /** normalize a cwd reported by the shell (OSC 7 / OSC 9;9) */
+  CWD_REPORT: 'session:cwdReport'
 } as const
 
 export interface PtyCreateOptions {
   cwd?: string
   /** executable; omit for platform default shell */
   shell?: string
+  /** extra argv for the shell (shell-integration adapters use this) */
+  shellArgs?: string[]
   env?: Record<string, string>
 }
 
@@ -112,6 +122,33 @@ export interface PtyCreateResult {
   id: string
   shell: string
   cwd: string
+}
+
+/** One dockview panel as remembered between runs. */
+export interface SessionPanelState {
+  panelId: string
+  title: string
+  kind: 'local' | 'ssh'
+  /** last known working directory (local panels; also recorded for ssh panes
+   *  so a reconnected pane starts somewhere sensible) */
+  cwd?: string
+  /** ssh only: bookmark to offer a reconnect for */
+  connectionId?: string
+  hostLabel?: string
+}
+
+/**
+ * The automatic "pick up where you left off" snapshot: the dockview layouts
+ * plus a per-panel record. Distinct from the user-managed layout templates.
+ */
+export interface SessionSnapshot {
+  version: 1
+  savedAt: number
+  mode: 'terminal' | 'ssh'
+  layouts: { terminal?: unknown; ssh?: unknown }
+  panels: SessionPanelState[]
+  /** newest cwd among local panes — seeds brand-new terminals */
+  lastLocalCwd?: string
 }
 
 export interface PtyDataEvent {
