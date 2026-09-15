@@ -14,6 +14,75 @@
   border-bottom: 1px solid var(--chrome-border);
 }
 
+/* ---------- left-rail navigation (tabPosition="left") ----------
+   The tab list doubles as the dialog's sidebar: fixed narrow column, roomy
+   click targets, active item tinted with the tab accent. The content column
+   scrolls on its own so long panes (字体/高亮) never grow the dialog. */
+.settings-body .ant-tabs-left > .ant-tabs-nav {
+  margin: 0;
+  border-bottom: none;
+  border-right: 1px solid var(--chrome-border);
+  padding-right: 6px;
+  min-width: 148px;
+}
+
+.settings-body .ant-tabs-left > .ant-tabs-nav .ant-tabs-tab {
+  margin: 2px 0;
+  padding: 8px 14px;
+  border-radius: 6px;
+  justify-content: flex-start;
+}
+
+.settings-body .ant-tabs-left > .ant-tabs-nav .ant-tabs-tab:hover {
+  background: var(--chrome-hover);
+}
+
+.settings-body .ant-tabs-left > .ant-tabs-nav .ant-tabs-tab-active {
+  background: color-mix(in srgb, var(--tab-accent, #3fb950) 16%, transparent);
+}
+
+.settings-body .ant-tabs-left > .ant-tabs-nav .ant-tabs-ink-bar {
+  background: var(--tab-accent, #3fb950);
+}
+
+.settings-body {
+  display: flex;
+  overflow: hidden;
+}
+
+.settings-body > .ant-tabs {
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-body .ant-tabs-content-holder {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Corner grip for resizing the dialog (wired in SettingsDialog). */
+.ant-modal .ant-modal-body {
+  position: relative;
+}
+
+.settings-resize {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  border-radius: 3px;
+  background:
+    linear-gradient(135deg, transparent 52%, var(--chrome-border) 52%, var(--chrome-border) 58%, transparent 58%),
+    linear-gradient(135deg, transparent 64%, var(--chrome-border) 64%, var(--chrome-border) 70%, transparent 70%),
+    linear-gradient(135deg, transparent 76%, var(--chrome-border) 76%, var(--chrome-border) 82%, transparent 82%);
+}
+
+.settings-resize:hover {
+  filter: brightness(1.6);
+}
+
 .settings-footer {
   display: flex;
   align-items: center;

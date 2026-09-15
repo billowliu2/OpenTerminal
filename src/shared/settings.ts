@@ -97,7 +97,7 @@ export const DEFAULT_HIGHLIGHT_RULES: HighlightRule[] = [
   RULE('ipv4', '\\b(?:\\d{1,3}\\.){3}\\d{1,3}(?::\\d{1,5})?\\b', 15, '#58a6ff', '网络与 IP 地址'),
   RULE('datetime', '\\b\\d{4}[-/]\\d{1,2}[-/]\\d{1,2}(?:[ T]\\d{1,2}:\\d{2}(?::\\d{2})?)?\\b|\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b', 20, '#bc8cff', '时间与日期'),
   RULE('numbers', '\\b\\d+(?:\\.\\d+)?(?:%)?\\b', 25, '#f2cc60', '数字与计数'),
-  RULE('url', 'https?://[^\\s]+', 30, '#58a6ff', '网址链接')
+  RULE('url', 'https?://[^\\s]+|ftp://[^\\s]+|www\\.[A-Za-z0-9-]+\\.[A-Za-z]{2,}(?::\\d+)?(?:/[^\\s]*)?', 30, '#58a6ff', '网址链接')
 ]
 
 export const DEFAULT_SETTINGS: AppSettings = {

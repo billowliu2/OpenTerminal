@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ForwardRefExoticComponent, Ref } from 'react'
 import { Terminal } from '@xterm/xterm'
-import type { ITheme } from '@xterm/xterm'
+import type { ILink, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
@@ -14,6 +14,7 @@ import type { TerminalSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/settings/store'
 import { writeBroadcast } from '@renderer/workspace/broadcastStore'
 import { compileRules, HighlightStream, type CompiledRule } from './highlightEngine'
+import { findUrls } from './urlLinks'
 import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
 import { getSessionCwd, setSessionCwd } from '@renderer/workspace/sessionCwdStore'
@@ -767,8 +768,55 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       if (out) term.write(out)
       scheduleCarryFlush()
     }
+    // Clickable URLs. Ctrl/Cmd+Click opens the target in the system browser;
+    // the pointer cursor + underline advertise it on hover. A plain click stays
+    // with the terminal (cursor placement / selection), so a link can never
+    // open by accident while selecting text.
+    const linkProvider = term.registerLinkProvider({
+      provideLinks: (bufferLineNumber, callback) => {
+        const buffer = term.buffer.active
+        // provideLinks speaks 1-based line numbers, IBuffer.getLine 0-based.
+        let first = bufferLineNumber - 1
+        if (first < 0) {
+          callback(undefined)
+          return
+        }
+        while (first > 0 && buffer.getLine(first)?.isWrapped) first--
+        const rows: { index: number; text: string }[] = []
+        for (let row = first; row < buffer.length; row++) {
+          const line = buffer.getLine(row)
+          if (!line || (row > first && !line.isWrapped)) break
+          rows.push({ index: row, text: line.translateToString(false) })
+        }
+        const text = rows.map((r) => r.text).join('')
+        const cols = term.cols > 0 ? term.cols : 1
+        const base = rows[0]?.index ?? first
+        const links: ILink[] = findUrls(text).map((found) => {
+          const startRow = Math.floor(found.start / cols)
+          const endRow = Math.floor((found.end - 1) / cols)
+          return {
+            range: {
+              start: { x: (found.start % cols) + 1, y: base + startRow + 1 },
+              end: { x: ((found.end - 1) % cols) + 1, y: base + endRow + 1 }
+            },
+            text: found.url,
+            decorations: { pointerCursor: true, underline: true },
+            activate: (event: MouseEvent): void => {
+              const mod = navigator.platform.toLowerCase().includes('mac')
+                ? event.metaKey
+                : event.ctrlKey
+              if (!mod) return
+              // The main process routes window.open through shell.openExternal.
+              window.open(found.url, '_blank', 'noopener')
+            }
+          }
+        })
+        callback(links.length > 0 ? links : undefined)
+      }
+    })
     const disposables: { dispose(): void }[] = [
       ...oscDisposables,
+      linkProvider,
       term.onData((data) => {
         if (!deadRef.current) writeBroadcast(sessionId, data)
         // M5: a completion acceptance rewrite armed `diffRewriteRef`; consume it
