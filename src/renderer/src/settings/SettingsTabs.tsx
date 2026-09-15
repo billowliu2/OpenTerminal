@@ -270,7 +270,7 @@ export function RenderSettingsTab(): React.JSX.Element {
       />
       <SettingRow
         label="粘贴风险确认"
-        desc="粘贴前弹出风险确认提示"
+        desc="多行文本（或超长单行）粘贴前弹出确认；单行直接粘贴"
         control={
           <Switch
             checked={settings.terminal.pasteRiskConfirm}

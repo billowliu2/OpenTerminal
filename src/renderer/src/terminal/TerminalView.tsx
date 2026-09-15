@@ -32,10 +32,18 @@ function toFontWeight(n: number): 'normal' | 'bold' | number {
   return n
 }
 
-/** Paste-risk heuristic: multi-line or unreasonably long text. */
-function isRiskyPaste(text: string): boolean {
-  if (text.includes('\n') || text.includes('\r')) return true
-  return text.length > 100
+/**
+ * Paste-risk heuristic, split by shape rather than by raw length:
+ *   - two or more lines always confirm — a stray newline executes a command
+ *     the user never reviewed;
+ *   - a single line pastes straight through, unless it is unusually long
+ *     (those are pasted scripts rather than something typed by hand).
+ */
+const SINGLE_LINE_CONFIRM_LENGTH = 1000
+function needsPasteConfirm(text: string): boolean {
+  const normalized = text.replace(/\r\n?/g, '\n').replace(/\n$/, '')
+  if (normalized.includes('\n')) return true
+  return normalized.length > SINGLE_LINE_CONFIRM_LENGTH
 }
 
 /**
@@ -511,19 +519,17 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
 
   const beginPaste = useCallback(
     (text: string) => {
-      if (
-        !deadRef.current &&
-        settings.terminal.pasteRiskConfirm &&
-        !pasteConfirmedForSession &&
-        isRiskyPaste(text)
-      ) {
+      // Read the setting at call time: this runs from a long-lived keydown
+      // listener, so a captured value would go stale after a settings change.
+      const confirmOn = useSettingsStore.getState().settings.terminal.pasteRiskConfirm
+      if (!deadRef.current && confirmOn && !pasteConfirmedForSession && needsPasteConfirm(text)) {
         nativePasteRef.current = text
         setPaste({ noPrompt: false, disableDetection: false })
         return
       }
       confirmPaste(text)
     },
-    [settings.terminal.pasteRiskConfirm, confirmPaste]
+    [confirmPaste]
   )
 
   /** Confirm the risky-paste dialog: apply its choices, then paste. */
@@ -873,9 +879,36 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       observerRef.current = observer
     }
 
+    // Plain Ctrl/Cmd+V: not a chord xterm handles, so it used to reach the pty
+    // as a literal ^V (0x16) — nothing pasted. Handled here, on the terminal
+    // host in the capture phase, with preventDefault so the pty never sees it
+    // and Chromium's own paste cannot double up. Text follows the same
+    // single-line / multi-line rule as the Ctrl+Shift+V path.
+    const host = hostRef.current
+    const onPasteKey = (e: KeyboardEvent): void => {
+      if (e.type !== 'keydown' || e.altKey) return
+      const mod = navigator.platform.toLowerCase().includes('mac') ? e.metaKey : e.ctrlKey
+      if (!mod || e.shiftKey || e.key.toLowerCase() !== 'v') return
+      const target = e.target as HTMLElement | null
+      const isXtermHelper =
+        target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea')
+      if (
+        target &&
+        !isXtermHelper &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return // ordinary inputs keep the browser's native paste
+      }
+      e.preventDefault()
+      e.stopPropagation()
+      void pasteFromClipboard()
+    }
+    host?.addEventListener('keydown', onPasteKey, true)
+
     return () => {
       if (carryTimer !== undefined) window.clearTimeout(carryTimer)
       if (ptyTimerRef.current) window.clearTimeout(ptyTimerRef.current)
+      host?.removeEventListener('keydown', onPasteKey, true)
       for (const unsubscribe of unsubscribes) unsubscribe()
       for (const disposable of disposables) disposable.dispose()
       observer?.disconnect()
