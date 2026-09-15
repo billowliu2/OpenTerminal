@@ -25,12 +25,12 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 1. `package.json` 版本号 +1，写 `RELEASE_NOTES.md`（仓库根，已 gitignore）
 2. `npm run dist` 构建
-3. `node scripts/release.cjs <版本号>`，例如 `node scripts/release.cjs 1.0.2`
-   - 依次完成：Gitea release（含 msi/exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`，更新 latest.yml/blockmap/exe/release-notes.md）→ GitHub release
-   - 可用 `--skip-github` / `--skip-gitea` 跳过某步
-   - 访问 GitHub API 不通时，设 `HTTPS_PROXY=http://127.0.0.1:7897` 再走代理
+3. `node scripts/release.cjs <版本号> --skip-github`，例如 `node scripts/release.cjs 1.0.11 --skip-github`
+   - **只发国内**（2026-09-15 起的产品决定）：Gitea release（含 msi/exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`，更新 latest.yml/blockmap/exe/release-notes.md）
+   - 国内通道全程直连，**不需要设代理**；代理只在显式补发 GitHub 时才用（`HTTPS_PROXY=http://127.0.0.1:7897`，脚本只把它用于 GitHub 请求）
+   - GitHub 那一步的状态：`README` 与更新机制里仍保留 GitHub 作为更新回退源，但**release 资产不再随版本发布同步**；若某天需要补，跑一次 `node scripts/release.cjs <版本号> --skip-gitea` 即可
 4. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
-5. `git tag v<版本号>` 并推送两个远程
+5. `git tag v<版本号>` 并推送两个远程（代码/tag 的镜像保持同步，仅 release 资产不发 GitHub）
 
 ## 更新机制
 
