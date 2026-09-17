@@ -1,5 +1,8 @@
 /* ============================================================
    Highlight settings tab + rule editor (settings/highlight.css)
+   Text/border tints derive from --chrome-fg via color-mix so the
+   panel follows the active terminal theme (white tints on dark
+   themes, black tints on light themes).
    ============================================================ */
 
 .hl-tab {
@@ -21,15 +24,15 @@
 }
 
 .hl-table .ant-table-thead > tr > th {
-  background: rgba(255, 255, 255, 0.04);
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 4%, transparent);
   border-bottom: 1px solid var(--chrome-border);
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 85%, transparent);
   font-size: 12px;
 }
 
 .hl-table .ant-table-tbody > tr > td {
   background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 6%, transparent);
 }
 
 .hl-table .ant-table-tbody > tr:hover > td {
@@ -48,7 +51,7 @@
 .hl-pattern-text {
   font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.88);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 88%, transparent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -71,17 +74,17 @@
 .hl-cell-priority {
   font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.88);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 88%, transparent);
 }
 
 .hl-cell-note {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 70%, transparent);
 }
 
 .hl-cell-empty {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 30%, transparent);
 }
 
 .hl-preview-text {
@@ -114,7 +117,7 @@
 
 .hl-editor-label {
   flex: 0 0 56px;
-  color: rgba(255, 255, 255, 0.88);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 88%, transparent);
   padding-top: 5px;
 }
 
@@ -129,7 +132,7 @@
 .hl-editor-hint {
   align-self: center;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 45%, transparent);
 }
 
 .hl-editor-error {
@@ -149,7 +152,7 @@
 
 .hl-editor-sub-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 60%, transparent);
 }
 
 .hl-editor-inline {
@@ -170,7 +173,7 @@
   width: 40px;
   height: 26px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 20%, transparent);
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
@@ -197,7 +200,7 @@
 
 .hl-palette-tag {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 50%, transparent);
   margin-right: 2px;
 }
 
@@ -205,7 +208,7 @@
   width: 16px;
   height: 16px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 30%, transparent);
   cursor: pointer;
   display: inline-block;
   transition: transform 0.12s ease, box-shadow 0.12s ease;

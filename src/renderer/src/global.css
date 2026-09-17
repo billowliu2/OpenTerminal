@@ -5,6 +5,14 @@
   --chrome-border: #2d2d2d;
   --chrome-accent: #3b8eea;
   --chrome-hover: #2a2a2a;
+  --chrome-bg-deep: #101418;
+  /* Tab-bar overlays; overwritten per theme by applyChromeTheme(). */
+  --chrome-tab-bg: rgba(255, 255, 255, 0.04);
+  --chrome-tab-bg-hover: rgba(255, 255, 255, 0.07);
+  --chrome-tab-ring: rgba(255, 255, 255, 0.1);
+  --chrome-tab-ring-hover: rgba(255, 255, 255, 0.2);
+  --chrome-tab-fg: #98a2ab;
+  --chrome-tab-fg-hover: #d0d0d0;
 }
 
 html,

@@ -1,5 +1,8 @@
 /* ============================================================
    Settings dialog + theme editor styles (settings/**, theme/**)
+   Text/border tints derive from --chrome-fg via color-mix so the
+   dialog follows the active terminal theme (white tints on dark
+   themes, black tints on light themes).
    ============================================================ */
 
 /* ---------- settings dialog scaffolding ---------- */
@@ -106,7 +109,7 @@
 }
 
 .settings-row:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 3%, transparent);
 }
 
 .settings-row + .settings-row {
@@ -115,7 +118,7 @@
 
 .settings-row-label {
   flex: 0 0 46%;
-  color: rgba(255, 255, 255, 0.88);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 88%, transparent);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -125,7 +128,7 @@
   margin-top: 2px;
   font-size: 12px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.45);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 45%, transparent);
 }
 
 .settings-row-control {
@@ -156,7 +159,7 @@
 .settings-block-hint {
   font-weight: 400;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 45%, transparent);
 }
 
 .settings-radio-group {
@@ -192,7 +195,7 @@
 .settings-preview-title {
   display: block;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 50%, transparent);
   margin-bottom: 8px;
 }
 
@@ -247,14 +250,14 @@
   border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
-  border: 2px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.04);
+  border: 2px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 12%, transparent);
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 4%, transparent);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .theme-card:hover {
   border-color: var(--chrome-accent);
-  background: rgba(255, 255, 255, 0.07);
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 7%, transparent);
 }
 
 .theme-card-selected {
@@ -280,7 +283,7 @@
 .theme-card-name {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.88);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 88%, transparent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -293,7 +296,7 @@
   padding: 2px 5px;
   border-radius: 4px;
   background: rgba(59, 142, 234, 0.2);
-  color: #6fb3ff;
+  color: color-mix(in srgb, var(--chrome-accent, #3b8eea) 55%, var(--chrome-fg, #cccccc));
 }
 
 .theme-card-dots {
@@ -306,7 +309,7 @@
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 25%, transparent);
   display: inline-block;
 }
 
@@ -336,12 +339,12 @@
 .theme-card-new-icon {
   font-size: 26px;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.55);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 55%, transparent);
 }
 
 .theme-card-new-text {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 60%, transparent);
 }
 
 /* ---------- theme editor ---------- */
@@ -359,7 +362,7 @@
 
 .theme-editor-label {
   flex: 0 0 56px;
-  color: rgba(255, 255, 255, 0.88);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 88%, transparent);
 }
 
 .theme-editor-colors {
@@ -379,7 +382,7 @@
 
 .theme-editor-color-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 70%, transparent);
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -391,7 +394,7 @@
   width: 40px;
   height: 26px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 20%, transparent);
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
@@ -408,7 +411,7 @@
 
 .theme-editor-divider {
   grid-column: 1 / -1;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 10%, transparent);
   margin: 2px 0;
 }
 
@@ -419,7 +422,7 @@
 .theme-editor-preview-label {
   display: block;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 50%, transparent);
   margin-bottom: 6px;
 }
 
@@ -495,7 +498,7 @@
 }
 
 .about-changelog {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 8%, transparent);
   padding-top: 12px;
 }
 

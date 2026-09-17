@@ -198,5 +198,23 @@ ok(logs.find((x) => x.file === start.file).endedAt !== undefined, 'old log final
 store.openLogsDir()
 ok(openedPath === join(userData, 'logs'), 'openLogsDir resolves to the logs dir')
 
+// ---- 6. Burst ordering + stop tail (per-file buffer + single drain) -------------
+const sid2 = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+const startB = store.logStart(sid2)
+// Burst 1: 300 writes in one tick must coalesce into ordered appends.
+for (let i = 0; i < 300; i++) store.logWrite(sid2, `a${String(i).padStart(3, '0')}\n`)
+await wait(10)
+// Burst 2 after a gap: may land while burst 1's drain is still in flight.
+for (let i = 0; i < 100; i++) store.logWrite(sid2, `b${String(i).padStart(3, '0')}\n`)
+// Trailing partial line must ride the same buffer via logStop.
+store.logWrite(sid2, 'partial-tail')
+store.logStop(sid2)
+await wait(200)
+const expected =
+  Array.from({ length: 300 }, (_, i) => `a${String(i).padStart(3, '0')}\n`).join('') +
+  Array.from({ length: 100 }, (_, i) => `b${String(i).padStart(3, '0')}\n`).join('') +
+  'partial-tail'
+ok(readFileSync(startB.file, 'utf8') === expected, 'burst writes + stop tail land in order')
+
 console.log('\n[commands] ALL CHECKS PASSED')
 process.exit(0)

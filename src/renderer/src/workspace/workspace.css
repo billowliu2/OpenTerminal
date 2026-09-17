@@ -35,14 +35,14 @@
   border: none;
   border-radius: 5px;
   background: transparent;
-  color: #9a9a9a;
+  color: var(--chrome-tab-fg, #9a9a9a);
   font-size: 15px;
   cursor: pointer;
 }
 
 .workspace-rail-btn:hover {
   background: var(--chrome-hover);
-  color: #ffffff;
+  color: var(--chrome-fg, #ffffff);
 }
 
 .workspace-rail-divider {
@@ -54,7 +54,7 @@
 
 /* ---- M6.1 rail active state (mode entries) ---- */
 .workspace-rail-btn.is-active {
-  color: var(--dv-active-tab-foreground-color, #e8e8e8);
+  color: var(--tab-accent-fg, #e8e8e8);
   box-shadow: inset 2px 0 0 var(--tab-accent, #3fb950);
   background: color-mix(in srgb, var(--tab-accent, #3fb950) 10%, transparent);
 }
@@ -179,6 +179,18 @@
   /* Pane split dividers: soft slate band at rest, accent blue on hover/drag. */
   --dv-sash-color: rgba(148, 163, 184, 0.28);
   --dv-active-sash-color: rgba(59, 142, 234, 0.75);
+  /* Tab surfaces. Dockview paints tabs through group-scoped rules that
+     outspecify our .dv-tab rules, so theme the tabs via the vars those rules
+     consume — otherwise the abyss defaults (dark navy) leak onto light themes. */
+  --dv-activegroup-visiblepanel-tab-background-color: color-mix(
+    in srgb, var(--tab-accent, #3fb950) 10%, transparent);
+  --dv-activegroup-visiblepanel-tab-color: var(--tab-accent-fg, #3fd06a);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--chrome-tab-bg, rgba(255, 255, 255, 0.04));
+  --dv-activegroup-hiddenpanel-tab-color: var(--chrome-tab-fg, #98a2ab);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--chrome-tab-bg, rgba(255, 255, 255, 0.04));
+  --dv-inactivegroup-visiblepanel-tab-color: var(--chrome-tab-fg, #98a2ab);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--chrome-tab-bg, rgba(255, 255, 255, 0.04));
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--chrome-tab-fg, #98a2ab);
 }
 
 /* ---- tab polish: low rectangular tabs, quiet inactive, green active ---- */
@@ -191,16 +203,18 @@
   border-radius: 3px;
   padding: 0 8px;
   margin-right: 4px;
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
-  color: #98a2ab;
+  background: var(--chrome-tab-bg, rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 0 0 1px var(--chrome-tab-ring, rgba(255, 255, 255, 0.1));
+  color: var(--chrome-tab-fg, #98a2ab);
   transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.workspace-dockview .dv-tab.dv-inactive-tab:hover {
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.20);
-  color: #d0d0d0;
+/* Group-scoped chain matches dockview's own specificity so the hover tint
+   wins over its group-level background rules. */
+.workspace-dockview .dv-groupview .dv-tabs-container .dv-tab.dv-inactive-tab:hover {
+  background: var(--chrome-tab-bg-hover, rgba(255, 255, 255, 0.07));
+  box-shadow: inset 0 0 0 1px var(--chrome-tab-ring-hover, rgba(255, 255, 255, 0.2));
+  color: var(--chrome-tab-fg-hover, #d0d0d0);
 }
 
 /* XTerminal-style active tab: green outline + tinted bg + green title. */
@@ -229,7 +243,7 @@
   width: 15px;
   height: 15px;
   border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px var(--chrome-tab-ring-hover, rgba(255, 255, 255, 0.16));
   opacity: 0.8;
   transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
@@ -432,9 +446,9 @@ body.ssh-resizing .ssh-bottom-divider {
   padding: 0;
   border: none;
   border-radius: 6px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px var(--chrome-tab-ring, rgba(255, 255, 255, 0.16));
   background: transparent;
-  color: #98a2ab;
+  color: var(--chrome-tab-fg, #98a2ab);
   font-size: 10px;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
@@ -464,18 +478,18 @@ body.ssh-resizing .ssh-bottom-divider {
   padding: 0;
   border: none;
   border-radius: 6px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px var(--chrome-tab-ring, rgba(255, 255, 255, 0.16));
   background: transparent;
-  color: #98a2ab;
+  color: var(--chrome-tab-fg, #98a2ab);
   font-size: 10px;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .workspace-tabbar-btn2:hover {
-  background: rgba(255, 255, 255, 0.07);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
-  color: #ffffff;
+  background: var(--chrome-tab-bg-hover, rgba(255, 255, 255, 0.07));
+  box-shadow: inset 0 0 0 1px var(--chrome-tab-ring-hover, rgba(255, 255, 255, 0.24));
+  color: var(--chrome-tab-fg-hover, #ffffff);
 }
 
 .workspace-tabbar-btn2.is-active {

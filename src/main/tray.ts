@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, nativeImage, Tray } from 'electron'
 import type { SystemSettings } from '@shared/settings'
-import { loadSettings, saveSettings } from './settingsStore'
+import { loadSettings, mutateSettings } from './settingsStore'
 import trayIconPath from './assets/tray.png?asset'
 
 export type CloseAction = NonNullable<SystemSettings['closeAction']>
@@ -15,9 +15,12 @@ export function markQuitting(): void {
 }
 
 function persistCloseAction(action: CloseAction): void {
-  const next = loadSettings()
-  next.system.closeAction = action
-  saveSettings(next)
+  // Serialized read-modify-write on the latest state: must not stomp (or be
+  // stomped by) a concurrent full-snapshot save from the settings UI.
+  void mutateSettings((current) => {
+    current.system.closeAction = action
+    return current
+  })
 }
 
 function showMainWindow(showOrCreate: () => void): void {

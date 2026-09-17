@@ -73,11 +73,15 @@ export class CommandsStore {
   /** Logs currently accumulating output, keyed by sessionId. */
   private readonly activeBySession = new Map<string, SessionLogMeta>()
   /**
-   * Pending append per log file. appendFile is async, so two rapid logWrite
-   * calls would otherwise race and land out of order. Chaining each new append
-   * onto the previous one keeps the file append-only in call order.
+   * Buffered plain text per log file, flushed by a single drain loop per file.
+   * Writes land in the buffer synchronously (so order is preserved) and the
+   * drain merges everything that accumulated during the previous appendFile
+   * round trip into one append call — burst output costs one syscall per IO
+   * tick instead of one Promise chain link per logWrite.
    */
-  private readonly pendingAppends = new Map<string, Promise<void>>()
+  private readonly logBuffers = new Map<string, string>()
+  /** In-flight drain loop per log file; absent when the file is settled. */
+  private readonly logDrains = new Map<string, Promise<void>>()
   /** Plain-text transformer per actively-logged session (see logSanitizer). */
   private readonly sanitizers = new Map<string, LogSanitizer>()
 
@@ -287,19 +291,35 @@ export class CommandsStore {
     // Raw PTY output is escape-sequence soup in a text file; log plain text.
     const clean = this.sanitizers.get(sessionId)?.push(data) ?? ''
     if (!clean) return
-    // Chain onto any in-flight append so rapid writes land in call order.
-    const prev = this.pendingAppends.get(meta.file) ?? Promise.resolve()
-    const next = prev.then(() => appendFile(meta.file, clean, 'utf8')).then(
-      () => undefined,
-      () => {
-        // file may have been removed after stop -> ignore
+    this.logBuffers.set(meta.file, (this.logBuffers.get(meta.file) ?? '') + clean)
+    this.drainLog(meta.file)
+  }
+
+  /**
+   * Flush a log file's buffer, keeping at most one drain (and therefore one
+   * in-flight appendFile) per file. New writes that arrive mid-flush re-enter
+   * the buffer and are picked up by the next loop iteration, merged.
+   */
+  private drainLog(file: string): Promise<void> {
+    const existing = this.logDrains.get(file)
+    if (existing) return existing
+    const run = (async (): Promise<void> => {
+      for (;;) {
+        const chunk = this.logBuffers.get(file)
+        if (chunk === undefined) break
+        this.logBuffers.delete(file)
+        try {
+          await appendFile(file, chunk, 'utf8')
+        } catch {
+          // file may have been removed after stop -> ignore
+        }
       }
-    )
-    this.pendingAppends.set(meta.file, next)
-    // Avoid unbounded growth of the chain map once the file settles.
-    next.finally(() => {
-      if (this.pendingAppends.get(meta.file) === next) this.pendingAppends.delete(meta.file)
+    })()
+    run.finally(() => {
+      if (this.logDrains.get(file) === run) this.logDrains.delete(file)
     })
+    this.logDrains.set(file, run)
+    return run
   }
 
   /** Stop logging a session, stamping endedAt into the registry + index. */
@@ -310,12 +330,8 @@ export class CommandsStore {
     this.sanitizers.delete(sessionId)
     if (tail) {
       // Best effort: the trailing partial line belongs in the file too.
-      const prev = this.pendingAppends.get(meta.file) ?? Promise.resolve()
-      const next = prev.then(() => appendFile(meta.file, tail, 'utf8')).then(
-        () => undefined,
-        () => undefined
-      )
-      this.pendingAppends.set(meta.file, next)
+      this.logBuffers.set(meta.file, (this.logBuffers.get(meta.file) ?? '') + tail)
+      this.drainLog(meta.file)
     }
     this.finishLog(meta)
   }

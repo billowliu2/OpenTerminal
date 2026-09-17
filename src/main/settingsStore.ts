@@ -159,25 +159,40 @@ export function loadSettings(): AppSettings {
   }
 }
 
-export function saveSettings(next: AppSettings): AppSettings {
-  const merged = deepMerge({
-    terminal: next.terminal,
-    customThemes: next.customThemes,
-    highlightRules: next.highlightRules,
-    system: next.system ?? DEFAULT_SYSTEM
-  }).settings
-  applySystemSettings(merged.system)
-  applyWindowChrome(merged)
-  const pretty = JSON.stringify(merged, null, 2)
+let settingsQueue: Promise<unknown> = Promise.resolve()
 
-  mkdirSync(app.getPath('userData'), { recursive: true })
-  const path = settingsPath()
-  const tmp = `${path}.tmp`
-  writeFileSync(tmp, pretty, 'utf8')
-  renameSync(tmp, path)
+/**
+ * Serialize a settings mutation against every other writer. Each queued step
+ * re-reads the file so the mutation applies on top of the latest state — a
+ * full-snapshot save can no longer silently revert a change written between
+ * its read and its write (e.g. tray close-action vs settings UI save).
+ */
+export function mutateSettings(mutate: (settings: AppSettings) => AppSettings): Promise<AppSettings> {
+  const run = settingsQueue.then((): AppSettings => {
+    const merged = deepMerge(mutate(loadSettings())).settings
+    applySystemSettings(merged.system)
+    applyWindowChrome(merged)
 
-  broadcast(Ipc.SETTINGS_CHANGED, merged)
-  return merged
+    mkdirSync(app.getPath('userData'), { recursive: true })
+    const path = settingsPath()
+    const tmp = `${path}.tmp`
+    writeFileSync(tmp, JSON.stringify(merged, null, 2), 'utf8')
+    renameSync(tmp, path)
+
+    broadcast(Ipc.SETTINGS_CHANGED, merged)
+    return merged
+  })
+  // Keep the queue alive when a mutation throws; the caller still sees it.
+  settingsQueue = run.then(
+    () => undefined,
+    () => undefined
+  )
+  return run
+}
+
+/** Replace the persisted settings with `next` (serialized). */
+export function saveSettings(next: AppSettings): Promise<AppSettings> {
+  return mutateSettings((current) => ({ ...current, ...next }))
 }
 
 export function registerSettingsIpc(): void {
