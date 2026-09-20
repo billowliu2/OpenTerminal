@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import zhTW from 'antd/locale/zh_TW'
@@ -9,7 +9,7 @@ import { SettingsDialog } from '@renderer/settings/SettingsDialog'
 import { TransferPanel } from '@renderer/sftp/TransferPanel'
 import { useSettingsStore } from '@renderer/settings/store'
 import { getThemeById } from '@shared/theme'
-import { DEFAULT_LANGUAGE, getLanguage, onLanguageChange, setLanguage, type Language } from '@shared/i18n'
+import { DEFAULT_LANGUAGE, syncLanguage, type Language } from '@shared/i18n'
 import { applyChromeTheme, applyTabAccent } from '@renderer/theme/chrome'
 import appIconUrl from '../../../build/icon.png'
 
@@ -50,10 +50,11 @@ export default function App(): React.JSX.Element {
   }, [hydrate])
 
   // Interface language: t() reads the module-level language at render time, so
-  // sync it before the tree renders — an effect would paint one frame late. The
-  // subscription re-renders every t() caller when the language changes elsewhere.
-  if (getLanguage() !== storedLanguage) setLanguage(storedLanguage)
-  const language = useSyncExternalStore(onLanguageChange, getLanguage)
+  // sync it before the tree renders — an effect would paint one frame late.
+  // Silent on purpose: notifying subscribers during a render is what React
+  // warns about; every language change re-renders App via the settings store.
+  syncLanguage(storedLanguage)
+  const language = storedLanguage
   useEffect(() => {
     document.documentElement.lang = language
   }, [language])

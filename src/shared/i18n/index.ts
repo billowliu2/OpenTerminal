@@ -70,6 +70,15 @@ export function setLanguage(lang: Language): void {
   for (const listener of listeners) listener(lang)
 }
 
+/** Render-time sync for the React tree: update the module language WITHOUT
+ *  notifying subscribers — firing listeners during another component's render
+ *  makes React warn ("cannot update a component while rendering a different
+ *  component"). Renderer components re-render via the settings store instead;
+ *  the notifying setLanguage stays for the main process (tray rebuild). */
+export function syncLanguage(lang: Language): void {
+  current = lang
+}
+
 export function getLanguage(): Language {
   return current
 }
