@@ -83,6 +83,16 @@ export default function ZmodemOffers(): null | React.JSX.Element {
 
   const offDone = useCallback(
     (evt: { id: string; ok: boolean; message?: string }) => {
+      // The offer can be finished by main without an answer — its 120s watchdog
+      // aborts it and reports ok:false. Drop the entry either way, otherwise a
+      // dead offer keeps an unclosable modal (and its busy flag) alive.
+      busyRef.current.delete(evt.id)
+      setOffers((prev) => {
+        if (!prev.has(evt.id)) return prev
+        const next = new Map(prev)
+        next.delete(evt.id)
+        return next
+      })
       if (evt.ok) message.success(t('ssh.zmodem.done'))
       else
         message.error(

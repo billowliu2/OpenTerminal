@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CloseOutlined } from '@ant-design/icons'
-import type { TransferKind, TransferProgressEvent } from '@shared/sftp'
+import type { TransferKind, TransferProgressEvent, TransferState } from '@shared/sftp'
 import { t } from '@shared/i18n'
 
-interface TransferState {
+/** One aggregated transfer row in the overlay (the per-event state string is
+ *  the shared `TransferState`). */
+interface TransferEntry {
   kind: TransferKind
   file: string
   bytes: number
   totalBytes: number
-  state: 'running' | 'done' | 'error' | 'cancelled'
+  state: TransferState
   error?: string
 }
 
@@ -17,13 +19,29 @@ interface TransferState {
  * transferId; done transfers fade out, errors stay until dismissed.
  */
 export function TransferPanel(): React.JSX.Element | null {
-  const [transfers, setTransfers] = useState<Map<string, TransferState>>(new Map())
-  const timersRef = useRef<number[]>([])
+  const [transfers, setTransfers] = useState<Map<string, TransferEntry>>(new Map())
+  /** auto-dismiss timers, keyed by transfer id (never more than one per run) */
+  const timersRef = useRef<Map<string, number>>(new Map())
+
+  const dismiss = useCallback((id: string): void => {
+    const timer = timersRef.current.get(id)
+    if (timer !== undefined) {
+      window.clearTimeout(timer)
+      timersRef.current.delete(id)
+    }
+    setTransfers((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Map(prev)
+      next.delete(id)
+      return next
+    })
+  }, [])
 
   useEffect(() => {
     const off = window.api.onTransferProgress((e: TransferProgressEvent) => {
       setTransfers((prev) => {
         const next = new Map(prev)
+        const existing = next.get(e.transferId)
         if (e.file) {
           next.set(e.transferId, {
             kind: e.kind,
@@ -34,42 +52,51 @@ export function TransferPanel(): React.JSX.Element | null {
             error: e.error
           })
         } else {
-          // terminal event for the whole transfer
-          const existing = next.get(e.transferId)
-          if (existing) {
-            if (e.state === 'error') {
-              next.set(e.transferId, { ...existing, state: 'error', error: e.error })
-            } else if (e.state === 'cancelled') {
-              next.set(e.transferId, { ...existing, state: 'cancelled' })
-            } else {
-              next.set(e.transferId, { ...existing, state: 'done' })
-            }
+          // Terminal event for the whole transfer. It can arrive without any
+          // per-file progress first (e.g. the remote open was denied), so a
+          // missing entry is created rather than dropped — otherwise the
+          // failure would be visible nowhere.
+          const base: TransferEntry = existing ?? {
+            kind: e.kind,
+            file: '',
+            bytes: e.bytes,
+            totalBytes: e.totalBytes,
+            state: 'running'
+          }
+          if (e.state === 'error') {
+            next.set(e.transferId, { ...base, state: 'error', error: e.error })
+          } else if (e.state === 'cancelled') {
+            next.set(e.transferId, { ...base, state: 'cancelled' })
+          } else {
+            next.set(e.transferId, { ...base, state: 'done' })
           }
         }
         return next
       })
     })
-    return () => {
-      off()
-      for (const t of timersRef.current) window.clearTimeout(t)
-    }
+    return off
   }, [])
 
   // auto-dismiss finished entries after 3s
   useEffect(() => {
-    for (const [id, t] of transfers) {
-      if ((t.state === 'done' || t.state === 'cancelled') && !t.error) {
+    for (const [id, tr] of transfers) {
+      if ((tr.state === 'done' || tr.state === 'cancelled') && !tr.error && !timersRef.current.has(id)) {
         const timer = window.setTimeout(() => {
-          setTransfers((prev) => {
-            const next = new Map(prev)
-            next.delete(id)
-            return next
-          })
+          timersRef.current.delete(id)
+          dismiss(id)
         }, 3000)
-        timersRef.current.push(timer)
+        timersRef.current.set(id, timer)
       }
     }
-  }, [transfers])
+  }, [transfers, dismiss])
+
+  useEffect(() => {
+    const timers = timersRef.current
+    return () => {
+      for (const timer of timers.values()) window.clearTimeout(timer)
+      timers.clear()
+    }
+  }, [])
 
   const list = [...transfers.entries()]
   if (list.length === 0) return null
@@ -100,13 +127,7 @@ export function TransferPanel(): React.JSX.Element | null {
                 <button
                   type="button"
                   className="sftp-transfer-close"
-                  onClick={() =>
-                    setTransfers((prev) => {
-                      const next = new Map(prev)
-                      next.delete(id)
-                      return next
-                    })
-                  }
+                  onClick={() => dismiss(id)}
                 >
                   <CloseOutlined />
                 </button>

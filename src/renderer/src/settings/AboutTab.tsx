@@ -74,6 +74,12 @@ export function AboutTab(): React.JSX.Element {
 
   useEffect(() => {
     void window.api.appInfo().then((i: AppInfo) => setVersion(i.appVersion))
+    // Pull the updater's current state (no network check); the check itself
+    // stays behind the manual button and the auto-check-on-launch setting.
+    void window.api
+      .getUpdateState()
+      .then(setState)
+      .catch(() => undefined)
     return window.api.onUpdateState(setState)
   }, [])
 

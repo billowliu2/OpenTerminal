@@ -63,12 +63,15 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
       if (key === 'close') {
         api.close()
       } else if (key === 'closeOthers') {
-        for (const sibling of panel.panels) {
+        // `panel.panels` is the live group array and `close()` splices it, so
+        // the targets must be snapshotted first — otherwise every element that
+        // shifts into the current index is skipped.
+        for (const sibling of [...panel.panels]) {
           if (sibling.api !== api) closePanel(sibling)
         }
       } else if (key === 'closeRight') {
-        for (let i = selfIndex + 1; i < panel.panels.length; i++) {
-          closePanel(panel.panels[i])
+        for (const target of [...panel.panels].slice(selfIndex + 1)) {
+          closePanel(target)
         }
       }
     }

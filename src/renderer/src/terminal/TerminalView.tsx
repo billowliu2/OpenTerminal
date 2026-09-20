@@ -14,7 +14,7 @@ import type { CommandItem } from '@shared/commands'
 import type { TerminalSettings } from '@shared/settings'
 import { useSettingsStore } from '@renderer/settings/store'
 import { writeBroadcast } from '@renderer/workspace/broadcastStore'
-import { compileRules, HighlightStream, type CompiledRule } from './highlightEngine'
+import { compileRules, HighlightStream } from './highlightEngine'
 import { findUrls } from './urlLinks'
 import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
@@ -139,39 +139,17 @@ function SearchBar({ value, onChange, onPrev, onNext, onClose, enabled, result }
  * handled here; escape sequences (\x1b) and the leading non-printable control
  * bytes on a chunk — like \x1b[K clear-line — never enter the buffer.
  *
- * `rewrite` flags a completion acceptance that just rewrote the shell line (a
- * Ctrl+U kill + full-command write). The very next onData chunk is the shell's
- * redraw echoing the accepted line, so instead of appending onto the stale
- * pre-accept buffer we *replace* it with what the pty actually echoed. This is
- * the echo-suppression that keeps the local buffer in sync with the shell and
- * prevents the accepted text from being duplicated.
+ * readline's line-editing keys (Ctrl+U/W/K, Ctrl+A/E/L/Y, …) are handled too:
+ * the shell applies them to its own line and never echoes the resulting edit
+ * back to us, so appending the raw control byte would silently desync this
+ * buffer from the shell's line and make the history record the pre-edit text.
  */
 function stepLineBuffer(
   outBuf: React.MutableRefObject<string>,
-  data: string,
-  rewrite: boolean
+  data: string
 ): { line: string; submit?: string } {
   const b = outBuf.current
   if (!data) return { line: b }
-  // Completion-rewrite redraw: reset to this chunk's visible text verbatim. For
-  // a shell like PowerShell the redraw is a leading escape/control sequence
-  // + the line text; strip leading control bytes so only the echoed command
-  // enters the buffer (matching how a normal chunk is captured). Any trailing
-  // text on the chunk is appended as usual.
-  if (rewrite) {
-    let i = 0
-    while ((data[i] === '\x1b' && (data[i + 1] === '[' || data[i + 1] === '(')) || data[i] === '\r' || data[i] === '\n') {
-      i += data[i] === '\x1b' ? 2 : 1
-    }
-    const visible = data.slice(i)
-    if (visible) {
-      outBuf.current = visible
-      return { line: visible }
-    }
-    // Only control output (e.g. the kill sequence handling) — treat as a reset.
-    outBuf.current = ''
-    return { line: '' }
-  }
   // xterm-native paste (plain Ctrl+V): with the shell's bracketed-paste mode
   // on, the pasted block arrives wrapped in \x1b[200~ / \x1b[201~ and the chunk
   // starts with ESC, which the guards below would drop wholesale. Strip the
@@ -195,6 +173,21 @@ function stepLineBuffer(
     return { line: '' }
   }
   if (first === '\x1b') return { line: b }
+  // Ctrl+U / Ctrl+K kill the shell's line (before / after the cursor); with no
+  // cursor tracking the safe mirror of that is an empty buffer.
+  if (first === '\x15' || first === '\x0b') {
+    outBuf.current = ''
+    return { line: '' }
+  }
+  // Ctrl+W: readline skips trailing whitespace and kills the word before it.
+  if (first === '\x17') {
+    outBuf.current = b.replace(/\S+\s*$/, '')
+    return { line: outBuf.current }
+  }
+  // Any other C0 byte is a key the shell interprets itself (Ctrl+A/E/L/Y,
+  // Ctrl+R, Ctrl+D, Tab, …) and adds no text to the line — the buffer must not
+  // grow either.
+  if (data.charCodeAt(0) < 0x20) return { line: b }
   outBuf.current = b + data
   return { line: outBuf.current }
 }
@@ -273,17 +266,12 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   const searchTermRef = useRef('')
   const nativePasteRef = useRef<string | null>(null)
   const onCloseRef = useRef(onClose)
-  const compiledRef = useRef<CompiledRule[]>([])
   const streamRef = useRef<HighlightStream | null>(null)
+  // Renderer mode currently installed on the terminal, so the mode effect can
+  // tell a real switch from its own mount-time run.
+  const rendererModeRef = useRef<TerminalSettings['rendererMode'] | null>(null)
   // M5: per-session line-capture buffer + completion candidate cache.
   const lineBufRef = useRef<string>('')
-  // M5: when a completion acceptance rewrites the shell line (Ctrl+U + full
-  // command via writeBroadcast in `differenceWrite`), the shell answers with a
-  // redraw that echoes `full`. If that echo were folded into the local buffer
-  // on top of the pre-accept text it would double the line. `diffRewriteRef`
-  // flags that the *next* onData chunk is that redraw output, so stepLineBuffer
-  // replaces the buffer with the freshly-echoed line instead of appending.
-  const diffRewriteRef = useRef(false)
   const completionCacheRef = useRef<CommandItem[]>([])
   const completionKeyRef = useRef('')
   const recordingRef = useRef(false)
@@ -302,7 +290,6 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // latest rules without triggering a terminal rebuild. Only new output is
   // highlighted — the existing scrollback buffer is left untouched.
   const compiledRules = useMemo(() => compileRules(settings.highlightRules), [settings.highlightRules])
-  compiledRef.current = compiledRules
   streamRef.current?.setRules(compiledRules)
 
   // M5: load completion candidates once per session (history + library cached).
@@ -352,7 +339,10 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       webglRef.current.dispose()
       webglRef.current = null
     }
-    if (mode === 'dom') return
+    if (mode === 'dom') {
+      rendererModeRef.current = mode
+      return
+    }
     try {
       const webgl = new WebglAddon()
       webgl.onContextLoss(() => {
@@ -366,6 +356,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     } catch {
       webglRef.current = null
     }
+    rendererModeRef.current = mode
   }, [])
 
   const scheduleFit = useCallback(() => {
@@ -386,6 +377,13 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       const send = (): void => {
         const live = termRef.current
         if (!live || deadRef.current) return
+        // A pane without a layout box (hidden or not-yet-laid-out dock tab)
+        // reports a degenerate grid; that — and any other sub-minimum size —
+        // must never reach the pty, which would reflow the shell into a
+        // one-column line. Skipping leaves ptySizeRef untouched, so the next
+        // fit retries instead of remembering the bad size.
+        if (hostRef.current?.offsetParent === null) return
+        if (live.cols < 20 || live.rows < 4) return
         if (live.cols === ptySizeRef.current?.cols && live.rows === ptySizeRef.current?.rows) return
         ptySizeRef.current = { cols: live.cols, rows: live.rows }
         window.api.resizePty(sessionId, live.cols, live.rows)
@@ -555,8 +553,11 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     } catch {
       /* clipboard write denied */
     }
-    if (!settings.terminal.copyOnSelect) term.clearSelection()
-  }, [settings.terminal.copyOnSelect])
+    // Read the setting at call time: this runs from the terminal's custom key
+    // handler, which is attached once per session and would otherwise keep the
+    // copyOnSelect value captured at mount.
+    if (!useSettingsStore.getState().settings.terminal.copyOnSelect) term.clearSelection()
+  }, [])
 
   const pasteFromClipboard = useCallback(async () => {
     try {
@@ -573,11 +574,11 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     (selected: CommandItem): void => {
       const cmd = selected.command
       // Rewrite the whole shell line (Ctrl+U then `cmd`) instead of appending a
-      // delta — the pty redraw, not our local buffer, becomes the source of
-      // truth for the line (see differenceWrite). The redraw trigger sets the
-      // rewrite flag so onData resets the line buffer to the echoed line.
+      // delta, so the pty never has to reconcile our local buffer with its own
+      // (see differenceWrite). The local buffer mirrors the rewrite — the shell
+      // does not echo it back through onData, so nothing else would update it,
+      // and the next Enter would otherwise record the pre-accept text.
       differenceWrite(sessionId, cmd, lineBufRef.current)
-      diffRewriteRef.current = true
       lineBufRef.current = cmd
       suggestionsRef.current = []
       selIndexRef.current = 0
@@ -792,15 +793,27 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           rows.push({ index: row, text: line.translateToString(false) })
         }
         const text = rows.map((r) => r.text).join('')
+        // translateToString emits one char per cell run — a double-width char
+        // is ONE char spanning TWO columns — so a char offset cannot be mapped
+        // to a column with `% cols` (every CJK char on the line shifts the
+        // link range). Walk the cells once and record the 1-based x / buffer
+        // row of each char position in `text`.
         const cols = term.cols > 0 ? term.cols : 1
-        const base = rows[0]?.index ?? first
+        const colAt: number[] = []
+        const rowAt: number[] = []
+        for (const { index: row } of rows) {
+          const line = buffer.getLine(row)
+          for (let col = 0; col < cols; col++) {
+            if ((line?.getCell(col)?.getWidth() ?? 1) === 0) continue // wide-char tail
+            colAt.push(col + 1)
+            rowAt.push(row)
+          }
+        }
         const links: ILink[] = findUrls(text).map((found) => {
-          const startRow = Math.floor(found.start / cols)
-          const endRow = Math.floor((found.end - 1) / cols)
           return {
             range: {
-              start: { x: (found.start % cols) + 1, y: base + startRow + 1 },
-              end: { x: ((found.end - 1) % cols) + 1, y: base + endRow + 1 }
+              start: { x: colAt[found.start] ?? 1, y: (rowAt[found.start] ?? first) + 1 },
+              end: { x: colAt[found.end - 1] ?? 1, y: (rowAt[found.end - 1] ?? first) + 1 }
             },
             text: found.url,
             decorations: { pointerCursor: true, underline: true },
@@ -822,10 +835,6 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       linkProvider,
       term.onData((data) => {
         if (!deadRef.current) writeBroadcast(sessionId, data)
-        // M5: a completion acceptance rewrite armed `diffRewriteRef`; consume it
-        // now so this redraw chunk replaces (not appends to) the line buffer.
-        const consumeRewrite = diffRewriteRef.current
-        diffRewriteRef.current = false
         // Full-screen TUIs (vim, Claude Code, …) own the alternate buffer, their
         // own key handling and their own cursor: the line buffer, the command
         // history and the completion popup have no business there. Interfering
@@ -841,8 +850,10 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           }
           return
         }
-        // M5: line capture → recordCommand + inline completion overlay.
-        const step = stepLineBuffer(lineBufRef, data, consumeRewrite)
+        // M5: line capture → recordCommand + inline completion overlay. Only user
+        // input reaches onData; the shell's own redraws arrive on the pty path,
+        // which never touches the buffer.
+        const step = stepLineBuffer(lineBufRef, data)
         if (typeof step.submit === 'string' && step.submit) {
           trackSubmittedLine(step.submit)
         }
@@ -1005,6 +1016,9 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // ---- renderer mode changes: keep the instance, swap renderer, refit ----
   useEffect(() => {
     const next = tSettings.rendererMode
+    // The construction effect above already applied the mode on mount (this
+    // effect runs on mount too); only an actual switch should re-run it.
+    if (next === rendererModeRef.current) return
     if (next === 'dom') {
       applyRenderers('dom')
     } else if (!webglRef.current) {

@@ -22,6 +22,14 @@ function toHex(v: number): string {
   return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')
 }
 
+/** WCAG contrast ratio between two colors; 21 when either is not hex. */
+function contrast(a: string, b: string): number {
+  const la = luminance(a)
+  const lb = luminance(b)
+  if (la === null || lb === null) return 21
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
+
 /** t=0 → a, t=1 → b */
 export function mix(a: string, b: string, t: number): string | null {
   const ca = parseHex(a)
@@ -33,6 +41,18 @@ export function mix(a: string, b: string, t: number): string | null {
 /** Whether the active terminal theme has a light background. Tab bars derived
  *  from it flip their overlay direction (white-on-dark vs black-on-light). */
 let chromeIsLight = false
+
+/** Dark-chrome tab label: the background mixed toward the theme's own foreground
+ *  (the light branch is the same mix toward black), but never below 4.5:1 against
+ *  the background, since a theme foreground dimmed by 0.68 can land unreadable. */
+function tabLabel(background: string, foreground: string, t: number): string {
+  const mixed = mix(background, foreground, t)
+  return mixed && contrast(mixed, background) >= 4.5 ? mixed : foreground
+}
+
+/** Accent color from the last applyTabAccent() call; re-applied at the end of a
+ *  chrome theme change so --tab-accent-fg follows the new theme's luminance. */
+let tabAccent = ''
 
 /** Derive the app chrome palette (sidebar, tab bars, dividers) from the active
  *  terminal theme so the whole window follows theme switches instead of only
@@ -67,9 +87,10 @@ export function applyChromeTheme(colors: ThemeColors): void {
     set('--chrome-tab-bg-hover', 'rgba(255, 255, 255, 0.07)')
     set('--chrome-tab-ring', 'rgba(255, 255, 255, 0.1)')
     set('--chrome-tab-ring-hover', 'rgba(255, 255, 255, 0.2)')
-    set('--chrome-tab-fg', '#98a2ab')
-    set('--chrome-tab-fg-hover', '#d0d0d0')
+    set('--chrome-tab-fg', tabLabel(colors.background, colors.foreground, 0.68))
+    set('--chrome-tab-fg-hover', tabLabel(colors.background, colors.foreground, 0.88))
   }
+  applyTabAccent(tabAccent)
 }
 
 /** Tab accent: base color + a foreground variant that stays readable on the
@@ -77,6 +98,7 @@ export function applyChromeTheme(colors: ThemeColors): void {
  *  var(--tab-accent*) in workspace.css. */
 export function applyTabAccent(color: string): void {
   const style = document.documentElement.style
+  tabAccent = color
   // Settings hydrated from an older main process may lack the key; clear the
   // vars so the CSS fallbacks apply instead of an invalid "undefined" value.
   if (!color) {

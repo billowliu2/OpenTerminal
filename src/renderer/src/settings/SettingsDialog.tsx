@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Modal, Tabs } from 'antd'
+import { Button, Modal, Popconfirm, Tabs } from 'antd'
 import type { TabsProps } from 'antd'
 import { t } from '@shared/i18n'
 import { DEFAULT_SETTINGS } from '@shared/settings'
@@ -10,6 +10,12 @@ import { HighlightTab } from './HighlightTab'
 import { AboutTab } from './AboutTab'
 import { ThemeEditor } from '../theme/editor/ThemeEditor'
 import './settings.css'
+
+/** t() falls back to the key itself when a translation is missing. */
+function tOr(key: string, fallback: string): string {
+  const value = t(key)
+  return value === key ? fallback : value
+}
 
 export interface SettingsDialogProps {
   open: boolean
@@ -94,6 +100,10 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
     void updateTerminal({ ...DEFAULT_SETTINGS.terminal })
   }
 
+  // Reset touches the whole terminal group, so it asks first and says so.
+  const resetLabel = tOr('settings.resetTerminal', t('common.reset'))
+  const resetDesc = tOr('settings.resetTerminalDesc', '')
+
   return (
     <Modal
       open={open}
@@ -103,7 +113,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
       title={t('settings.title')}
       footer={
         <div className="settings-footer">
-          <Button onClick={handleResetDefaults}>{t('common.reset')}</Button>
+          <Popconfirm
+            title={tOr('settings.resetTerminalTitle', t('common.reset'))}
+            description={resetDesc || undefined}
+            okText={resetLabel}
+            cancelText={t('common.cancel')}
+            okButtonProps={{ danger: true }}
+            onConfirm={handleResetDefaults}
+          >
+            <Button>{resetLabel}</Button>
+          </Popconfirm>
           <Button type="primary" onClick={onClose}>
             {t('common.close')}
           </Button>

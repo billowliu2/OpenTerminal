@@ -25,6 +25,17 @@ const PRESET_COLORS = ['#3fb950', '#f85149', '#e3b341', '#58a6ff', '#d2a8ff', '#
 /** clone the builtin preset set to prevent reference pollution by mutations. */
 const cloneDefaults = (): HighlightRule[] => JSON.parse(JSON.stringify(DEFAULT_HIGHLIGHT_RULES)) as HighlightRule[]
 
+/**
+ * Built-in rule notes are stored as zh-CN presets; the dictionaries carry a
+ * `settings.highlight.builtin.<id>` entry per built-in id. `t()` returns the key
+ * itself when it is missing, so fall back to the stored note in that case.
+ */
+function ruleNote(rule: HighlightRule): string | undefined {
+  const key = `settings.highlight.builtin.${rule.id}`
+  const translated = t(key)
+  return translated === key ? rule.note : translated
+}
+
 function tryCompile(pattern: string): { ok: boolean; message?: string } {
   if (pattern.trim() === '') return { ok: true }
   try {
@@ -128,8 +139,10 @@ export function HighlightTab(): React.JSX.Element {
       title: t('settings.highlight.note'),
       dataIndex: 'note',
       ellipsis: true,
-      render: (note: string | undefined) =>
-        note ? <span className="hl-cell-note">{note}</span> : <span className="hl-cell-empty">—</span>
+      render: (_note: string | undefined, record) => {
+        const note = ruleNote(record)
+        return note ? <span className="hl-cell-note">{note}</span> : <span className="hl-cell-empty">—</span>
+      }
     },
     {
       title: t('settings.highlight.actions'),

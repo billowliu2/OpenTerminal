@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SysinfoMeta, SysinfoSample } from '@shared/sysinfo'
 import { t } from '@shared/i18n'
+import { useWorkspaceModeStore } from '../workspace/workspaceModeStore'
 import './monitor.css'
 
 export interface MonitorPanelProps {
@@ -25,8 +26,6 @@ interface HistoryChartProps {
 function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChartProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const dataRef = useRef<number[]>(data)
-  dataRef.current = data
 
   useEffect(() => {
     const container = containerRef.current
@@ -45,7 +44,7 @@ function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChart
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, height)
 
-      const pts = dataRef.current
+      const pts = data
       if (pts.length < 2) return
 
       const top = maxY ?? Math.max(1, Math.max(...pts) * 1.2)
@@ -81,7 +80,9 @@ function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChart
     const ro = new ResizeObserver(draw)
     ro.observe(container)
     return () => ro.disconnect()
-  }, [height, maxY, lineColor, fillColor])
+    // `data` is a dep on purpose: without it the chart only ever drew at mount,
+    // when the history is still empty, and the sparklines never updated.
+  }, [data, height, maxY, lineColor, fillColor])
 
   return (
     <div ref={containerRef} className="mm-chart">
@@ -134,8 +135,12 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
   const [cpuHist, setCpuHist] = useState<number[]>([])
   const [rxHist, setRxHist] = useState<number[]>([])
   const [txHist, setTxHist] = useState<number[]>([])
+  /** Switching workspace mode only hides the dockview (panels stay mounted), so
+   *  polling has to stop explicitly while the SSH workspace is not visible. */
+  const workspaceMode = useWorkspaceModeStore((s) => s.mode)
 
   useEffect(() => {
+    if (workspaceMode !== 'ssh') return
     let disposed = false
     setCpuHist([])
     setRxHist([])
@@ -161,7 +166,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
       offSample()
       window.api.sysinfoStop(sessionId)
     }
-  }, [sessionId])
+  }, [sessionId, workspaceMode])
 
   if (!meta || !sample) {
     return (

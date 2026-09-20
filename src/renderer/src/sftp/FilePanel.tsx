@@ -25,12 +25,32 @@ export interface FilePanelProps {
   sessionId: string
 }
 
-/** 9 permission bits: [owner r,w,x, group r,w,x, other r,w,x]. */
+/**
+ * Permission bits: [owner r,w,x, group r,w,x, other r,w,x, setuid, setgid, sticky].
+ * The last three (indices 9..11) only exist as the 4th octal digit — the grid
+ * does not toggle them, the octal input does.
+ */
 type PermBits = boolean[]
+
+const MODE_LETTERS = ['r', 'w', 'x', 'r', 'w', 'x', 'r', 'w', 'x']
+/** x-column index → index of the special bit that changes its letter. */
+const SPECIAL_BIT_AT: Record<number, number> = { 2: 9, 5: 10, 8: 11 }
+
+const emptyBits = (): PermBits => Array.from({ length: 12 }, () => false)
 
 function parseModeBits(mode: string | undefined): PermBits {
   const chars = mode ? Array.from(mode.slice(1)) : []
-  return Array.from({ length: 9 }, (_, i) => chars[i] != null && chars[i] !== '-')
+  const bits = emptyBits()
+  for (let i = 0; i < 9; i++) {
+    const c = chars[i]
+    if (c == null || c === '-') continue
+    // uppercase S/T means "special bit set, execute bit clear"
+    bits[i] = c !== 'S' && c !== 'T'
+  }
+  if (chars[2] === 's' || chars[2] === 'S') bits[9] = true
+  if (chars[5] === 's' || chars[5] === 'S') bits[10] = true
+  if (chars[8] === 't' || chars[8] === 'T') bits[11] = true
+  return bits
 }
 
 function formatModeType(mode: string | undefined): string {
@@ -39,9 +59,13 @@ function formatModeType(mode: string | undefined): string {
 }
 
 function bitsToModeStr(type: string, bits: PermBits): string {
-  const letters = bits.map((on, i) => {
-    if (!on) return '-'
-    return ['r', 'w', 'x', 'r', 'w', 'x', 'r', 'w', 'x'][i]
+  const letters = MODE_LETTERS.map((on, i) => {
+    const special = SPECIAL_BIT_AT[i]
+    if (special !== undefined && bits[special]) {
+      // setuid/setgid → s/S, sticky → t/T
+      return bits[i] ? (i === 8 ? 't' : 's') : i === 8 ? 'T' : 'S'
+    }
+    return bits[i] ? on : '-'
   })
   return type + letters.join('')
 }
@@ -56,7 +80,17 @@ function bitsToOctal(bits: PermBits): string {
   // arithmetic version computed 5*64+1*8+1 = 329 decimal, which is NOT the
   // octal "511" and made chmod a silent no-op when both sides agreed on the
   // same wrong value.)
-  return `${octalDigit(0, bits)}${octalDigit(3, bits)}${octalDigit(6, bits)}`
+  const special = (bits[9] ? 4 : 0) + (bits[10] ? 2 : 0) + (bits[11] ? 1 : 0)
+  const perms = `${octalDigit(0, bits)}${octalDigit(3, bits)}${octalDigit(6, bits)}`
+  // Keep the 3-digit form when no special bit is set so it round-trips with
+  // what main sends (its mode string is 9 bits wide).
+  return special > 0 ? `${special}${perms}` : perms
+}
+
+/** t() falls back to the key itself when a translation is missing. */
+function tOr(key: string, fallback: string): string {
+  const value = t(key)
+  return value === key ? fallback : value
 }
 
 function fmtSize(bytes: number): string {
@@ -90,12 +124,14 @@ interface PermissionModalProps {
 
 function PermissionModal({ open, sessionId, entry, onClose, onSaved }: PermissionModalProps): React.JSX.Element {
   const { message } = App.useApp()
-  const [bits, setBits] = useState<PermBits>(Array.from({ length: 9 }, () => false))
+  const [bits, setBits] = useState<PermBits>(emptyBits)
   const [octal, setOctal] = useState('')
   const [uid, setUid] = useState('')
   const [gid, setGid] = useState('')
   const [saving, setSaving] = useState(false)
   const hasUidGid = entry != null && (entry.uid != null || entry.gid != null)
+  /** lstat failed while listing → no mode to compare against or preserve. */
+  const modeKnown = Boolean(entry?.mode)
   const rowLabels = permRowLabels()
   const colLabels = permColLabels()
 
@@ -110,11 +146,11 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
     if (entry) {
       const b = parseModeBits(entry.mode)
       setBits(b)
-      setOctal(bitsToOctal(b))
+      setOctal(entry.mode ? bitsToOctal(b) : '')
       setUid(entry.uid != null ? String(entry.uid) : '')
       setGid(entry.gid != null ? String(entry.gid) : '')
     } else {
-      setBits(Array.from({ length: 9 }, () => false))
+      setBits(emptyBits())
       setOctal('')
       setUid('')
       setGid('')
@@ -125,6 +161,7 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
     const s = (v ?? '').trim()
     if (/^[0-7]{1,4}$/.test(s)) {
       const num = parseInt(s, 8) || 0
+      const special = s.length === 4 ? parseInt(s[0], 8) : 0
       setBits([
         (num >> 6) & 4 ? true : false,
         (num >> 6) & 2 ? true : false,
@@ -134,7 +171,10 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
         (num >> 3) & 1 ? true : false,
         num & 4 ? true : false,
         num & 2 ? true : false,
-        num & 1 ? true : false
+        num & 1 ? true : false,
+        (special & 4) !== 0,
+        (special & 2) !== 0,
+        (special & 1) !== 0
       ])
     }
     setOctal(s)
@@ -149,6 +189,15 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
     })
   }
 
+  /** Non-negative integer input, '' meaning "keep current". */
+  const parseId = (v: string): number | null => {
+    const s = v.trim()
+    if (s === '') return null
+    const n = Number(s)
+    return Number.isInteger(n) && n >= 0 ? n : null
+  }
+  const idInvalid = (v: string): boolean => v.trim() !== '' && parseId(v) === null
+
   const onSave = (): void => {
     void (async () => {
       if (!entry) return
@@ -156,23 +205,27 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
       try {
         const octalStr = bitsToOctal(bits)
         const curOctal = entry.mode ? bitsToOctal(parseModeBits(entry.mode)) : null
+        // Unknown mode (lstat failed): bits start all-false, so only chmod when
+        // the user actually touched something — otherwise an untouched dialog
+        // would send "chmod 000".
+        const modeChanged = curOctal === null ? bits.some(Boolean) : octalStr !== curOctal
         // Only chown when the uid/gid actually differ from the entry's current
         // owner — the inputs are seeded with the current values, so "untouched"
         // would otherwise chown on every save.
-        const newUid = uid.trim() !== '' && !Number.isNaN(Number(uid)) ? Number(uid) : null
-        const newGid = gid.trim() !== '' && !Number.isNaN(Number(gid)) ? Number(gid) : null
+        const newUid = parseId(uid)
+        const newGid = parseId(gid)
         const ownerChanged =
           (newUid !== null && newUid !== entry.uid) || (newGid !== null && newGid !== entry.gid)
 
-        if (octalStr !== curOctal) {
+        if (modeChanged) {
           await window.api.chmodRemote(sessionId, entry.path, octalStr)
         }
         if (ownerChanged) {
           const u = newUid ?? entry.uid ?? 0
-          const g = newGid ?? newUid ?? entry.gid ?? 0
+          const g = newGid ?? entry.gid ?? 0
           await window.api.chownRemote(sessionId, entry.path, u, g)
         }
-        if (octalStr !== curOctal || ownerChanged) {
+        if (modeChanged || ownerChanged) {
           message.success(t('ssh.file.permApplied'))
         }
         onClose()
@@ -194,6 +247,7 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
       confirmLoading={saving}
       okText={t('common.save')}
       cancelText={t('common.cancel')}
+      okButtonProps={{ disabled: idInvalid(uid) || idInvalid(gid) }}
       width={380}
     >
       <div className="sftp-perm">
@@ -253,6 +307,10 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
           </div>
         </div>
         <div className="sftp-perm-hint">{t('ssh.file.ownerHint')}</div>
+        {entry && !modeKnown && <div className="sftp-perm-hint">{t('ssh.file.modeUnavailable')}</div>}
+        {(idInvalid(uid) || idInvalid(gid)) && (
+          <div className="sftp-perm-hint">{t('main.sftp.invalidUidGid')}</div>
+        )}
       </div>
     </Modal>
   )
@@ -302,18 +360,74 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
 
   const selectedPath = selected?.path ?? ''
 
+  /** local file name as main computes it for the remote path (basename). */
+  const remoteNameOf = (local: string): string => local.split(/[\\/]/).pop() ?? local
+
+  /**
+   * Start the upload. The listener is registered BEFORE the transfer id is
+   * known: uploadRemote resolves with the id right away while the transfer
+   * itself runs detached, so a small file can finish before the id arrives —
+   * registering afterwards would miss the terminal event and never refresh.
+   */
+  const startUpload = (files: string[]): void => {
+    let targetId: string | null = null
+    let settled = false
+    const earlyTerminalIds: string[] = []
+    const finish = (): void => {
+      if (settled) return
+      settled = true
+      off()
+      void refresh(dir)
+    }
+    const off = window.api.onTransferProgress((e: TransferProgressEvent) => {
+      if (e.state !== 'done' && e.state !== 'error' && e.state !== 'cancelled') return
+      if (targetId === null) {
+        earlyTerminalIds.push(e.transferId)
+        return
+      }
+      if (e.transferId === targetId) finish()
+    })
+    window.api.uploadRemote(sessionId, files, dir).then(
+      (id: string) => {
+        targetId = id
+        if (earlyTerminalIds.includes(id)) finish()
+      },
+      (err: unknown) => {
+        off()
+        message.error((err as Error).message)
+      }
+    )
+  }
+
   const doUpload = (): void => {
     void (async () => {
       try {
-        const files = await window.api.pickFiles()
+        // Explicit type: env.d.ts resolves `AppApi` through a wrong path, so
+        // `window.api` is untyped and the callback params lose their context.
+        const files: string[] = await window.api.pickFiles()
         if (files.length === 0) return
-        await window.api.uploadRemote(sessionId, files, dir)
-        // refresh when the transfer completes
-        const off = window.api.onTransferProgress((e: TransferProgressEvent) => {
-          if (e.state === 'done' || e.state === 'error' || e.state === 'cancelled') {
-            off()
-            void refresh(dir)
-          }
+        // Main opens the target with 'w' (truncate), so an existing file would
+        // be silently overwritten — ask first, like delete and clear-history do.
+        const existing = files.map(remoteNameOf).filter((name) => entries.some((e) => e.name === name))
+        if (existing.length === 0) {
+          startUpload(files)
+          return
+        }
+        const desc = tOr('ssh.file.overwriteDesc', '')
+        modal.confirm({
+          title: tOr('ssh.file.overwriteTitle', t('ssh.file.uploadFile')),
+          content: (
+            <div>
+              {existing.map((name) => (
+                <div key={name}>{name}</div>
+              ))}
+              {desc && <div>{desc}</div>}
+            </div>
+          ),
+          okText: t('common.ok'),
+          okButtonProps: { danger: true },
+          cancelText: t('common.cancel'),
+          onOk: () => startUpload(files)
         })
       } catch (err) {
         message.error((err as Error).message)

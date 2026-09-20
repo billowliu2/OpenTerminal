@@ -357,6 +357,8 @@ export function RenderSettingsTab(): React.JSX.Element {
 export function SystemSettingsTab(): React.JSX.Element {
   const settings = useSettingsStore((s) => s.settings)
   const updateSystem = useSettingsStore((s) => s.updateSystem)
+  /** set when the recorder refused a combo reserved by an in-app shortcut */
+  const [shortcutConflict, setShortcutConflict] = useState(false)
   return (
     <div className="settings-pane">
       {/* Interface language — first row: the whole dialog re-renders on change. */}
@@ -433,11 +435,14 @@ export function SystemSettingsTab(): React.JSX.Element {
           <ShortcutInput
             value={settings.system.globalShowHide ?? ''}
             onChange={(v) => void updateSystem({ globalShowHide: v })}
+            onConflict={setShortcutConflict}
           />
         }
       />
       <div className="settings-block-hint settings-shortcut-hint">
-        {t('settings.system.globalShortcutHint')}
+        {shortcutConflict
+          ? tOr('settings.system.shortcutConflict', t('settings.system.globalShortcutHint'))
+          : t('settings.system.globalShortcutHint')}
       </div>
     </div>
   )
@@ -487,11 +492,42 @@ function acceleratorFromEvent(e: React.KeyboardEvent<HTMLInputElement>): string 
 }
 
 /**
+ * Keys this app binds while Control is held: font size (Ctrl+=/-/0, main.tsx)
+ * and tab cycling (Ctrl+PgUp/PgDn, Workspace). Neither handler looks at the
+ * other modifiers, so any Control combo on one of these keys would shadow the
+ * in-app action — the recorder refuses it instead of saving a shortcut that
+ * silently loses its original meaning.
+ */
+const RESERVED_CONTROL_KEYS = new Set(['=', '-', '0', 'PageUp', 'PageDown'])
+
+/** true when `accel` (e.g. "Control+Shift+=") collides with an in-app shortcut */
+function isReservedAccelerator(accel: string): boolean {
+  const parts = accel.split('+')
+  return parts.includes('Control') && RESERVED_CONTROL_KEYS.has(parts[parts.length - 1])
+}
+
+/** t() falls back to the key itself when a translation is missing. */
+function tOr(key: string, fallback: string): string {
+  const value = t(key)
+  return value === key ? fallback : value
+}
+
+/**
  * Press-to-record input for the global shortcut: focus it, hit the combo, the
  * accelerator is captured and saved. Esc cancels recording, Backspace/Delete
  * clears (disables) the shortcut. Read-only so no stray text can be typed.
+ * A combo reserved by an in-app shortcut is refused (and reported through
+ * `onConflict`) without leaving the recording state, so the user can retry.
  */
-function ShortcutInput({ value, onChange }: { value: string; onChange: (v: string) => void }): React.JSX.Element {
+function ShortcutInput({
+  value,
+  onChange,
+  onConflict
+}: {
+  value: string
+  onChange: (v: string) => void
+  onConflict: (conflict: boolean) => void
+}): React.JSX.Element {
   const [recording, setRecording] = useState(false)
   return (
     <Input
@@ -499,8 +535,14 @@ function ShortcutInput({ value, onChange }: { value: string; onChange: (v: strin
       readOnly
       value={recording ? t('settings.system.shortcutRecording') : value}
       placeholder={t('settings.system.shortcutPlaceholder')}
-      onFocus={() => setRecording(true)}
-      onBlur={() => setRecording(false)}
+      onFocus={() => {
+        setRecording(true)
+        onConflict(false)
+      }}
+      onBlur={() => {
+        setRecording(false)
+        onConflict(false)
+      }}
       onKeyDown={(e) => {
         e.preventDefault()
         e.stopPropagation()
@@ -514,10 +556,14 @@ function ShortcutInput({ value, onChange }: { value: string; onChange: (v: strin
           return
         }
         const accel = acceleratorFromEvent(e)
-        if (accel) {
-          onChange(accel)
-          e.currentTarget.blur()
+        if (!accel) return
+        if (isReservedAccelerator(accel)) {
+          onConflict(true)
+          return
         }
+        onConflict(false)
+        onChange(accel)
+        e.currentTarget.blur()
       }}
     />
   )

@@ -33,6 +33,16 @@ const ESCAPE_RE =
 const MAX_PER_RULE = 300
 /** Chunks larger than this are returned unmodified (budget guard). */
 const MAX_CHUNK = 512 * 1024
+/**
+ * Longest newline-free segment of a plain-text run a user rule is applied to.
+ * MAX_PER_RULE bounds the match *count*, not a pattern's backtracking *cost*:
+ * a pathological pattern like `(a+)+b` walks the whole line before the count
+ * can stop it, which freezes the renderer on one very long line. A run holding
+ * such a line is passed through unhighlighted — ordinary output (many short
+ * lines, whatever the chunk size) is unaffected, since the bound is per line,
+ * not per run.
+ */
+const MAX_LINE_LEN = 4 * 1024
 
 /** "#rrggbb" or 3-digit "#rgb" → {r,g,b}; any malformed input → white. */
 export function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -107,14 +117,26 @@ function overlaps(claimed: Span[], s: number, e: number): boolean {
   return false
 }
 
+/** True when `text` holds a newline-free segment longer than MAX_LINE_LEN. */
+function hasLongLine(text: string): boolean {
+  let start = 0
+  for (;;) {
+    const nl = text.indexOf('\n', start)
+    if (nl < 0) return text.length - start > MAX_LINE_LEN
+    if (nl - start > MAX_LINE_LEN) return true
+    start = nl + 1
+  }
+}
+
 /**
  * Apply all rules to a single plain-text run. Consumes from `budgets` (per-rule
  * remaining match allowance shared across the whole chunk). Returns the
  * SGR-injected text. With a global budget of zero for every rule the run is
- * returned untouched.
+ * returned untouched, as is a run holding an over-long line (see MAX_LINE_LEN).
  */
 function applyRun(text: string, rules: CompiledRule[], budgets: number[]): string {
   if (text.length === 0) return ''
+  if (hasLongLine(text)) return text
   const claimed: Span[] = []
   for (let ri = 0; ri < rules.length; ri++) {
     const rule = rules[ri]

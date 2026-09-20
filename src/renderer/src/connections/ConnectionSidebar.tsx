@@ -85,13 +85,10 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
       void refresh()
     }, [])
 
-    // Fold every group open whenever the dataset changes.
+    // Fold every group open by default; only the user's collapses are stored,
+    // so a group that appears later starts open as well.
     const defaultGroup = t('ssh.sidebar.defaultGroup')
-    const activeGroups = useMemo(() => {
-      const groups = new Set<string>()
-      for (const c of connections) groups.add(c.group ?? defaultGroup)
-      return [...groups]
-    }, [connections, defaultGroup])
+    const [closedGroups, setClosedGroups] = useState<string[]>([])
 
     const groups = useMemo(() => {
       const map = new Map<string, SshConnection[]>()
@@ -223,8 +220,10 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
               ghost
               className="connections-collapse"
               items={collapseItems}
-              defaultActiveKey={groups.map((g) => g.group)}
-              activeKey={activeGroups}
+              activeKey={groups.map((g) => g.group).filter((key) => !closedGroups.includes(key))}
+              onChange={(keys) =>
+                setClosedGroups(groups.map((g) => g.group).filter((key) => !keys.includes(key)))
+              }
             />
           )}
 

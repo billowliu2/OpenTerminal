@@ -42,17 +42,23 @@ export function TerminalPanel({ params, api, onSessionDead }: TerminalPanelProps
   const [sideOpen, setSideOpen] = useState(true)
 
   // M6 broadcast: keep the session in the broadcast registry while mounted so
-  // it can be picked as a target / receive fan-out writes (idempotent upsert).
+  // it can be picked as a target / receive fan-out writes. Registrations are
+  // keyed by panel id — an SSH split shows one session in two panes, and
+  // unmounting one of them must not unregister the other.
   useEffect(() => {
-    useBroadcastStore.getState().registerSession({ id: sessionId, title: api.title ?? '', isSsh })
-    return () => useBroadcastStore.getState().unregisterSession(sessionId)
+    useBroadcastStore
+      .getState()
+      .registerSession({ id: sessionId, panelId: api.id, title: api.title ?? '', isSsh })
+    return () => useBroadcastStore.getState().unregisterSession(api.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- api is stable; title kept fresh below
   }, [sessionId])
 
   // M6: keep the registered broadcast title in sync with the tab title.
   useEffect(() => {
     const disposable = api.onDidTitleChange((event) => {
-      useBroadcastStore.getState().registerSession({ id: sessionId, title: event.title, isSsh })
+      useBroadcastStore
+        .getState()
+        .registerSession({ id: sessionId, panelId: api.id, title: event.title, isSsh })
     })
     return () => disposable.dispose()
   }, [api, sessionId, isSsh])

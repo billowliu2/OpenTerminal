@@ -24,6 +24,52 @@ let unsubscribeStoreListener: (() => void) | null = null
 /** re-entrancy guard so concurrent hydrate() calls don't double-subscribe */
 let hydrating = false
 
+/** Sub-keys of `prev` → `next` that actually changed, or undefined when none did. */
+function diffGroup<T extends object>(prev: T, next: T): Partial<T> | undefined {
+  const patch: Partial<T> = {}
+  for (const key of Object.keys(next) as (keyof T)[]) {
+    if (prev[key] !== next[key]) patch[key] = next[key]
+  }
+  return Object.keys(patch).length > 0 ? patch : undefined
+}
+
+/**
+ * Optimistic write + persist. The SETTINGS_CHANGED echo re-sets the same value
+ * (idempotent), so no rollback is needed for it. On failure, revert only while
+ * the store still holds exactly what this call wrote: a newer call (e.g. a
+ * ColorPicker drag) may already have saved a different value, and reverting
+ * would drop it from the UI although it is on disk.
+ */
+async function persist(
+  get: () => SettingsState,
+  set: (partial: Partial<SettingsState>) => void,
+  written: AppSettings,
+  prev: AppSettings,
+  label: string
+): Promise<void> {
+  set({ settings: written })
+  try {
+    // Send a minimal patch, not the full snapshot: main lets stale-but-sent
+    // fields win, so a snapshot captured before a main-process mutateSettings
+    // write (e.g. the tray's persistCloseAction) would silently revert it.
+    // Absent fields are left untouched on disk.
+    const patch: Partial<AppSettings> = {}
+    if (written.customThemes !== prev.customThemes) patch.customThemes = written.customThemes
+    if (written.highlightRules !== prev.highlightRules) patch.highlightRules = written.highlightRules
+    const terminal = diffGroup(prev.terminal, written.terminal)
+    // Main merges each group one level deep, so a group holding only the
+    // changed sub-keys is a valid patch payload even though the contract types
+    // groups as full objects.
+    if (terminal) patch.terminal = terminal as TerminalSettings
+    const system = diffGroup(prev.system, written.system)
+    if (system) patch.system = system as SystemSettings
+    await window.api.saveSettings(patch)
+  } catch (err) {
+    console.error(`[settings] ${label} failed, rolling back`, err)
+    if (get().settings === written) set({ settings: prev })
+  }
+}
+
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   hydrated: false,
   settings: DEFAULT_SETTINGS,
@@ -55,52 +101,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       ...prev,
       terminal: { ...prev.terminal, ...partial }
     }
-    // optimistic update; the SETTINGS_CHANGED echo will re-set the same value (idempotent)
-    set({ settings: next })
-    try {
-      await window.api.saveSettings(next)
-    } catch (err) {
-      console.error('[settings] updateTerminal failed, rolling back', err)
-      set({ settings: prev })
-    }
+    await persist(get, set, next, prev, 'updateTerminal')
   },
 
   setCustomThemes: async (themes) => {
     const prev = get().settings
     const next: AppSettings = { ...prev, customThemes: themes }
-    set({ settings: next })
-    try {
-      await window.api.saveSettings(next)
-    } catch (err) {
-      console.error('[settings] setCustomThemes failed, rolling back', err)
-      set({ settings: prev })
-    }
+    await persist(get, set, next, prev, 'setCustomThemes')
   },
 
   setHighlightRules: async (rules) => {
     const prev = get().settings
     const next: AppSettings = { ...prev, highlightRules: rules }
-    // optimistic update; the SETTINGS_CHANGED echo will re-set the same value (idempotent)
-    set({ settings: next })
-    try {
-      await window.api.saveSettings(next)
-    } catch (err) {
-      console.error('[settings] setHighlightRules failed, rolling back', err)
-      set({ settings: prev })
-    }
+    await persist(get, set, next, prev, 'setHighlightRules')
   },
 
   updateSystem: async (partial) => {
     const prev = get().settings
     const next: AppSettings = { ...prev, system: { ...prev.system, ...partial } }
-    // optimistic update; the SETTINGS_CHANGED echo will re-set the same value (idempotent)
-    set({ settings: next })
-    try {
-      await window.api.saveSettings(next)
-    } catch (err) {
-      console.error('[settings] updateSystem failed, rolling back', err)
-      set({ settings: prev })
-    }
+    await persist(get, set, next, prev, 'updateSystem')
   }
 }))
 

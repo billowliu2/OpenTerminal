@@ -15,49 +15,79 @@ const MIN_HEIGHT = 120
 export function SshBottomPanel({ sessionId, terminal }: SshBottomPanelProps): React.JSX.Element {
   /** Current file-browser height in px. */
   const [filesHeight, setFilesHeight] = useState<number>(220)
-  /** Container height captured while a drag is in flight. */
-  const dragInfoRef = useRef<{ startY: number; startHeight: number; containerH: number } | null>(null)
+  /** Divider drag in flight — drives the accent highlight. */
+  const [resizing, setResizing] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  /** Drag origin; non-null only while a divider drag is in flight. */
+  const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
+  /** Live container height, refreshed by the observer below: clamping against a
+   *  height captured at mousedown keeps a stale maximum after a window resize. */
+  const containerHRef = useRef(0)
 
-  const onDividerMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
-    if (e.button !== 0) return
-    const container = (e.currentTarget.parentElement as HTMLElement | null) ?? null
-    if (!container) return
-    dragInfoRef.current = {
-      startY: e.clientY,
-      startHeight: filesHeight,
-      containerH: container.clientHeight
-    }
-    e.preventDefault()
-  }, [filesHeight])
+  const clampHeight = useCallback((height: number): number => {
+    return Math.max(MIN_HEIGHT, Math.min(Math.round(containerHRef.current * 0.6), height))
+  }, [])
 
+  // Re-clamp on container resize: a shrunk window would otherwise leave the file
+  // browser taller than 60% of the panel, collapsing the terminal.
   useEffect(() => {
-    const onMove = (e: MouseEvent): void => {
-      const info = dragInfoRef.current
+    const root = rootRef.current
+    if (!root) return
+    const observer = new ResizeObserver(() => {
+      containerHRef.current = root.clientHeight
+      setFilesHeight((prev) => clampHeight(prev))
+    })
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [clampHeight])
+
+  const onDividerPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>): void => {
+      if (e.button !== 0) return
+      const root = rootRef.current
+      if (!root) return
+      containerHRef.current = root.clientHeight
+      dragRef.current = { startY: e.clientY, startHeight: filesHeight }
+      // Pointer capture keeps move/up events coming even when the pointer leaves
+      // the window, so a release outside it cannot strand the drag.
+      e.currentTarget.setPointerCapture(e.pointerId)
+      setResizing(true)
+      e.preventDefault()
+    },
+    [filesHeight]
+  )
+
+  const onDividerPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>): void => {
+      const info = dragRef.current
       if (!info) return
-      const delta = e.clientY - info.startY
-      const max = Math.round(info.containerH * 0.6)
-      setFilesHeight(Math.min(max, Math.max(MIN_HEIGHT, info.startHeight - delta)))
-    }
-    const onUp = (): void => {
-      dragInfoRef.current = null
-    }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
-    return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      setFilesHeight(clampHeight(info.startHeight - (e.clientY - info.startY)))
+    },
+    [clampHeight]
+  )
+
+  const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
+    if (!dragRef.current) return
+    dragRef.current = null
+    setResizing(false)
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
     }
   }, [])
 
   return (
-    <div className="ssh-bottom-panel">
+    <div className="ssh-bottom-panel" ref={rootRef}>
       <div className="ssh-bottom-top">{terminal}</div>
       <div
-        className="ssh-bottom-divider"
+        className={'ssh-bottom-divider' + (resizing ? ' is-resizing' : '')}
         role="separator"
         aria-orientation="horizontal"
         aria-label={t('ssh.bottomPanel.resize')}
-        onMouseDown={onDividerMouseDown}
+        onPointerDown={onDividerPointerDown}
+        onPointerMove={onDividerPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+        onLostPointerCapture={endDrag}
       />
       <div className="ssh-bottom-files" style={{ height: filesHeight }}>
         <FilePanel sessionId={sessionId} />

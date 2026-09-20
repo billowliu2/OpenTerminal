@@ -2,10 +2,17 @@ import { create } from 'zustand'
 
 /** One open terminal session eligible to be a broadcast target. */
 export interface BroadcastSession {
-  /** pty / ssh session id (also the dockview panel id) */
+  /** pty / ssh session id */
   id: string
   title: string
   isSsh: boolean
+  /**
+   * dockview panel showing this session. One session can back several panels —
+   * an SSH split deliberately mirrors a single session — so registrations are
+   * keyed by panel: closing one pane must not unregister the pane that is still
+   * showing that session.
+   */
+  panelId: string
 }
 
 export interface BroadcastState {
@@ -15,10 +22,13 @@ export interface BroadcastState {
   targets: Set<string>
   /** open terminal sessions, registration order preserved */
   sessions: BroadcastSession[]
-  /** register a session as broadcast-eligible (idempotent, keeps it fresh) */
+  /** register a panel's session as broadcast-eligible (upsert, keeps it fresh) */
   registerSession: (session: BroadcastSession) => void
-  /** remove a session; if it was a target, prune it (may auto-disable <2 targets) */
-  unregisterSession: (id: string) => void
+  /**
+   * drop one panel's registration; the session leaves `sessions` (and the
+   * targets, possibly auto-disabling) only once no panel shows it any more
+   */
+  unregisterSession: (panelId: string) => void
   /** add/remove one target; never lets the set drop below 2 while enabled */
   toggleTarget: (id: string) => void
   /** turn broadcast on/off */
@@ -43,29 +53,42 @@ function pruneOnTargetLoss(enabled: boolean, nextTargets: Set<string>): { enable
   return { enabled, targets: nextTargets }
 }
 
+/**
+ * panelId → registration. The session list is derived from these rather than
+ * maintained alongside them: one session can back several panels (an SSH split
+ * mirrors a single session on purpose), and only the last panel to unmount may
+ * take the session out of the registry.
+ */
+const registrations = new Map<string, BroadcastSession>()
+
+/** One entry per session, in first-registration order, latest title wins. */
+function deriveSessions(): BroadcastSession[] {
+  const bySession = new Map<string, BroadcastSession>()
+  for (const registration of registrations.values()) bySession.set(registration.id, registration)
+  return [...bySession.values()]
+}
+
 export const useBroadcastStore = create<BroadcastState>((set) => ({
   enabled: false,
   targets: new Set(),
   sessions: [],
 
-  registerSession: (session) =>
-    set((state) => {
-      const exists = state.sessions.some((s) => s.id === session.id)
-      if (exists) {
-        // keep title/isSsh fresh (e.g. template apply retitles a panel)
-        const sessions = state.sessions.map((s) => (s.id === session.id ? session : s))
-        const targets = new Set(state.targets)
-        return { sessions, targets }
-      }
-      return { sessions: [...state.sessions, session] }
-    }),
+  registerSession: (session) => {
+    registrations.set(session.panelId, session)
+    set({ sessions: deriveSessions() })
+  },
 
-  unregisterSession: (id) =>
+  unregisterSession: (panelId) =>
     set((state) => {
-      const sessions = state.sessions.filter((s) => s.id !== id)
-      if (!state.targets.has(id)) return { sessions }
+      const dropped = registrations.get(panelId)
+      if (!dropped) return {}
+      registrations.delete(panelId)
+      const sessions = deriveSessions()
+      // another pane still shows this session — keep it, and its target slot
+      if (sessions.some((s) => s.id === dropped.id)) return { sessions }
+      if (!state.targets.has(dropped.id)) return { sessions }
       const targets = new Set(state.targets)
-      targets.delete(id)
+      targets.delete(dropped.id)
       return { sessions, ...pruneOnTargetLoss(state.enabled, targets) }
     }),
 
@@ -74,7 +97,11 @@ export const useBroadcastStore = create<BroadcastState>((set) => ({
       const targets = new Set(state.targets)
       if (targets.has(id)) {
         targets.delete(id)
-        return pruneOnTargetLoss(state.enabled, targets)
+        // Deliberate uncheck: keep the remaining selection — broadcast just
+        // turns off below the 2-target minimum. Only session loss (see
+        // unregisterSession) may wipe the set.
+        if (targets.size < 2) return { enabled: false, targets }
+        return { enabled: state.enabled, targets }
       }
       targets.add(id)
       // requires >= 2 targets to become/become-enabled

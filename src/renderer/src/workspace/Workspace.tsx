@@ -17,6 +17,7 @@ import type {
   DockviewApi,
   DockviewPanelApi,
   DockviewReadyEvent,
+  DockviewTheme,
   IDockviewHeaderActionsProps,
   IDockviewPanel,
   IDockviewPanelHeaderProps,
@@ -60,6 +61,54 @@ export type { TerminalParams }
 
 const TERMINAL_COMPONENT = 'terminal'
 const TERMINAL_TAB_COMPONENT = 'terminal-tab'
+
+/**
+ * Sessions we already asked to kill — kill once, never twice.
+ *
+ * Module-level rather than a ref so the dockview `components` /
+ * `tabComponents` maps below can be module constants: dockview re-runs its prop
+ * effects on every identity change and each `updateOptions` ends in an
+ * unconditional `_layoutFromShell()`.
+ */
+const deadSessions = new Set<string>()
+
+/** Mark a session dead ahead of a panel close so the cleanup skips it. */
+function markSessionDead(sessionId: string): void {
+  deadSessions.add(sessionId)
+}
+
+const DOCKVIEW_THEME: DockviewTheme = {
+  name: 'Abyss',
+  className: 'dockview-theme-abyss',
+  colorScheme: 'dark'
+}
+
+const DOCKVIEW_COMPONENTS = {
+  [TERMINAL_COMPONENT]: (props: IDockviewPanelProps<TerminalParams>) => (
+    <TerminalPanel {...props} onSessionDead={markSessionDead} />
+  )
+}
+
+const DOCKVIEW_TAB_COMPONENTS = {
+  [TERMINAL_TAB_COMPONENT]: (props: IDockviewPanelHeaderProps<TerminalParams>) => (
+    <TerminalTab {...props} />
+  )
+}
+
+/**
+ * Electron re-throws a main-process rejection as
+ * `Error: Error invoking remote method 'x': Error: <real message>`, so the real
+ * cause has to be unwrapped to be worth showing.
+ */
+function connectFailureMessage(error: unknown): string {
+  const generic = t('workspace.connect.failed')
+  if (!(error instanceof Error)) return generic
+  const detail = error.message
+    .replace(/^Error invoking remote method '[^']*':\s*/, '')
+    .replace(/^Error:\s*/, '')
+    .trim()
+  return detail ? `${generic}: ${detail}` : generic
+}
 
 /**
  * "终端 N" titles fill the lowest free number among live panels: closing a
@@ -230,7 +279,7 @@ const SshTabActions = createTabActions('ssh')
  * (React state / panel instances stay mounted, so the switch is free).
  *
  * Sessions: panels carry a `params.sessionId`. Killing a session is idempotent
- * through `deadSessionsRef` so a session is killed at most once — either
+ * through the `deadSessions` set so a session is killed at most once — either
  * up-front (TerminalView `onClose` after the process exits) or when its panel
  * is removed. Each dockview registers `onDidRemovePanel` so a panel close in
  * either workspace kills the bound session.
@@ -255,8 +304,6 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   /** The currently-visible mode's active panel (broadcast target). */
   const activePanelRef = useRef<IDockviewPanel | undefined>(undefined)
 
-  /** Sessions we already asked to kill — kill once, never twice. */
-  const deadSessionsRef = useRef<Set<string>>(new Set())
   /** Bind-time disposables for both dockviews, disposed on unmount. */
   const disposablesRef = useRef<Array<{ dispose(): void }>>([])
 
@@ -264,6 +311,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   const [applyOpen, setApplyOpen] = useState(false)
   /** Terminal dockview ready — gates first-run seeding. */
   const [terminalReady, setTerminalReady] = useState(false)
+  /** Settings hydrate is async — the boot pass must not read its defaults. */
+  const settingsHydrated = useSettingsStore((s) => s.hydrated)
 
   /** Local terminal panels surfaced to the sidebar's "终端" section. */
   const [localPanels, setLocalPanels] = useState<Array<{ id: string; title: string }>>([])
@@ -283,8 +332,12 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   }, [])
   /** one pending SSH connection request (null = idle). */
   const [requestedConn, setRequestedConn] = useState<SshConnection | null>(null)
-  /** true while openSession is in flight — drives the "连接中…" modal. */
-  const [connecting, setConnecting] = useState(false)
+  /** In-flight openSession attempts (0 = idle); the rail busy dot reads it. */
+  const [connectingCount, setConnectingCount] = useState(0)
+  const connecting = connectingCount > 0
+  /** Re-entrancy guard for `connect` — a second attempt while one is in flight
+   *  is dropped (openSession cannot be aborted and would orphan a session). */
+  const connectInFlightRef = useRef(0)
   /** FIFO of pending host-key confirmations — render the head only. */
   const [hostKeyQueue, setHostKeyQueue] = useState<HostKeyPromptEvent[]>([])
 
@@ -342,14 +395,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   /** Idempotently kill a pty session. */
   const killSession = useCallback((sessionId: string | undefined): void => {
     if (!sessionId) return
-    if (deadSessionsRef.current.has(sessionId)) return
-    deadSessionsRef.current.add(sessionId)
+    if (deadSessions.has(sessionId)) return
+    deadSessions.add(sessionId)
     window.api.killPty(sessionId)
-  }, [])
-
-  /** Mark a session dead ahead of a panel close so the cleanup skips it. */
-  const markSessionDead = useCallback((sessionId: string): void => {
-    deadSessionsRef.current.add(sessionId)
   }, [])
 
   const createSession = useCallback(async (cwd?: string): Promise<string> => {
@@ -366,14 +414,19 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
    *  terminal dockview holds only local sessions, so it is the single source. */
   const recomputeLocalPanels = useCallback((): void => {
     const current = terminalApiRef.current
-    if (!current) {
-      setLocalPanels([])
-      return
-    }
-    const panels = current.panels
-      .filter((p) => (p.params as TerminalParams | undefined)?.sessionKind === 'local')
-      .map((p) => ({ id: p.id, title: p.title ?? '' }))
-    setLocalPanels(panels)
+    const panels = current
+      ? current.panels
+          .filter((p) => (p.params as TerminalParams | undefined)?.sessionKind === 'local')
+          .map((p) => ({ id: p.id, title: p.title ?? '' }))
+      : []
+    // Keep the previous array when nothing changed: a fresh array on every
+    // layout event re-renders the sidebar (and the whole workspace) for nothing.
+    setLocalPanels((prev) =>
+      prev.length === panels.length &&
+      prev.every((panel, i) => panel.id === panels[i].id && panel.title === panels[i].title)
+        ? prev
+        : panels
+    )
   }, [])
 
   /** Recount session panels per dockview into local state. */
@@ -426,6 +479,10 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         }
         useCount.delete(sid)
         killSession(sid)
+        // No pane shows this session any more: drop its bookkeeping too, so
+        // neither the dead-session set nor the cwd map grows for the whole run.
+        deadSessions.delete(sid)
+        forgetSessionCwd(sid)
       }
 
       const cleanups = [
@@ -522,28 +579,41 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
    * Boot pass: pick up where the user left off — layout plus each pane's
    * directory — when 设置 → 系统 → 启动时恢复上次会话 is on. Otherwise (or when no
    * snapshot exists) seed one terminal. Either way the workspace is never empty.
+   *
+   * Gated on the settings hydrate: reading `restoreSession` before it lands
+   * always sees the defaults, so a user who turned restore off got their session
+   * back whenever the dockview became ready first.
    */
   useEffect(() => {
-    if (!terminalReady) return
+    if (!terminalReady || !settingsHydrated) return
     let cancelled = false
     void (async (): Promise<void> => {
       const current = terminalApiRef.current
       if (!current) return
-      const restoreOn = useSettingsStore.getState().settings.system.restoreSession !== false
-      const snapshot = restoreOn ? await window.api.getSessionState().catch(() => null) : null
-      if (cancelled) return
-      const restorable = Boolean(snapshot && (snapshot.layouts.terminal || snapshot.panels.length > 0))
-      const restored = snapshot && restorable ? await restoreFromSnapshot(snapshot) : false
-      if (cancelled) return
-      if (!restored && !current.panels.some((p) => sessionIdOf(p))) void addTerminal()
-      bootDoneRef.current = true
-      scheduleSave()
+      try {
+        const restoreOn = useSettingsStore.getState().settings.system.restoreSession !== false
+        const snapshot = restoreOn ? await window.api.getSessionState().catch(() => null) : null
+        if (cancelled) return
+        const restorable = Boolean(snapshot && (snapshot.layouts.terminal || snapshot.panels.length > 0))
+        const restored = snapshot && restorable ? await restoreFromSnapshot(snapshot) : false
+        if (cancelled) return
+        if (!restored && !current.panels.some((p) => sessionIdOf(p))) await addTerminal()
+      } catch (error) {
+        // An escaped rejection used to leave the workspace half-applied: the
+        // boot flag never flipped (so no snapshot was ever saved again) and the
+        // panes the pass had not reached stayed bound to dead session ids.
+        console.error('[workspace] session restore failed', error)
+        if (!cancelled) message.error(t('workspace.error.title'))
+      } finally {
+        bootDoneRef.current = true
+        scheduleSave()
+      }
     })()
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot exactly once, on first ready
-  }, [terminalReady])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot once, on ready + hydrated
+  }, [terminalReady, settingsHydrated])
 
   /** Kill remaining sessions on window close. */
   useEffect(() => {
@@ -649,10 +719,15 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
    * stream; `connectionId` + any staged `secretOverride` are the only inputs
    * the main process needs — no extra IPC channel. New sessions land in the ssh
    * dockview.
+   *
+   * Re-entrant calls are dropped: a double-click would otherwise open two
+   * sessions for one click, and openSession cannot be aborted once it is away.
    */
   const connect = useCallback(
     async (conn: SshConnection, secretOverride: SshSecretOverride): Promise<void> => {
-      setConnecting(true)
+      if (connectInFlightRef.current > 0) return
+      connectInFlightRef.current += 1
+      setConnectingCount((count) => count + 1)
       try {
         const result = await window.api.openSession({
           kind: 'ssh',
@@ -674,9 +749,10 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         // B's sidebar refreshes lastConnectedAt on connect.
         void sidebarRef.current?.refresh()
       } catch (error) {
-        message.error(typeof error === 'string' ? error : t('workspace.connect.failed'))
+        message.error(connectFailureMessage(error))
       } finally {
-        setConnecting(false)
+        connectInFlightRef.current -= 1
+        setConnectingCount((count) => count - 1)
         setRequestedConn(null)
       }
     },
@@ -685,6 +761,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
 
   const handleConnectRequest = useCallback(
     (conn: SshConnection): void => {
+      if (connectInFlightRef.current > 0) return
       // Ask-at-connect connections go through the secret prompt first; saved
       // credentials must connect IMMEDIATELY — routing them through ConnectFlow
       // would only ever *render* a "connecting" spinner without firing openSession.
@@ -694,6 +771,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         setRequestedConn(conn)
         return
       }
+      // Immediate path: show the same uncancellable "连接中" modal the secret
+      // path uses, so the server list is not clickable while openSession flies.
+      setRequestedConn(conn)
       void connect(conn, {})
     },
     [connect]
@@ -783,16 +863,35 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
    * panel's `<TerminalView>` with the new `sessionId` prop exactly the way it
    * does when the user switches terminals — its bind effect tears the old xterm
    * down and replays the new session's output.
+   *
+   * The owning dockview api comes along so the panel's survival can be checked
+   * after the await: a pane closed while its pty was still starting would
+   * otherwise leave that fresh session behind, bound to no panel and never
+   * killed.
    */
   const bindPanelSession = useCallback(
-    async (panel: DockviewPanelApi | undefined, currentSessionId: string, cwd?: string): Promise<void> => {
-      if (!panel) return
-      const nextSessionId = await createSession(cwd)
-      panel.updateParameters({ sessionId: nextSessionId, sessionKind: 'local' })
-      deadSessionsRef.current.delete(currentSessionId)
-      forgetSessionCwd(currentSessionId)
+    async (
+      api: DockviewApi | undefined,
+      panel: DockviewPanelApi | undefined,
+      currentSessionId: string,
+      cwd?: string
+    ): Promise<void> => {
+      if (!api || !panel) return
+      try {
+        const nextSessionId = await createSession(cwd)
+        if (!api.getPanel(panel.id)) {
+          killSession(nextSessionId)
+          forgetSessionCwd(nextSessionId)
+          return
+        }
+        panel.updateParameters({ sessionId: nextSessionId, sessionKind: 'local' })
+        deadSessions.delete(currentSessionId)
+        forgetSessionCwd(currentSessionId)
+      } catch (error) {
+        console.error('[workspace] panel rebind failed', error)
+      }
     },
-    [createSession]
+    [createSession, killSession]
   )
 
   /**
@@ -836,7 +935,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           panel.api.close()
           continue
         }
-        await bindPanelSession(panel.api, id, lookup(panel.id)?.cwd)
+        // One pane failing to rebind must not abort the panes after it (they
+        // would keep the stale session id of a previous launch and stay dead).
+        try {
+          await bindPanelSession(api, panel.api, id, lookup(panel.id)?.cwd)
+        } catch (error) {
+          console.error('[workspace] pane rebind failed', panel.id, error)
+        }
       }
     },
     [bindPanelSession]
@@ -879,8 +984,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       // Retitle duplicates left over from the old counter bug (the snapshot it
       // wrote keeps colliding titles forever otherwise): the first panel keeps
       // the title, later ones get the lowest free number.
+      //
+      // Local terminals only: an SSH pane is titled with its server name, and a
+      // split deliberately shares that title with its sibling, so the terminal
+      // numbering pattern is the wrong remedy there.
       const seenTitles = new Set<string>()
       for (const p of [...(terminal?.panels ?? []), ...(ssh?.panels ?? [])]) {
+        if ((p.params as TerminalParams | undefined)?.sessionKind === 'ssh') continue
         const t = p.title ?? ''
         if (!t) continue
         if (seenTitles.has(t)) {
@@ -1014,19 +1124,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           <div className={workspaceMode === 'terminal' ? 'workspace-dockview-container' : 'workspace-dockview-container is-hidden'}>
             <DockviewReact
               className="dockview-theme-abyss"
-              components={{
-                [TERMINAL_COMPONENT]: (props: IDockviewPanelProps<TerminalParams>) => (
-                  <TerminalPanel {...props} onSessionDead={markSessionDead} />
-                )
-              }}
-              tabComponents={{
-                [TERMINAL_TAB_COMPONENT]: (props: IDockviewPanelHeaderProps<TerminalParams>) => (
-                  <TerminalTab {...props} />
-                )
-              }}
+              components={DOCKVIEW_COMPONENTS}
+              tabComponents={DOCKVIEW_TAB_COMPONENTS}
               rightHeaderActionsComponent={TerminalTabActions}
               onReady={handleTerminalReady}
-              theme={{ name: 'Abyss', className: 'dockview-theme-abyss', colorScheme: 'dark' }}
+              theme={DOCKVIEW_THEME}
             />
             {terminalCount === 0 && (
               <div className="workspace-empty-overlay">
@@ -1048,19 +1150,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           <div className={workspaceMode === 'ssh' ? 'workspace-dockview-container' : 'workspace-dockview-container is-hidden'}>
             <DockviewReact
               className="dockview-theme-abyss"
-              components={{
-                [TERMINAL_COMPONENT]: (props: IDockviewPanelProps<TerminalParams>) => (
-                  <TerminalPanel {...props} onSessionDead={markSessionDead} />
-                )
-              }}
-              tabComponents={{
-                [TERMINAL_TAB_COMPONENT]: (props: IDockviewPanelHeaderProps<TerminalParams>) => (
-                  <TerminalTab {...props} />
-                )
-              }}
+              components={DOCKVIEW_COMPONENTS}
+              tabComponents={DOCKVIEW_TAB_COMPONENTS}
               rightHeaderActionsComponent={SshTabActions}
               onReady={handleSshReady}
-              theme={{ name: 'Abyss', className: 'dockview-theme-abyss', colorScheme: 'dark' }}
+              theme={DOCKVIEW_THEME}
             />
             {sshCount === 0 && (
               <div className="workspace-empty-overlay">

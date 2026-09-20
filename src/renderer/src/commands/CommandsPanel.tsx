@@ -260,6 +260,9 @@ function Row({
             icon={<DeleteOutlined />}
             className="commands-row-del"
             aria-label={t('panels.commands.deleteAria')}
+            // The row itself runs the command — opening the confirm must not
+            // leak that click, or the command is typed into the live terminal.
+            onClick={(e) => e.stopPropagation()}
           />
         </Popconfirm>
       )}

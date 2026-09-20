@@ -61,6 +61,11 @@ export function ConnectionEditDialog({
     setErrorMsg(null)
     const base: SshAuthMethod = editing?.auth ?? 'password'
     setAuth(base)
+    // Fields keep their value when unmounted (rc-form preserve: true), so the
+    // secrets below must be cleared explicitly — otherwise a password typed for
+    // connection A survives into connection B's save. resetFields() drops every
+    // stored value; setFieldsValue() then re-seeds the non-secret fields.
+    form.resetFields()
     form.setFieldsValue({
       name: editing?.name,
       group: editing?.group,
