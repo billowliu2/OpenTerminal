@@ -1,5 +1,35 @@
 # OpenTerminal Changelog
 
+## v1.0.14 - 2026-09-20
+
+- Fixed silent corruption of uploaded files **larger than ~250KB** (size looked correct but the content had scrambled bytes)
+- Fixed a remote file-handle leak on every download and a leftover SFTP channel after every transfer; a malformed server response no longer crashes the whole app
+- Uploading over an existing file now asks for confirmation; partially failed multi-file deletes are now reported
+- Permission editor fixes: files with unknown mode no longer get a stray `chmod 000`; an empty GID is no longer replaced by the new UID; setuid / setgid / sticky bits are shown and preserved
+- chmod / chown now time out instead of spinning forever
+
+- Fixed Chinese output over SSH turning into mojibake (multi-byte chars split across network chunks)
+- Fixed command history being lost or corrupted after accepting a Tab completion
+- Fixed editing keys (Ctrl+U / Ctrl+W, …) being written into command history (the "two commands merged" entries)
+- `cd ~/dir` and `cd $HOME/...` are now remembered; new terminals restore them
+- URL click ranges inside lines containing CJK characters no longer shift; degenerate sizes are no longer sent when the window is tiny
+- SSH sessions report the real exit code; ZMODEM timeouts no longer dump garbage into the terminal or the log
+
+- A failed session restore no longer disables snapshot saving for the whole run
+- Monitor CPU / network history charts now redraw live; polling stops while the SSH workspace is hidden
+- Broadcast: closing one pane of a split no longer drops the other from broadcast targets; unchecking one target no longer clears the rest
+- Connection failures show the real reason; double-clicks no longer open duplicate sessions
+- Fixed "Close others / Close right" skipping tabs
+- Language switches apply from the first frame; active-tab text adapts after a theme switch (no more unreadable labels on light themes)
+- The private-key path field no longer claims to be a server-side path
+
+- File drops can no longer navigate the window; external links are limited to http(s) / ftp; IPC is sender-checked
+- Stored passwords are only used for password-auth bookmarks (key-auth bookmarks no longer fall back to sending a password)
+- Connections / known hosts are written atomically — a crash can no longer wipe them
+- A crashed renderer has all of its sessions and logs reclaimed automatically
+- A corrupted custom theme no longer prevents the app from starting
+- Update-channel publishing is atomic — a failed publish can no longer break auto-update
+
 ## v1.0.13 - 2026-09-20
 
 - Simplified Chinese, Traditional Chinese, English and Japanese, switchable in Settings → System → Language; applies instantly and persists
