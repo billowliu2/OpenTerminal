@@ -52,8 +52,10 @@ const sync = ({ notes, changelog, header, required }) => {
   }
 
   const section = `## v${pkgVersion} - ${new Date().toISOString().slice(0, 10)}\n\n${body}\n`
+  // Function replacement, not a string: a notes body containing `$&`, `$1`, `` $` ``
+  // or `$'` would otherwise be expanded by String.replace and corrupt the merge.
   const updated = existing
-    ? existing.replace(new RegExp(`^(${header}\\n\\n)`), `$1${section}\n`)
+    ? existing.replace(new RegExp(`^(${header}\\n\\n)`), (_m, head) => `${head}${section}\n`)
     : `${header}\n\n${section}`
   fs.writeFileSync(changelogPath, updated, 'utf8')
   console.log(`${changelog}: added v${pkgVersion} (${body.split('\n').length} lines)`)
