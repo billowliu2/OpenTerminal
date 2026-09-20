@@ -167,6 +167,18 @@ process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException:', err)
 })
 
+// Diagnostics for "app froze then recovered" reports: WER logs an
+// AppHangTransient but keeps no stack. A stall of THIS (UI) thread is what
+// Windows flags as a hang, so measure event-loop lag and say so loudly when
+// it happens — that distinguishes a main-process block from a renderer one.
+let lastTick = Date.now()
+setInterval(() => {
+  const now = Date.now()
+  const lag = now - lastTick - 1000
+  if (lag > 2000) console.error(`[main] event loop stalled ~${lag}ms`)
+  lastTick = now
+}, 1000).unref()
+
 app.on('before-quit', () => {
   // Let window 'close' events pass through so teardown completes.
   markQuitting()

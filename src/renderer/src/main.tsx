@@ -11,6 +11,19 @@ import { useSettingsStore } from './settings/store'
 import { mix } from './theme/chrome'
 import './global.css'
 
+// Diagnostics: report renderer main-thread freezes after recovery. console.error
+// is surfaced into the dev terminal by the main process's console-message hook,
+// so a "卡死又恢复" report tells us which process stalled and for how long.
+{
+  let lastTick = performance.now()
+  setInterval(() => {
+    const now = performance.now()
+    const lag = now - lastTick - 2000
+    if (lag > 3000) console.error(`[renderer] main thread stalled ~${Math.round(lag)}ms`)
+    lastTick = now
+  }, 2000)
+}
+
 // Dev convenience: allow opening the renderer in a plain browser (vite page)
 // so layout/UX work doesn't require the electron shell. No-op under electron.
 if (typeof window !== 'undefined' && !window.api) {
