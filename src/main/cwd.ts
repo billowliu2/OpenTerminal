@@ -37,6 +37,10 @@ export function resolveCwd(current: string | undefined, rawArg: string): string 
   }
   // `cd -` means the shell's previous directory, which we cannot know here.
   if (arg === '-') return null
+  // `cd ~/src`, `cd $HOME/x`, `cd %USERPROFILE%\x`: expand the home prefix
+  // before the absolute/relative decision below.
+  const homePrefix = arg.match(/^(?:~|\$HOME)(?=[/\\])/) ?? arg.match(/^%USERPROFILE%(?=[/\\])/i)
+  if (homePrefix) arg = homedir() + arg.slice(homePrefix[0].length)
   // Drive-relative `cd d:` (cmd/PowerShell): the target is the drive's
   // current directory, which the shell never tells us — path.isAbsolute('d:')
   // is false, so without this branch it resolves against the base and dies on

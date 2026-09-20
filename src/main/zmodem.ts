@@ -37,10 +37,12 @@ export interface ZmodemDeps {
   broadcast(channel: string, ...args: unknown[]): void
   /**
    * Forward NON-ZMODEM octets back through the normal terminal data path
-   * (utf8 + replay + session log + PTY_DATA). pty.ts injects this; the engine
-   * only calls it when no transfer is active.
+   * (utf8 decode + replay + session log + PTY_DATA). pty.ts injects this and
+   * owns the decoding (per-session StringDecoder — a multi-byte char may be
+   * split across TCP chunks); the engine only calls it when no transfer is
+   * active.
    */
-  toTerminal(sessionId: string, text: string): void
+  toTerminal(sessionId: string, data: Buffer): void
   /** Write bytes out to the ssh stream (zmodem frames + CAN abort sequence). */
   writeStream(sessionId: string, data: Buffer): void
 }
@@ -129,7 +131,17 @@ function finalize(
     }
     engine.receiveStream = null
   }
-  engine.session = null // the zsession already ended; drop the reference
+  if (!ok && engine.session) {
+    // Failure paths (stall watchdog, corrupt frame) must stop the peer too:
+    // without an abort the remote rz/sz keeps transmitting frames that then
+    // leak into the terminal and the session log.
+    try {
+      engine.session.abort()
+    } catch {
+      // session already ended
+    }
+  }
+  engine.session = null
   engine.detection = null
 
   if (!engine.progressEmitted) {
@@ -300,7 +312,7 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
         // Analysis: also defensive against active http-parsing leftovers.
         if (engine.active) return // suppress binary terminal output during transfer
         try {
-          deps.toTerminal(sessionId, Buffer.from(octets).toString('utf8'))
+          deps.toTerminal(sessionId, Buffer.from(octets))
         } catch {
           // never crash the event loop
         }
@@ -321,6 +333,8 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
         engine.dir = null
         engine.session = null
         engine.receiveStream = null
+        engine.bytes = 0
+        engine.totalBytes = 0
         engine.transferId = `zm-${sessionId}`
         emitProgress(engine, { file: '', bytes: 0, totalBytes: 0 })
         try {
@@ -328,7 +342,6 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
         } catch {
           // never crash the event loop
         }
-        touchActivity(engine)
         engine.offerTimer = setTimeout(() => {
           if (engine.detection && !engine.confirmed) {
             abortWithoutSession(engine, t('main.zmodem.offerTimedOut'))
@@ -373,6 +386,12 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
  * the CAN abort sequence directly so the remote program exits.
  */
 function abortWithoutSession(engine: Engine, message: string): void {
+  try {
+    engine.detection?.deny()
+  } catch {
+    // already retracted or confirmed
+  }
+  engine.detection = null
   try {
     engine.deps.writeStream(engine.id, ABORT_BUFFER)
   } catch {
@@ -425,7 +444,7 @@ export function isZmodemActive(sessionId: string): boolean {
  */
 export function respondZmodem(resp: ZmodemResponse): void {
   const engine = current(resp.id)
-  if (!engine || engine.confirmed) return
+  if (!engine || !engine.active || engine.confirmed) return
 
   if (resp.cancelled) {
     abortWithoutSession(engine, t('main.zmodem.cancelled'))

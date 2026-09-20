@@ -2,6 +2,7 @@ import { t } from '../shared/i18n'
 import { spawn, type IPty } from '@lydell/node-pty'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
+import { StringDecoder } from 'string_decoder'
 import { Ipc, type PtyCreateOptions, type PtyCreateResult } from '../shared/ipc'
 import type { SessionOpenOptions, HostKeyPromptEvent, SshConnection } from '../shared/connections'
 import { broadcast } from './broadcast'
@@ -55,7 +56,7 @@ function safeStopLog(id: string): void {
  * shell; the generic PTY_* (data plane) channels address both. PTY_DATA /
  * PTY_EXIT broadcasts are identical for both kinds.
  */
-type Session = { kind: 'local'; pty: IPty } | { kind: 'ssh'; ssh: SshSessionHandle }
+type Session = { kind: 'local'; pty: IPty; owner?: number } | { kind: 'ssh'; ssh: SshSessionHandle; owner?: number }
 
 /** The live ssh2 client behind an ssh session, or undefined. */
 export function getSshClient(id: string): SshSessionHandle['client'] | undefined {
@@ -73,11 +74,28 @@ const sessions = new Map<string, Session>()
 const REPLAY_CAP = 64 * 1024
 const replayBuffers = new Map<string, string>()
 
+/**
+ * Per-session UTF-8 decoder for the ssh data plane. ssh2 hands out raw TCP
+ * chunks, so a multi-byte character split across a chunk boundary must be
+ * held over by the decoder instead of decoding each chunk alone (which turns
+ * the split char into U+FFFD — systematic for CJK output).
+ */
+const sshDecoders = new Map<string, StringDecoder>()
+
 function appendReplay(id: string, data: string): void {
   const prev = replayBuffers.get(id) ?? ''
-  const next = prev.length + data.length > REPLAY_CAP
-    ? (prev + data).slice(prev.length + data.length - REPLAY_CAP)
-    : prev + data
+  const combined = prev + data
+  let next = combined.length > REPLAY_CAP ? combined.slice(combined.length - REPLAY_CAP) : combined
+  if (next !== combined) {
+    // The cut may have landed inside an escape sequence or a surrogate pair.
+    // Resync at the next ESC (which starts a complete sequence) and drop a
+    // leading lone low surrogate so xterm neither swallows later output nor
+    // renders a replacement char.
+    const esc = next.indexOf('\x1b')
+    if (esc > 0 && esc < 64) next = next.slice(esc)
+    const code = next.charCodeAt(0)
+    if (code >= 0xdc00 && code <= 0xdfff) next = next.slice(1)
+  }
   replayBuffers.set(id, next)
 }
 
@@ -148,7 +166,7 @@ function defaultShell(): string {
   }
 }
 
-export function createPty(opts: PtyCreateOptions = {}): PtyCreateResult {
+export function createPty(opts: PtyCreateOptions = {}, owner?: number): PtyCreateResult {
   const id = randomUUID()
   const shell = opts.shell ?? defaultShell()
   // A remembered directory can be gone by the next launch (renamed, unmounted,
@@ -185,7 +203,7 @@ export function createPty(opts: PtyCreateOptions = {}): PtyCreateResult {
   }
 
   const pty = spawn(shell, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd, env })
-  sessions.set(id, { kind: 'local', pty })
+  sessions.set(id, { kind: 'local', pty, owner })
   replayBuffers.set(id, '')
 
   pty.onData((data) => {
@@ -218,9 +236,9 @@ export function createPty(opts: PtyCreateOptions = {}): PtyCreateResult {
  * Open a session. `local` reuses createPty; `ssh` goes through the ssh service
  * and resolves only once the shell stream is ready to stream data.
  */
-export async function openSession(opts: SessionOpenOptions): Promise<{ id: string }> {
+export async function openSession(opts: SessionOpenOptions, owner?: number): Promise<{ id: string }> {
   if (opts.kind === 'local') {
-    return { id: createPty().id }
+    return { id: createPty(undefined, owner).id }
   }
 
   const deps = runtimeDeps
@@ -248,7 +266,8 @@ export async function openSession(opts: SessionOpenOptions): Promise<{ id: strin
     broadcast: deps.broadcast,
     promptHostKey: deps.promptHostKey
   })
-  sessions.set(handle.id, { kind: 'ssh', ssh: handle })
+  sessions.set(handle.id, { kind: 'ssh', ssh: handle, owner })
+  sshDecoders.set(handle.id, new StringDecoder('utf8'))
 
   // ZMODEM (M6): attach the in-process engine to the raw ssh stream. Only ssh
   // sessions are supported -- node-pty/Windows ConPTY hands out UTF-8 strings
@@ -258,7 +277,9 @@ export async function openSession(opts: SessionOpenOptions): Promise<{ id: strin
   // writePty drops user keystrokes while isZmodemActive is true).
   attachZmodem(handle.id, {
     broadcast: (channel, ...args) => deps.broadcast(channel, ...args),
-    toTerminal: (id, text) => {
+    toTerminal: (id, data) => {
+      const text = sshDecoders.get(id)?.write(data) ?? data.toString('utf8')
+      if (!text) return // the chunk was entirely a partial multi-byte char
       appendReplay(id, text)
       safeLog(id, text)
       deps.broadcast(Ipc.PTY_DATA, { id, data: text })
@@ -282,6 +303,11 @@ export async function openSession(opts: SessionOpenOptions): Promise<{ id: strin
     feedZmodem(handle.id, data)
   })
 
+  handle.stream.on('exit', (code: number | undefined) => {
+    // ssh2 reports the remote command's real exit status here, before 'close'.
+    if (typeof code === 'number') handle.exitCode = code
+  })
+
   handle.stream.on('close', () => {
     try {
       stopPolling(handle.id)
@@ -290,7 +316,8 @@ export async function openSession(opts: SessionOpenOptions): Promise<{ id: strin
       safeStopLog(handle.id)
       sessions.delete(handle.id)
       replayBuffers.delete(handle.id)
-      deps.broadcast(Ipc.PTY_EXIT, { id: handle.id, exitCode: 0 })
+      sshDecoders.delete(handle.id)
+      deps.broadcast(Ipc.PTY_EXIT, { id: handle.id, exitCode: handle.exitCode })
     } catch {
       // never crash the event loop
     }
@@ -325,12 +352,13 @@ export function resizePty(id: string, cols: number, rows: number): void {
   }
 }
 
-export function killPty(id: string): void {
+function killSession(id: string): void {
   stopPolling(id)
   closeSftp(id)
   detachZmodem(id)
   safeStopLog(id)
   replayBuffers.delete(id)
+  sshDecoders.delete(id)
   const session = sessions.get(id)
   if (!session) return
   if (session.kind === 'ssh') {
@@ -352,6 +380,20 @@ export function killPty(id: string): void {
     }
   }
   sessions.delete(id)
+}
+
+export function killPty(id: string): void {
+  killSession(id)
+}
+
+/** Kill every session owned by a renderer that crashed or was destroyed
+ *  without running its own cleanup — normal close/reload kills its own
+ *  sessions via beforeunload before we ever get here. */
+export function killPtysByOwner(owner: number): void {
+  for (const id of [...sessions.keys()]) {
+    if (sessions.get(id)?.owner !== owner) continue
+    killSession(id)
+  }
 }
 
 export function killAllPtys(): void {
@@ -382,4 +424,5 @@ export function killAllPtys(): void {
     }
   }
   sessions.clear()
+  sshDecoders.clear()
 }

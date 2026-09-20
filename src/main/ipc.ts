@@ -1,7 +1,10 @@
 import { app, ipcMain, shell } from 'electron'
+import type { IpcMainEvent, IpcMainInvokeEvent } from 'electron'
 import fontList from 'font-list'
 import { homedir } from 'os'
 import { statSync } from 'fs'
+import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { Ipc, type AppInfo, type LayoutMeta, type PtyCreateOptions } from '../shared/ipc'
 import { t } from '../shared/i18n'
 import type { HostKeyAction, SessionOpenOptions, SshConnection, SshConnectionInput } from '../shared/connections'
@@ -33,6 +36,66 @@ import { createPty, killPty, resizePty, writePty, openSession, configureSessionR
 import { respondZmodem } from './zmodem'
 import type { ZmodemResponse } from '../shared/ipc'
 
+/** The renderer document this app loads (dev builds load it from vite instead). */
+const RENDERER_FILE = join(__dirname, '../renderer/index.html')
+
+/**
+ * True only for a document the app itself loaded: the bundled renderer file, or
+ * in dev anything served by the vite dev server. Used both to refuse a
+ * navigation away from the app page and to refuse IPC from a frame that is not
+ * it — a window that navigated elsewhere would still hold this preload bridge,
+ * which is the whole main-process API (`createPty` included).
+ */
+export function isTrustedRendererUrl(raw: string): boolean {
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  try {
+    const target = new URL(raw)
+    if (devUrl) return target.origin === new URL(devUrl).origin
+    return target.protocol === 'file:' && target.pathname === pathToFileURL(RENDERER_FILE).pathname
+  } catch {
+    return false
+  }
+}
+
+type InvokeListener = (event: IpcMainInvokeEvent, ...args: any[]) => unknown
+type EventListener = (event: IpcMainEvent, ...args: any[]) => void
+
+let senderGuardInstalled = false
+
+/**
+ * Channels are registered from four modules (this one, settingsStore,
+ * sessionState, updater) and Electron exposes no global IPC hook, so the sender
+ * check is installed once here — the single entry point all of them are
+ * registered through — rather than repeated at every registration site.
+ *
+ * Handlers never saw the sender before: any frame that managed to navigate
+ * could drive the main process. Refused invokes reject the renderer's promise;
+ * refused sends are dropped.
+ */
+function installSenderGuard(): void {
+  if (senderGuardInstalled) return
+  senderGuardInstalled = true
+  const rawHandle = ipcMain.handle.bind(ipcMain) as (
+    channel: string,
+    listener: InvokeListener
+  ) => void
+  const rawOn = ipcMain.on.bind(ipcMain) as (channel: string, listener: EventListener) => void
+
+  ipcMain.handle = ((channel: string, listener: InvokeListener) =>
+    rawHandle(channel, (event, ...args) => {
+      if (!isTrustedRendererUrl(event.senderFrame?.url ?? '')) {
+        throw new Error(`[ipc] refused "${channel}" from an untrusted frame`)
+      }
+      return listener(event, ...args)
+    })) as typeof ipcMain.handle
+
+  ipcMain.on = ((channel: string, listener: EventListener) =>
+    rawOn(channel, (event, ...args) => {
+      if (!isTrustedRendererUrl(event.senderFrame?.url ?? '')) return
+      listener(event, ...args)
+    })) as typeof ipcMain.on
+}
+
 let commandsStore: CommandsStore | undefined
 
 /** M5: inject a custom command store (tests) or default to userData-backed. */
@@ -48,6 +111,7 @@ export function getCommandsStore(): CommandsStore {
 }
 
 export function registerIpc(): void {
+  installSenderGuard()
   const connectionsStore = new ConnectionsStore(defaultConnectionsPath(app.getPath('userData')))
   const knownHostsStore = new KnownHostsStore(defaultKnownHostsPath(app.getPath('userData')))
   const cmds = getCommandsStore()
@@ -82,8 +146,8 @@ export function registerIpc(): void {
     (): AppInfo => ({ platform: process.platform, appVersion: app.getVersion(), homeDir: homedir() })
   )
 
-  ipcMain.handle(Ipc.PTY_CREATE, (_event, opts?: PtyCreateOptions) => createPty(opts))
-  ipcMain.handle(Ipc.SESSION_OPEN, (_event, opts: SessionOpenOptions) => openSession(opts))
+  ipcMain.handle(Ipc.PTY_CREATE, (event, opts?: PtyCreateOptions) => createPty(opts, event.sender.id))
+  ipcMain.handle(Ipc.SESSION_OPEN, (event, opts: SessionOpenOptions) => openSession(opts, event.sender.id))
   ipcMain.handle(Ipc.SESSION_REPLAY, (_event, id: string) => getSessionReplay(id))
   ipcMain.on(Ipc.PTY_WRITE, (_event, id: string, data: string) => writePty(id, data))
   ipcMain.on(Ipc.PTY_RESIZE, (_event, id: string, cols: number, rows: number) =>

@@ -1,8 +1,8 @@
 import { app, BrowserWindow, globalShortcut, nativeImage, shell } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { registerIpc } from './ipc'
-import { killAllPtys } from './pty'
+import { isTrustedRendererUrl, registerIpc } from './ipc'
+import { killAllPtys, killPtysByOwner } from './pty'
 import { applyStartupSystemSettings, loadSettings } from './settingsStore'
 import { initTray, markQuitting, onMainWindowClose, refreshTrayMenu } from './tray'
 import { configureAutoUpdater, registerUpdateIpc } from './updater'
@@ -21,6 +21,21 @@ function showOrCreate(): void {
   }
 }
 
+/**
+ * Hand a link to the OS browser. Only the web schemes are allowed: a renderer
+ * that asked to open `file:`/`ms-*:`/anything else must not reach the shell.
+ */
+function openExternal(url: string): void {
+  try {
+    const { protocol } = new URL(url)
+    if (protocol === 'http:' || protocol === 'https:' || protocol === 'ftp:') {
+      void shell.openExternal(url)
+    }
+  } catch {
+    // unparsable target: nothing to open
+  }
+}
+
 // Dev runs get their own userData directory (settings, session snapshot,
 // command history, logs) *and* their own single-instance lock — both are keyed
 // on that path. Without this a dev instance fights the installed build: it
@@ -32,11 +47,34 @@ if (!app.isPackaged) {
 
 // Single instance: a second launch just surfaces the existing window (pulls
 // it out of the tray if hidden there) instead of starting another process.
+// The refused instance skips the whole startup path: `app.quit()` only asks
+// the app to exit, so running the `whenReady` init behind it left a second
+// process with IPC, a tray and an updater but no window.
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', () => showOrCreate())
+
+  app.whenReady().then(() => {
+    registerIpc()
+    registerUpdateIpc()
+    // Before the window exists: a renderer-triggered check must not run against
+    // the updater's defaults (feed, proxy, autoDownload are set in here).
+    configureAutoUpdater()
+    // OS-level effects (login item, sleep blocker) must apply even if the
+    // settings dialog is never opened this run.
+    applyStartupSystemSettings(loadSettings())
+    createWindow()
+    initTray(showOrCreate)
+    // Tray labels are resolved from the dictionary at build time, so the menu has
+    // to be rebuilt whenever the interface language changes.
+    onLanguageChange(() => refreshTrayMenu())
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
 }
 
 function createWindow(): void {
@@ -95,9 +133,23 @@ function createWindow(): void {
     }
   })
 
+  // A renderer that crashed or was destroyed without running its own cleanup
+  // (normal close/reload kills its sessions via beforeunload first) leaves
+  // orphaned PTY/SSH transports behind — and session logs that keep appending.
+  const dropOwnedSessions = (): void => killPtysByOwner(win.webContents.id)
+  win.webContents.on('render-process-gone', dropOwnedSessions)
+  win.webContents.on('destroyed', dropOwnedSessions)
+
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  // Dropping a local .html file on the window is a navigation like any other,
+  // and the new document would inherit this window's privileged preload. Only
+  // the app's own page may (re)load here.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!isTrustedRendererUrl(url)) event.preventDefault()
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -113,24 +165,6 @@ process.on('unhandledRejection', (reason) => {
 })
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException:', err)
-})
-
-app.whenReady().then(() => {
-  registerIpc()
-  registerUpdateIpc()
-  // OS-level effects (login item, sleep blocker) must apply even if the
-  // settings dialog is never opened this run.
-  applyStartupSystemSettings(loadSettings())
-  createWindow()
-  initTray(showOrCreate)
-  // Tray labels are resolved from the dictionary at build time, so the menu has
-  // to be rebuilt whenever the interface language changes.
-  onLanguageChange(() => refreshTrayMenu())
-  configureAutoUpdater()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
 })
 
 app.on('before-quit', () => {

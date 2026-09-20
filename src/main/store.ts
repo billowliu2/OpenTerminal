@@ -35,12 +35,15 @@ export function readJson<T = unknown>(file: string): T | null {
   }
 }
 
+/** Backing buffer for Atomics.wait below: the retry sleep must be blocking
+ *  because every caller writes synchronously. */
+const RENAME_RETRY_WAIT = new Int32Array(new SharedArrayBuffer(4))
+
 export function writeJson(file: string, value: unknown): void {
   mkdirSync(dirname(file), { recursive: true })
   const tmp = tmpPath(file)
   try {
     writeFileSync(tmp, JSON.stringify(value, null, 2), 'utf8')
-    renameSync(tmp, file)
   } catch (err) {
     // Clean up the temp file so a failed write does not leave litter behind.
     try {
@@ -49,6 +52,26 @@ export function writeJson(file: string, value: unknown): void {
       /* nothing to clean */
     }
     throw err
+  }
+  // On Windows the replacing rename fails transiently with EPERM/EBUSY while
+  // an indexer or AV scanner holds the destination open; a short retry keeps
+  // an otherwise good write from being thrown away.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(tmp, file)
+      return
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (attempt >= 5 || (code !== 'EPERM' && code !== 'EBUSY')) {
+        try {
+          unlinkSync(tmp)
+        } catch {
+          /* nothing to clean */
+        }
+        throw err
+      }
+      Atomics.wait(RENAME_RETRY_WAIT, 0, 0, 5 * (attempt + 1))
+    }
   }
 }
 

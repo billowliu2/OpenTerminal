@@ -129,10 +129,26 @@ function pollOnce(id: string, state: PollState): void {
         return
       }
       let out = ''
+      let done = false
+      // A wedged remote command (e.g. df on a hung NFS mount) never closes the
+      // stream; without this watchdog the poll loop freezes silently forever.
+      const watchdog = setTimeout(() => {
+        if (done) return
+        done = true
+        try {
+          stream.close()
+        } catch {
+          // best effort
+        }
+        handleError(id, state, t('main.sysinfo.pollTimeout'))
+      }, state.intervalMs * 2)
       stream.on('data', (d: Buffer) => {
         out += d.toString('utf8')
       })
       const onEnd = (): void => {
+        if (done) return
+        done = true
+        clearTimeout(watchdog)
         if (state.stopped) return
         try {
           stream.close()
@@ -142,7 +158,18 @@ function pollOnce(id: string, state: PollState): void {
         handleOutput(id, state, out)
       }
       stream.on('close', onEnd)
-      stream.on('error', () => onEnd())
+      stream.on('error', (streamErr: Error) => {
+        if (done) return
+        done = true
+        clearTimeout(watchdog)
+        if (state.stopped) return
+        try {
+          stream.close()
+        } catch {
+          // best effort
+        }
+        handleError(id, state, streamErr?.message || t('main.sysinfo.execFailed'))
+      })
     })
   } catch (err) {
     handleError(id, state, (err as Error).message)
@@ -304,8 +331,8 @@ function parseProc(blob: string): { cpu: SysinfoSample['cpu']; cpuIdle: number; 
         const irq = f[5] ?? 0
         const softirq = f[6] ?? 0
         const steal = f[7] ?? 0
-        const guest = f[8] ?? 0
-        const guestNice = f[9] ?? 0
+        // guest/guest_nice (f[8]/f[9]) are already included in user/nice per
+        // proc(5) — summing them in would double-count and understate CPU%.
         idle = idleTicks + iowait
         total =
           user +
@@ -314,9 +341,7 @@ function parseProc(blob: string): { cpu: SysinfoSample['cpu']; cpuIdle: number; 
           idle +
           irq +
           softirq +
-          steal +
-          guest +
-          guestNice
+          steal
       } else {
         cores += 1
       }

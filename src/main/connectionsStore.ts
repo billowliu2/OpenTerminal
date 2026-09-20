@@ -13,9 +13,9 @@
 
 import { safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { dirname } from 'path'
+import { readFileSync } from 'fs'
 import type { SshAuthMethod, SshConnection, SshConnectionInput } from '../shared/connections'
+import { writeJson } from './store'
 
 const ENC_SUFFIX = '_enc'
 const PLAIN_PREFIX = 'plain:'
@@ -128,8 +128,7 @@ export class ConnectionsStore {
   }
 
   private save(list: StoredConnection[]): void {
-    mkdirSync(dirname(this.filePath), { recursive: true })
-    writeFileSync(this.filePath, JSON.stringify(list, null, 2), 'utf8')
+    writeJson(this.filePath, list)
   }
 
   listConnections(): SshConnection[] {

@@ -5,8 +5,8 @@
  */
 
 import { createHash, randomUUID } from 'crypto'
-import { mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { dirname } from 'path'
+import { readFileSync } from 'fs'
+import { writeJson } from './store'
 
 export interface KnownHostEntry {
   /** uuid; addedAt is split out so fingerprint clash updates can be precise */
@@ -63,8 +63,7 @@ export class KnownHostsStore {
   }
 
   private save(shape: KnownHostsStoreShape): void {
-    mkdirSync(dirname(this.filePath), { recursive: true })
-    writeFileSync(this.filePath, JSON.stringify(shape, null, 2), 'utf8')
+    writeJson(this.filePath, shape)
   }
 
   /**

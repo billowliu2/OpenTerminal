@@ -65,7 +65,7 @@ export class LogSanitizer {
             this.cr = true
           } else if (c === '\n') {
             out += this.emitLine()
-          } else if (c === '\t' || c >= ' ' || c === '\x7f') {
+          } else if (c === '\t' || c >= ' ') {
             // printable + tab; DEL and C0 controls (bell etc.) are dropped
             if (this.alt) this.altDirty = true
             else this.line += c
@@ -97,6 +97,10 @@ export class LogSanitizer {
             this.mode = 'text'
           } else if (this.seq.length < 1024) {
             this.seq += c
+          } else {
+            // Runaway sequence past the cap: resync as plain text instead of
+            // swallowing all following output while stuck in 'csi'.
+            this.mode = 'text'
           }
           break
         case 'osc':
@@ -124,9 +128,15 @@ export class LogSanitizer {
       this.cr = false
       // A trailing \r at stop: treat as line ending rather than overwrite.
       out += this.emitLine()
-    } else if (this.line && !this.alt) {
-      out += this.line
-      this.line = ''
+    } else if (this.line) {
+      if (this.alt) {
+        // Stopped mid-TUI: route through emitLine so the suppressed span gets
+        // its [TUI output omitted] marker via altDirty below.
+        out += this.emitLine()
+      } else {
+        out += this.line
+        this.line = ''
+      }
     }
     if (this.altDirty) {
       this.altDirty = false

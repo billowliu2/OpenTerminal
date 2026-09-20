@@ -41,8 +41,14 @@ export function formatMode(mode: number): string {
     [0o040, 'r'], [0o020, 'w'], [0o010, 'x'],
     [0o004, 'r'], [0o002, 'w'], [0o001, 'x']
   ]
-  const perm = groups.map(([bit, ch]) => ((mode & bit) !== 0 ? ch : '-')).join('')
-  return kind + perm
+  const perm = groups.map(([bit, ch]) => ((mode & bit) !== 0 ? ch : '-'))
+  // Special bits share the x columns: setuid/setgid → s/S, sticky → t/T
+  // (uppercase when the corresponding execute bit is clear). The renderer's
+  // permission editor round-trips these, so report them instead of dropping.
+  if ((mode & 0o4000) !== 0) perm[2] = perm[2] === 'x' ? 's' : 'S'
+  if ((mode & 0o2000) !== 0) perm[5] = perm[5] === 'x' ? 's' : 'S'
+  if ((mode & 0o1000) !== 0) perm[8] = perm[8] === 'x' ? 't' : 'T'
+  return kind + perm.join('')
 }
 
 /**
@@ -70,12 +76,23 @@ async function sftpOf(sessionId: string): Promise<SFTPWrapper> {
   const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
     client.sftp((err, sftp_) => (err != null ? reject(err) : resolve(sftp_)))
   })
+  // ssh2.d.ts declares only the used surface; the wrapper is an EventEmitter
+  ;(sftp as SFTPWrapper & { on(event: 'error', cb: (err: Error) => void): void }).on('error', (err: Error) => {
+    console.error(`[sftp] channel error sessionId=${sessionId}: ${err.message}`)
+    if (sftpCache.get(sessionId) === sftp) evictSftp(sessionId)
+  })
   sftpCache.set(sessionId, sftp)
   return sftp
 }
 
 function evictSftp(sessionId: string): void {
+  const sftp = sftpCache.get(sessionId)
   sftpCache.delete(sessionId)
+  try {
+    sftp?.end?.()
+  } catch {
+    // best effort — the channel may already be dead
+  }
 }
 
 /**
@@ -87,7 +104,7 @@ function evictSftp(sessionId: string): void {
 function isTransportError(err: unknown): boolean {
   if (err instanceof SessionGoneError) return true
   const msg = (err as Error | undefined)?.message ?? ''
-  return /not connected|ECONNRESET|EPIPE|timed out|disconnected|channel|read past end/i.test(msg)
+  return /not connected|ECONNRESET|EPIPE|timed out|disconnected|channel|read past end|no response/i.test(msg)
 }
 
 /** Run `fn` with the session's cached sftp; a dead cached channel is evicted and retried once. */
@@ -193,7 +210,7 @@ export function deleteRemote(sessionId: string, paths: string[]): Promise<void> 
         failures.push(`${path}: ${(err as Error).message}`)
       }
     }
-    if (paths.length > 0 && failures.length === paths.length) {
+    if (failures.length > 0) {
       throw new Error(t('main.sftp.deleteFailed', { detail: failures.join('; ') }))
     }
   })
@@ -235,13 +252,25 @@ function execQuiet(sessionId: string, cmd: string): Promise<void> {
         reject(err)
         return
       }
+      let stdout = ''
       let stderr = ''
-      stream.on('data', () => undefined)
+      const timer = setTimeout(() => {
+        stream.close()
+        reject(new Error(t('main.sftp.commandTimeout')))
+      }, 10_000)
+      stream.on('data', (d: Buffer) => {
+        stdout += d.toString('utf8')
+      })
       stream.stderr?.on('data', (d: Buffer) => {
         stderr += d.toString('utf8')
       })
+      stream.on('error', (e: Error) => {
+        clearTimeout(timer)
+        reject(e)
+      })
       stream.on('close', (code: number) => {
-        if (code) reject(new Error(stderr || t('main.sftp.commandExitCode', { code })))
+        clearTimeout(timer)
+        if (code) reject(new Error(stderr || stdout || t('main.sftp.commandExitCode', { code })))
         else resolve()
       })
     })
@@ -299,7 +328,6 @@ export function uploadRemote(
             try {
               let pos = 0
               let lastEmit = 0
-              const buf = Buffer.alloc(CHUNK)
               for (;;) {
                 if (transfer.cancelled) throw new Error(t('main.sftp.cancelled'))
                 if (firstError) throw firstError
@@ -307,6 +335,9 @@ export function uploadRemote(
                   await Promise.race(inflight)
                   if (firstError) throw firstError
                 }
+                // per-iteration buffer: pipelined writes outlive the loop, and
+                // ssh2 re-reads the overflow tail after the ACK arrives
+                const buf = Buffer.allocUnsafe(CHUNK)
                 const { bytesRead } = await localHandle.read(buf, 0, CHUNK, pos)
                 if (bytesRead === 0) break
                 const offset = pos
@@ -408,6 +439,8 @@ export function downloadRemote(
           } catch (err) {
             await fsp.rm(local, { force: true })
             throw err
+          } finally {
+            await pVoid(cb => sftp.close(handle, cb)).catch(() => undefined)
           }
           if (transfer.cancelled) {
             await fsp.rm(local, { force: true })

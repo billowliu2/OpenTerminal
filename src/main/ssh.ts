@@ -28,6 +28,11 @@ export interface SshSessionHandle {
   client: Client
   /** open interactive shell channel (ClientChannel, a Duplex) */
   stream: ClientChannel
+  /**
+   * Exit code reported for the session: the channel's 'exit' event when the
+   * remote sends one, 1 when the client errors out mid-session, else 0.
+   */
+  exitCode: number
 }
 
 export interface SshServiceDeps {
@@ -80,6 +85,7 @@ export async function connectSsh(
   let settled = false
   let connectTimer: NodeJS.Timeout | undefined
   let verifierErr: string | undefined
+  let sessionHandle: SshSessionHandle | undefined
   let resolvePromise!: (handle: SshSessionHandle) => void
   let rejectPromise!: (err: Error) => void
 
@@ -161,6 +167,9 @@ export async function connectSsh(
         return
       }
       // Session already established: surface as a session exit and clean up.
+      // Record the failure code on the handle so the stream's later 'close'
+      // (pty.ts) reports the same exit code instead of a bogus 0.
+      if (sessionHandle) sessionHandle.exitCode = 1
       try {
         deps.broadcast(Ipc.PTY_EXIT, { id: sessionId, exitCode: 1 })
       } catch {
@@ -201,7 +210,8 @@ export async function connectSsh(
           } catch {
             // store write failure must not break the session
           }
-          resolvePromise({ id: sessionId, client: handshake, stream: shell })
+          sessionHandle = { id: sessionId, client: handshake, stream: shell, exitCode: 0 }
+          resolvePromise(sessionHandle)
         }
       )
     })
@@ -215,8 +225,14 @@ export async function connectSsh(
       hostVerifier
     }
 
-    // Password auth
-    const password = secretOverride?.password ?? deps.connections.getSecret(conn, 'password')
+    // Password auth. A stored password is offered only when the bookmark is
+    // configured for password auth: connectionsStore keeps password_enc when a
+    // bookmark is switched to key/agent auth, and silently falling back to it
+    // would authenticate a weaker method than the user chose. An explicitly
+    // typed connect-time password (secretOverride) is always honoured.
+    const password =
+      secretOverride?.password ??
+      (conn.auth === 'password' ? deps.connections.getSecret(conn, 'password') : undefined)
     if (password !== undefined) cfg.password = password
 
     // Private key auth (keyPath takes precedence over stored keyContent)

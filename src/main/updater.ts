@@ -67,10 +67,12 @@ function wireEvents(): void {
 
 /** Check the active feed; on failure switch Gitea → GitHub and retry once. */
 async function checkWithFallback(): Promise<void> {
+  // The feed choice is per attempt: a transient Gitea failure must not pin
+  // every later check to GitHub (and its system proxy) for the whole session.
+  useFeed('gitea')
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {
-    if (activeFeed !== 'gitea') throw err
     console.warn('[updater] gitea feed failed, falling back to github:', err)
     const giteaErr = err instanceof Error ? err.message : String(err)
     useFeed('github')
@@ -164,11 +166,15 @@ export function registerUpdateIpc(): void {
   ipcMain.handle(Ipc.UPDATE_CHECK, handleCheck)
   ipcMain.handle(Ipc.UPDATE_DOWNLOAD, handleDownload)
   ipcMain.handle(Ipc.UPDATE_INSTALL, () => {
+    if (!app.isPackaged) return
     // The close interceptor (tray flow) would swallow this quit — mark first.
     markQuitting()
-    autoUpdater.quitAndInstall()
+    // (isSilent, isForceRunAfter): relaunch the installed build, otherwise the
+    // app would just disappear on "restart to update".
+    autoUpdater.quitAndInstall(false, true)
   })
   ipcMain.handle(Ipc.UPDATE_CHANGELOG, fetchChangelog)
+  ipcMain.handle(Ipc.UPDATE_STATE_GET, () => state)
 }
 
 export function configureAutoUpdater(): void {

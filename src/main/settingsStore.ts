@@ -10,7 +10,7 @@ import {
   type SystemSettings,
   type TerminalSettings
 } from '../shared/settings'
-import type { TerminalTheme } from '../shared/theme'
+import { DEFAULT_DARK, type TerminalTheme, type ThemeColors } from '../shared/theme'
 import { DEFAULT_LANGUAGE, isLanguage, setLanguage } from '../shared/i18n'
 import { broadcast } from './broadcast'
 import { applyGlobalShortcut } from './globalShortcuts'
@@ -18,16 +18,12 @@ import { applyWindowChrome } from './windowChrome'
 
 const settingsPath = (): string => join(app.getPath('userData'), 'settings.json')
 
-const DEFAULT_SYSTEM: SystemSettings = {
-  launchAtLogin: false,
-  preventSleep: false,
-  globalShowHide: '',
-  // Must match DEFAULT_SETTINGS.system in @shared/settings — an "ask" here made
-  // a fresh install prompt on close while the docs and UI promised tray.
-  closeAction: 'tray',
-  autoCheckUpdate: true,
-  language: DEFAULT_LANGUAGE
-}
+/**
+ * Snapshot of the shared system defaults, derived rather than retyped so the two
+ * cannot drift (a hand-written copy once shipped closeAction 'ask', which made a
+ * fresh install prompt on close while the docs and UI promised the tray).
+ */
+const DEFAULT_SYSTEM: SystemSettings = { ...DEFAULT_SETTINGS.system }
 
 const TERMINAL_KEYS = new Set(Object.keys(DEFAULT_SETTINGS.terminal) as (keyof TerminalSettings)[])
 
@@ -108,6 +104,58 @@ function sanitizeRules(value: unknown, warnings: Warnings): HighlightRule[] {
   return rules
 }
 
+const THEME_COLOR_KEYS = Object.keys(DEFAULT_DARK.colors) as (keyof ThemeColors)[]
+
+/**
+ * Validate custom themes, repairing colours instead of dropping the theme.
+ *
+ * These reach `getThemeById`, which does a bare `.find()` over the list and
+ * hands the result to xterm *and* to the window/title-bar colours — an entry
+ * without an id or without colours used to throw inside `whenReady`, i.e. before
+ * the tray and updater were wired, leaving a windowless process holding the
+ * single-instance lock. Every colour missing from the stored entry is filled
+ * from the built-in dark theme so a theme is always complete.
+ */
+function sanitizeThemes(value: unknown, warnings: Warnings): TerminalTheme[] {
+  if (!Array.isArray(value)) return []
+  const themes: TerminalTheme[] = []
+  value.forEach((entry, index) => {
+    if (entry === null || typeof entry !== 'object') {
+      warnings.push(`customThemes[${index}]: not an object — skipped`)
+      return
+    }
+    const theme = entry as Record<string, unknown>
+    if (typeof theme.id !== 'string' || theme.id === '' || typeof theme.name !== 'string') {
+      warnings.push(`customThemes[${index}]: missing id/name — skipped`)
+      return
+    }
+    if (theme.colors === null || typeof theme.colors !== 'object') {
+      warnings.push(`customThemes[${index}].colors repaired → built-in dark palette`)
+    }
+    const candidate =
+      theme.colors !== null && typeof theme.colors === 'object'
+        ? (theme.colors as Record<string, unknown>)
+        : null
+    const colors: ThemeColors = { ...DEFAULT_DARK.colors }
+    const target = colors as unknown as Record<string, string>
+    for (const key of THEME_COLOR_KEYS) {
+      const color = candidate?.[key]
+      if (typeof color === 'string' && color !== '') target[key] = color
+      else if (color !== undefined) {
+        warnings.push(`customThemes[${index}].colors.${key} repaired → built-in default`)
+      }
+    }
+    themes.push({
+      ...theme,
+      id: theme.id,
+      name: theme.name,
+      builtin: theme.builtin === true,
+      colors
+    } as TerminalTheme)
+  })
+  return themes
+}
+
 function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
   const errors: string[] = []
   let terminal: TerminalSettings = { ...DEFAULT_SETTINGS.terminal }
@@ -137,7 +185,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
     }
   }
 
-  let system: unknown = DEFAULT_SYSTEM
+  let system: unknown = { ...DEFAULT_SYSTEM }
   if (raw !== null && typeof raw === 'object') {
     const sys = (raw as { system?: unknown }).system
     if (sys !== null && typeof sys === 'object') {
@@ -164,7 +212,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
     }
   }
 
-  const themes: TerminalTheme[] = Array.isArray(customThemes) ? (customThemes as TerminalTheme[]) : []
+  const themes = sanitizeThemes(customThemes, errors)
 
   return {
     settings: {
@@ -306,13 +354,23 @@ export function mutateSettings(mutate: (settings: AppSettings) => AppSettings): 
   return run
 }
 
-/** Replace the persisted settings with `next` (serialized). */
-export function saveSettings(next: AppSettings): Promise<AppSettings> {
-  return mutateSettings((current) => ({ ...current, ...next }))
+/** Merge a (partial) settings patch into the persisted settings. */
+export function saveSettings(next: Partial<AppSettings>): Promise<AppSettings> {
+  // system/terminal merge one level deep, so a partial patch cannot wipe sibling
+  // keys. The renderer now sends a minimal patch, so *absent* fields no longer
+  // win over the stored state; stale-but-sent fields still do, which is why
+  // main-process writes go through mutateSettings on the freshly read state
+  // instead of this path.
+  return mutateSettings((current) => ({
+    ...current,
+    ...next,
+    terminal: { ...current.terminal, ...next.terminal },
+    system: { ...current.system, ...next.system }
+  }))
 }
 
 export function registerSettingsIpc(): void {
   migrateDefaultsOnce()
   ipcMain.handle(Ipc.SETTINGS_GET, () => loadSettings())
-  ipcMain.handle(Ipc.SETTINGS_SET, (_event, next: AppSettings) => saveSettings(next))
+  ipcMain.handle(Ipc.SETTINGS_SET, (_event, next: Partial<AppSettings>) => saveSettings(next))
 }

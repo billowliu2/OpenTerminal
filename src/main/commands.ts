@@ -27,6 +27,7 @@ import type { CommandItem, SessionLogMeta } from '../shared/commands'
 import { DEFAULT_SETTINGS } from '../shared/settings'
 import { loadSettings } from './settingsStore'
 import { LogSanitizer } from './logSanitizer'
+import { writeJson } from './store'
 
 /** Upper bound on recorded history entries when no limit is configured. */
 const HISTORY_CAP = 500
@@ -113,8 +114,7 @@ export class CommandsStore {
   }
 
   private saveCommands(data: CommandsFile): void {
-    mkdirSync(join(this.file, '..'), { recursive: true })
-    writeFileSync(this.file, JSON.stringify(data, null, 2), 'utf8')
+    writeJson(this.file, data)
   }
 
   /**
@@ -132,7 +132,9 @@ export class CommandsStore {
    * existing history is left untouched rather than cleared.
    */
   recordCommand(cmd: string): void {
-    const trimmed = cmd.trim()
+    // The line arrives from the renderer's line buffer, which can still hold
+    // editing bytes (Ctrl+U, a stray ESC): only the printable text is a command.
+    const trimmed = cmd.replace(/[\x00-\x1f\x7f]/g, '').trim()
     if (!trimmed) return
     const { historyEnabled, historyLimit } = loadHistoryPrefs()
     if (!historyEnabled) return
@@ -246,11 +248,10 @@ export class CommandsStore {
   /** Write the full log index so listSessionLogs survives restart. */
   private persistIndex(): void {
     try {
-      mkdirSync(this.logsDir, { recursive: true })
       const all = Array.from(this.metasByFile.values()).sort(
         (a, b) => b.startedAt - a.startedAt
       )
-      writeFileSync(this.indexFile, JSON.stringify(all, null, 2), 'utf8')
+      writeJson(this.indexFile, all)
     } catch {
       // best effort: never break the session over an index write failure
     }
@@ -269,7 +270,10 @@ export class CommandsStore {
     if (prev) this.finishLog(prev)
 
     mkdirSync(this.logsDir, { recursive: true })
-    const fileName = `${stamp()}-${sessionId.slice(0, 8)}.log`
+    // The id comes from the renderer and lands in a file name: keep only the
+    // characters a session id is made of so it can never reach outside logsDir.
+    const safeId = sessionId.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 8) || 'session'
+    const fileName = `${stamp()}-${safeId}.log`
     const file = join(this.logsDir, fileName)
     // Create the file eagerly so the first async append cannot race a missing fd.
     describeFile(file)
