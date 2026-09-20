@@ -4,7 +4,7 @@
 
 ## 当前版本与仓库
 
-- v0.1.0（版本重置：作为全新开源项目从 0.1.0 起步），远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
+- v1.0.13，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
 - 开源协议：MIT（LICENSE）
 - 更新通道 = `https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/`（公网可读，含 latest.yml/exe/blockmap）
 - 技术栈：Electron + electron-vite + React 19 + TS strict + antd 6（全局深色）+ zustand + dockview-react 8 + @xterm/xterm 6 + @lydell/node-pty + ssh2 + zmodem.js + electron-updater + electron-builder
@@ -24,6 +24,7 @@
 | M7 打包分发（MSI+NSIS+自动更新） | ✅（v0.7.0 已发布 Release） |
 | M8 工作区分离+底部文件面板+右键菜单+监控美化+补全修复 | ✅（v0.8.0） |
 | M9 体验打磨（托盘+关闭行为+单实例+主题联动标题栏+布局菜单重做+补全修正+图标） | ✅ |
+| M10 多语言界面（zh-CN/zh-TW/en/ja）+离线多语言更新日志+按键录制+可配工具条+设置健壮性 | ✅（v1.0.13） |
 
 ## M8 实现要点（v0.8.0，已落地）
 
@@ -42,31 +43,34 @@
 
 - **广播输入**：渲染层 zustand（broadcastStore）维护 enabled/targets/sessions；TerminalView 全部写路径（onData/补全/粘贴/Workspace runCommand）走 writeBroadcast 扇出；目标 <2 自动禁用；tab 目标圆点 + 按钮计数徽标
 - **ZMODEM**：主进程引擎（src/main/zmodem.ts，仅 SSH 会话；本地 pty 走 ConPTY 只给 UTF-8 字符串，二进制会损坏——不支持，注释已说明）；Sentry 常驻分流非 zmodem 字节；offer→渲染层选文件/目录→respond；传输期抑制 PTY_DATA/replay/日志并丢弃用户键入；offer 120s/传输 90s 看门狗；进度复用 TransferPanel（kind=zmodem-upload/download）；测试 tests/zmodem-e2e.mjs 用第二个 zmodem.js Sentry 模拟远端，双向内容一致性断言
-- **快捷输入面板**：QuickInputPanel 右下 fixed 浮层（bottom:44 避让 TransferPanel），发送经 writeBroadcast（广播感知），列表打开沿刷新
 - **快捷键**：Ctrl+=/-/0 字号（main.tsx capture 监听，xterm-helper-textarea 放行——隐藏 textarea 曾被误判为输入框导致终端聚焦时失效，已修）；globalShowHide accelerator（globalShortcuts.ts，设置页系统分区可配，注册失败仅 warn）；Ctrl+PgUp/PgDn 面板循环（Workspace capture 监听）
 - **打包**：electron-builder.yml（msi 固定 upgradeCode 5ab9f79e-e4eb-4052-9df6-3af3a301ab0a + nsis；asarUnpack @lydell/node-pty + ssh2；npmRebuild false）；updater.ts（仅 packaged 启用，OT_UPDATE_URL/OT_UPDATE_TOKEN env，默认 feed=上述 generic package 地址）
 
 ## 发布流程（下一版本照抄）
 
-1. package.json version 升位 → `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）
-2. `git tag vX.Y.Z && git push origin main vX.Y.Z`
-3. Gitea API 建发布：POST /api/v1/repos/admin/OpenTerminal/releases（中文 body 必须走 UTF-8 文件 --data-binary @file，shell 内联会坏）
-4. 附件：POST .../releases/{id}/assets?name=（msi/exe/blockmap/latest.yml，实测 141MB 可传）
-5. 更新通道：DELETE .../api/packages/admin/generic/openterminal-update/stable（旧版）→ PUT 同 URL 依次上传 latest.yml / exe.blockmap / exe
-6. 校验：curl 无 token 拉 latest.yml 应 200 且 version 正确
+1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）
+2. `node scripts/release.cjs <版本号> --skip-github`：脚本自己建 Gitea release（msi/exe 资产）→ 传更新通道 `exe.blockmap → exe → release-notes.md → latest.yml`（**latest.yml 最后**）；不再先删旧版，latest.yml 生效后才清掉上一版 exe/blockmap
+3. 通道传坏了只补通道：`node scripts/release.cjs <版本号> --channel-only`（同一版本可重复运行：release 复用、已传资产跳过）
+4. 校验：无 token `curl .../generic/openterminal-update/stable/latest.yml` 应 200 且 version 正确
+5. `git tag vX.Y.Z && git push origin main vX.Y.Z`（GitHub 镜像只推代码/tag，不随版本发 release 资产）
 
 ## 测试（全部通过，改动后必跑）
 
 ```bash
-npx tsc --noEmit -p tsconfig.node.json && npx tsc --noEmit -p tsconfig.web.json
+npm run typecheck   # tsconfig.node.json + tsconfig.web.json
 npm run build
+npm test            # = node tests/build-bundles.cjs && 下面 7 个测试（依次，全部离线可跑）
 node tests/ssh-loopback.mjs
-npx esbuild src/main/pty.ts --bundle --platform=node --format=cjs --outfile=tests/.session-e2e.cjs --external:@lydell/node-pty --external:ssh2 --alias:electron=./tests/electron-stub.cjs && node tests/ssh-session-e2e.mjs
-node tests/sysinfo-e2e.mjs
-npx esbuild tests/hl-split-smoke.mjs --bundle --platform=node --format=cjs --outfile=tests/.hl-split-smoke.cjs && node tests/.hl-split-smoke.cjs
 node tests/commands-store.mjs
+node tests/settings-store.mjs        # 设置清洗器（closeAction/高亮规则修复/告警日志）
+node tests/.hl-split-smoke.cjs
 node tests/zmodem-e2e.mjs
-# 真实服务器测试（需 JD 环境变量凭据，旧凭据已过期）：
+node tests/ssh-session-e2e.mjs
+node tests/sysinfo-e2e.mjs
+# `node tests/build-bundles.cjs` 单独重建全部 6 个 esbuild bundle（别名只存在于该脚本）：
+#   .session-e2e.cjs(pty.ts) .sftp-svc.mjs(sftp.ts，ESM) .commands-store.cjs .settings-store.cjs
+#   .zmodem-e2e.cjs .hl-split-smoke.cjs —— 少 --alias:@shared=./src/shared 会编译失败
+# 真实服务器测试（需 JD 环境变量凭据，旧凭据已过期，不在 npm test 内）：
 # JD_HOST=... JD_USER=root JD_PASS=... node tests/sftp-real.mjs / tests/sftp-chmod.mjs
 # 打包：npm run dist（产物 release/）
 ```
@@ -94,4 +98,4 @@ node tests/zmodem-e2e.mjs
 
 1. ~~应用图标~~（已完成：build/icon.png，程序生成的原创图标）
 2. 用户实测项：Ctrl+PgUp/PgDn 真实键盘（合成键盘无法验证修饰键）、真实服务器 rz/sz 一轮、全局唤起快捷键
-3. 小项：autoWrap=false 固定列宽、OSC 标题跟随、内置 OFL 字体打包、WebGL 终端数上限降级、i18n（中英切换）、最近命令历史出现两条命令拼接的记录（广播键入时行捕获合并，低优先级修）
+3. 小项：autoWrap=false 固定列宽、OSC 标题跟随、内置 OFL 字体打包、WebGL 终端数上限降级、最近命令历史出现两条命令拼接的记录（广播键入时行捕获合并，低优先级修）

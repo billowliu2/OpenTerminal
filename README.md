@@ -9,6 +9,7 @@ npm install        # 已安装可跳过
 npm run dev        # 开发模式（热更新）
 npm run build      # 生产构建到 out/
 npm run typecheck  # 全量类型检查
+npm test           # 重建测试 bundle 后依次跑离线测试（详见「测试」）
 ```
 
 > Electron 二进制下载失败时：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`
@@ -42,7 +43,7 @@ npm run typecheck  # 全量类型检查
 
 **效率工具**
 - 广播输入：勾选 ≥2 个终端后同步键入，标签带广播标记
-- 快捷输入面板：右下角浮层，命令历史 + 命令库（支持 `{{param}}` 变量）+ 一键执行
+- 命令面板：侧边栏「命令」标签分「历史」/「命令库」两页，历史按会话去重，命令库支持分组与一键运行
 - 输入建议：历史 + 命令库来源，Tab 接受、回车始终直接执行（可在设置中整体关闭）
 - 会话日志：手动启停、纯文本落盘
 - 快捷键：Ctrl+=/-/0 字号、Ctrl+PgUp/PgDn 切换面板、全局唤起/隐藏（可配）
@@ -55,9 +56,21 @@ npm run typecheck  # 全量类型检查
 - 单实例运行：重复启动唤出已有窗口
 - 设置持久化（userData/settings.json，原子写入）+ 多窗口实时同步
 
+**界面与语言**
+- 四种界面语言：简体中文 / 繁體中文 / English / 日本語（设置 → 系统 → 界面语言，切换即时生效并持久化；antd 组件内置文案一并跟随）
+- 更新日志随安装包内置，「关于」页离线可看，并按当前界面语言显示（某版本缺翻译时回退简体中文）
+
 **测试**
+
+`npm test` 会先重建 esbuild bundle，再依次跑下列测试（无需服务器与凭据）：
+
 - `node tests/ssh-loopback.mjs` — ssh2 客户端/服务端回环（认证、shell、数据、resize、指纹）
-- `node tests/ssh-session-e2e.mjs` — 真实会话路由层端到端（需先跑 esbuild 打包命令，见脚本头注释）
+- `node tests/ssh-session-e2e.mjs` — 会话路由层端到端（SSH 数据面、replay、resize、kill）
+- `node tests/sysinfo-e2e.mjs` — 服务器监控轮询端到端（META、采样速率、stopPolling）
+- `node tests/zmodem-e2e.mjs` — ZMODEM 双向传输（与第二个 zmodem.js Sentry 对接，内容一致性）
+- `node tests/commands-store.mjs` / `node tests/settings-store.mjs` — 命令库/历史/会话日志与设置清洗器
+- `node tests/.hl-split-smoke.cjs` — 关键词高亮流分块回归（bundle 由 `node tests/build-bundles.cjs` 生成）
+- 真实服务器测试（需 `JD_HOST/JD_USER/JD_PASS`，不在 `npm test` 内）：`tests/sftp-real.mjs`、`tests/sftp-chmod.mjs`
 
 ## 架构
 
