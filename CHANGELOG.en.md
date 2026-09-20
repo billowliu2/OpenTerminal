@@ -1,5 +1,17 @@
 # OpenTerminal Changelog
 
+## v1.0.15 - 2026-09-20
+
+- **Custom terminal background image**: Settings → Theme → Background image lets you use any local image as the terminal background, with 10%–100% image opacity control; removing the image restores the solid background
+- **Duplicate-name warning in the theme editor**: creating or renaming a theme that collides with a builtin or another custom theme now shows a hint (saving is still allowed)
+- Theme editor seed colors are normalized; invalid color values can no longer enter custom themes
+- Corrupted custom theme colors are auto-repaired to defaults with a warning logged
+
+- The selected item in the settings dialog's left navigation is now white, matching the contrast of unselected items (fixes unreadable blue text on dark backgrounds)
+- New background-image and opacity controls ship with localized strings in all four languages (zh-CN / zh-TW / en / ja)
+
+- Added freeze-duration probes for the renderer and main process to help diagnose future "not responding" reports
+
 ## v1.0.14 - 2026-09-20
 
 - Fixed silent corruption of uploaded files **larger than ~250KB** (size looked correct but the content had scrambled bytes)
