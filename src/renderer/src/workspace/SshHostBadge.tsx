@@ -1,3 +1,5 @@
+import { t } from '@shared/i18n'
+
 /**
  * Small capsule badge showing the SSH host label (e.g. `root@36.151.147.123`)
  * on an SSH terminal tab. Host labels are often long, so the display string is
@@ -9,7 +11,7 @@ export function SshHostBadge({ label }: { label: string }): React.JSX.Element {
     <span
       className="ssh-host-badge"
       title={label}
-      aria-label={`SSH 主机 ${label}`}
+      aria-label={t('ssh.hostBadge.aria', { label })}
     >
       {label}
     </span>

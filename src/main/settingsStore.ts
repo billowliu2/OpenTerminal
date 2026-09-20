@@ -11,6 +11,7 @@ import {
   type TerminalSettings
 } from '../shared/settings'
 import type { TerminalTheme } from '../shared/theme'
+import { DEFAULT_LANGUAGE, isLanguage, setLanguage } from '../shared/i18n'
 import { broadcast } from './broadcast'
 import { applyGlobalShortcut } from './globalShortcuts'
 import { applyWindowChrome } from './windowChrome'
@@ -24,32 +25,87 @@ const DEFAULT_SYSTEM: SystemSettings = {
   // Must match DEFAULT_SETTINGS.system in @shared/settings — an "ask" here made
   // a fresh install prompt on close while the docs and UI promised tray.
   closeAction: 'tray',
-  autoCheckUpdate: true
+  autoCheckUpdate: true,
+  language: DEFAULT_LANGUAGE
 }
 
 const TERMINAL_KEYS = new Set(Object.keys(DEFAULT_SETTINGS.terminal) as (keyof TerminalSettings)[])
 
-/** Light structural check for a persisted highlight rule. */
-function isHighlightRule(value: unknown): value is HighlightRule {
-  if (value === null || typeof value !== 'object') return false
+/** Load-time warnings (bad terminal keys, repaired/dropped rules). Surfaced via
+ *  reportWarnings() so a hand-edited or migrated settings.json leaves a trace
+ *  instead of silently losing data. */
+type Warnings = string[]
+
+/** Fallback colour for a rule whose own colour is unusable. */
+const DEFAULT_RULE_COLOR = '#e3b341'
+
+/** Repair one persisted rule instead of dropping it. Shape problems with an
+ *  obvious fix (priority as "5", enabled as 1/0, a missing fg colour) are
+ *  corrected; only entries that cannot be a rule at all are skipped. Unknown
+ *  extra fields are preserved so newer/older schemas survive a round trip. */
+function coerceRule(value: unknown, index: number, warnings: Warnings): HighlightRule | null {
+  if (value === null || typeof value !== 'object') {
+    warnings.push(`highlightRules[${index}]: not an object — skipped`)
+    return null
+  }
   const rule = value as Record<string, unknown>
-  return (
-    typeof rule.id === 'string' &&
-    typeof rule.pattern === 'string' &&
-    typeof rule.enabled === 'boolean' &&
-    typeof rule.priority === 'number' &&
-    rule.color !== null &&
-    typeof rule.color === 'object' &&
-    typeof (rule.color as { fg?: unknown }).fg === 'string'
-  )
+  if (typeof rule.id !== 'string' || typeof rule.pattern !== 'string') {
+    warnings.push(`highlightRules[${index}]: missing id/pattern — skipped`)
+    return null
+  }
+
+  let enabled = true
+  if (typeof rule.enabled === 'boolean') enabled = rule.enabled
+  else if (rule.enabled === 1 || rule.enabled === 0) {
+    enabled = rule.enabled === 1
+    warnings.push(`highlightRules[${index}].enabled repaired: ${String(rule.enabled)} → ${enabled}`)
+  } else if (rule.enabled !== undefined) {
+    warnings.push(`highlightRules[${index}].enabled repaired → true`)
+  }
+
+  const rawPriority = typeof rule.priority === 'number' ? rule.priority : Number(rule.priority)
+  let priority = 10
+  if (Number.isFinite(rawPriority)) {
+    priority = Math.min(100, Math.max(1, Math.round(rawPriority)))
+    if (priority !== rule.priority) {
+      warnings.push(`highlightRules[${index}].priority repaired: ${String(rule.priority)} → ${priority}`)
+    }
+  } else {
+    warnings.push(`highlightRules[${index}].priority repaired → ${priority}`)
+  }
+
+  const color: { fg: string; bg?: string } = { fg: DEFAULT_RULE_COLOR }
+  if (rule.color !== null && typeof rule.color === 'object') {
+    const candidate = rule.color as Record<string, unknown>
+    if (typeof candidate.fg === 'string' && candidate.fg !== '') color.fg = candidate.fg
+    else warnings.push(`highlightRules[${index}].color.fg repaired → ${DEFAULT_RULE_COLOR}`)
+    if (typeof candidate.bg === 'string' && candidate.bg !== '') color.bg = candidate.bg
+  } else {
+    warnings.push(`highlightRules[${index}].color repaired → ${DEFAULT_RULE_COLOR}`)
+  }
+
+  return {
+    ...rule,
+    id: rule.id,
+    pattern: rule.pattern,
+    enabled,
+    priority,
+    color,
+    note: typeof rule.note === 'string' ? rule.note : undefined
+  } as HighlightRule
 }
 
-function sanitizeRules(value: unknown): HighlightRule[] {
+function sanitizeRules(value: unknown, warnings: Warnings): HighlightRule[] {
   // An explicit empty array is a valid choice ("no highlighting"); only
   // malformed data falls back to the built-in rules. Returning the defaults for
   // [] made deleting the last rule look like it silently failed.
   if (!Array.isArray(value)) return DEFAULT_HIGHLIGHT_RULES
-  return value.filter(isHighlightRule)
+  const rules: HighlightRule[] = []
+  value.forEach((entry, index) => {
+    const rule = coerceRule(entry, index, warnings)
+    if (rule) rules.push(rule)
+  })
+  return rules
 }
 
 function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
@@ -89,7 +145,9 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
       const globalShowHide =
         typeof candidate.globalShowHide === 'string' ? candidate.globalShowHide : ''
       const closeAction =
-        candidate.closeAction === 'tray' || candidate.closeAction === 'exit'
+        candidate.closeAction === 'tray' ||
+        candidate.closeAction === 'exit' ||
+        candidate.closeAction === 'ask'
           ? candidate.closeAction
           : 'tray'
       system = {
@@ -100,7 +158,8 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         autoCheckUpdate: candidate.autoCheckUpdate !== false,
         // Both default on/off as in DEFAULT_SETTINGS; absent means "not chosen".
         restoreSession: candidate.restoreSession !== false,
-        shellIntegration: candidate.shellIntegration === true
+        shellIntegration: candidate.shellIntegration === true,
+        language: isLanguage(candidate.language) ? candidate.language : DEFAULT_LANGUAGE
       }
     }
   }
@@ -111,7 +170,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
     settings: {
       terminal,
       customThemes: themes,
-      highlightRules: sanitizeRules(highlightRules),
+      highlightRules: sanitizeRules(highlightRules, errors),
       system: system as SystemSettings
     },
     errors
@@ -124,6 +183,9 @@ let sleepBlockerId: number | undefined
 
 /** Apply OS-level effects of the system settings (login item, sleep blocker). */
 function applySystemSettings(system: SystemSettings): void {
+  // The main process renders its own strings (tray menu, dialogs), so it tracks
+  // the language itself; subscribers rebuild whatever they own.
+  setLanguage(system.language ?? DEFAULT_LANGUAGE)
   try {
     app.setLoginItemSettings({ openAtLogin: system.launchAtLogin })
   } catch (err) {
@@ -144,10 +206,38 @@ export function applyStartupSystemSettings(settings: AppSettings): void {
   applySystemSettings(settings.system)
 }
 
+/**
+ * Persist load-time warnings to `<userData>/settings-warnings.log`.
+ *
+ * Repeated identical warnings are collapsed (loadSettings runs on every save and
+ * on every command-history write) and the file is trimmed when it grows, so a
+ * broken config leaves a trace without filling the disk.
+ */
+let lastWarnings = ''
+
+function reportWarnings(warnings: string[]): void {
+  const line = warnings.join('; ')
+  if (!line) {
+    lastWarnings = ''
+    return
+  }
+  if (line === lastWarnings) return
+  lastWarnings = line
+  try {
+    const file = join(app.getPath('userData'), 'settings-warnings.log')
+    const existing = existsSync(file) ? readFileSync(file, 'utf8') : ''
+    const kept = existing.length > 64 * 1024 ? existing.slice(-32 * 1024) : existing
+    writeFileSync(file, `${kept}[${new Date().toISOString()}] ${line}\n`, 'utf8')
+  } catch {
+    // best effort: warnings must never break settings loading
+  }
+}
+
 export function loadSettings(): AppSettings {
   try {
     const raw: unknown = JSON.parse(readFileSync(settingsPath(), 'utf8'))
-    const { settings } = deepMerge(raw)
+    const { settings, errors } = deepMerge(raw)
+    reportWarnings(errors)
     return settings
   } catch {
     return {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Modal, Tabs } from 'antd'
 import type { TabsProps } from 'antd'
+import { t } from '@shared/i18n'
 import { DEFAULT_SETTINGS } from '@shared/settings'
 import { useSettingsStore } from './store'
 import { CursorSettingsTab, FontSettingsTab, RenderSettingsTab, SystemSettingsTab } from './SettingsTabs'
@@ -69,13 +70,13 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
   }
 
   const tabItems: TabsProps['items'] = [
-    { key: 'font', label: '字体', children: <FontSettingsTab /> },
-    { key: 'cursor', label: '光标与滚动', children: <CursorSettingsTab /> },
-    { key: 'render', label: '渲染与行为', children: <RenderSettingsTab /> },
-    { key: 'highlight', label: '高亮', children: <HighlightTab /> },
+    { key: 'font', label: t('settings.tabs.font'), children: <FontSettingsTab /> },
+    { key: 'cursor', label: t('settings.tabs.cursor'), children: <CursorSettingsTab /> },
+    { key: 'render', label: t('settings.tabs.render'), children: <RenderSettingsTab /> },
+    { key: 'highlight', label: t('settings.tabs.highlight'), children: <HighlightTab /> },
     {
       key: 'theme',
-      label: '主题',
+      label: t('settings.tabs.theme'),
       children: (
         <ThemeSettingsTab
           onEditTheme={(themeId) => setEditorState({ open: true, themeId })}
@@ -83,8 +84,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
         />
       )
     },
-    { key: 'system', label: '系统', children: <SystemSettingsTab /> },
-    { key: 'about', label: '关于', children: <AboutTab /> }
+    { key: 'system', label: t('settings.tabs.system'), children: <SystemSettingsTab /> },
+    { key: 'about', label: t('settings.tabs.about'), children: <AboutTab /> }
   ]
 
   const closeEditor = (): void => setEditorState((prev) => (prev.open ? { ...prev, open: false } : prev))
@@ -99,12 +100,12 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
       onCancel={onClose}
       centered
       width={dialogSize.w}
-      title="设置"
+      title={t('settings.title')}
       footer={
         <div className="settings-footer">
-          <Button onClick={handleResetDefaults}>恢复默认</Button>
+          <Button onClick={handleResetDefaults}>{t('common.reset')}</Button>
           <Button type="primary" onClick={onClose}>
-            关闭
+            {t('common.close')}
           </Button>
         </div>
       }
@@ -115,8 +116,8 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
       {/* Drag corner: resizes the dialog until it is closed. */}
       <span
         className="settings-resize"
-        title="拖拽调整大小"
-        aria-label="拖拽调整大小"
+        title={t('settings.resizeHandle')}
+        aria-label={t('settings.resizeHandle')}
         onMouseDown={startResize}
       />
       <ThemeEditor

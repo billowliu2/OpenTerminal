@@ -1,4 +1,5 @@
 import type { TerminalTheme } from './theme'
+import type { Language } from './i18n'
 
 /** One terminal keyword-highlight rule (regex → ANSI color injection). */
 export interface HighlightRule {
@@ -72,6 +73,8 @@ export interface SystemSettings {
    * to parsing typed `cd` commands.
    */
   shellIntegration?: boolean
+  /** interface language (see @shared/i18n); missing = 简体中文 */
+  language?: Language
 }
 
 export interface AppSettings {
@@ -133,5 +136,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
-  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true, restoreSession: true, shellIntegration: false }
+  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true, restoreSession: true, shellIntegration: false, language: 'zh-CN' }
 }

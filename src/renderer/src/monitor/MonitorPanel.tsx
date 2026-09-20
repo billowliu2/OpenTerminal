@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SysinfoMeta, SysinfoSample } from '@shared/sysinfo'
+import { t } from '@shared/i18n'
 import './monitor.css'
 
 export interface MonitorPanelProps {
@@ -106,12 +107,12 @@ function formatSize(mb: number): string {
 /** human-readable uptime */
 function humanizeUptime(sec: number): string {
   const s = Math.floor(sec)
-  if (s < 60) return `${s}秒`
+  if (s < 60) return t('ssh.monitor.uptimeSeconds', { n: s })
   const mins = Math.floor(s / 60)
-  if (s < 3600) return `${mins}分钟`
+  if (s < 3600) return t('ssh.monitor.uptimeMinutes', { n: mins })
   const hours = Math.floor(s / 3600)
-  if (s < 86400) return `${hours}小时${Math.floor((s % 3600) / 60)}分`
-  return `${Math.floor(s / 86400)}天`
+  if (s < 86400) return t('ssh.monitor.uptimeHours', { h: hours, m: Math.floor((s % 3600) / 60) })
+  return t('ssh.monitor.uptimeDays', { n: Math.floor(s / 86400) })
 }
 
 function Bar({ pct, color }: { pct: number; color: string }) {
@@ -166,7 +167,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
     return (
       <div className="mm-root mm-empty">
         <span className="mm-dots"><span /> <span /> <span /></span>
-        采集中…
+        {t('ssh.monitor.collecting')}
       </div>
     )
   }
@@ -180,7 +181,9 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
 
   return (
     <div className={`mm-root${failed ? ' mm-failed' : ''}`}>
-      {failed && <div className="mm-error">采集中断：{sample.error}</div>}
+      {failed && (
+        <div className="mm-error">{t('ssh.monitor.interrupted', { error: sample.error ?? '' })}</div>
+      )}
 
       <header className="mm-header">
         <span className="mm-host">{meta.hostname || 'unknown'}</span>
@@ -191,19 +194,19 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
         <div className="mm-block-row">
           <span className="mm-label">CPU</span>
           <span className="mm-value" style={{ color: cpuColor(cpu.usage) }}>
-            {cpu.usage.toFixed(0)}%<span className="mm-value-sub"> · {cpu.cores} 核</span>
+            {cpu.usage.toFixed(0)}%<span className="mm-value-sub"> · {t('ssh.monitor.cores', { n: cpu.cores })}</span>
           </span>
         </div>
         <Bar pct={cpu.usage} color={cpuColor(cpu.usage)} />
         <div className="mm-sub mm-load">
-          负载 {cpu.loadavg.map((v) => v.toFixed(1)).join(' / ')}
+          {t('ssh.monitor.loadavg', { value: cpu.loadavg.map((v) => v.toFixed(1)).join(' / ') })}
         </div>
         <HistoryChart data={cpuHist} lineColor="#3fb950" fillColor="rgba(63,185,80,0.15)" height={48} maxY={100} />
       </section>
 
-      <section className="mm-block" aria-label="内存">
+      <section className="mm-block" aria-label={t('ssh.monitor.mem')}>
         <div className="mm-block-row">
-          <span className="mm-label">内存</span>
+          <span className="mm-label">{t('ssh.monitor.mem')}</span>
           <span className="mm-mem-size">
             {formatSize(mem.usedMb)} / {formatSize(mem.totalMb)}
           </span>
@@ -217,9 +220,9 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
       </section>
 
       {disks.length > 0 && (
-        <section className="mm-block" aria-label="磁盘">
+        <section className="mm-block" aria-label={t('ssh.monitor.disks')}>
           <div className="mm-block-row">
-            <span className="mm-label">磁盘</span>
+            <span className="mm-label">{t('ssh.monitor.disks')}</span>
           </div>
           <div className="mm-disks">
             {disks.slice(0, 6).map((d) => {
@@ -242,9 +245,9 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
         </section>
       )}
 
-      <section className="mm-block" aria-label="网络">
+      <section className="mm-block" aria-label={t('ssh.monitor.net')}>
         <div className="mm-block-row">
-          <span className="mm-label">网络</span>
+          <span className="mm-label">{t('ssh.monitor.net')}</span>
           <div className="mm-net">
             <span className="mm-net-item mm-rx">
               <span className="mm-arrow mm-up">↓</span>
@@ -265,7 +268,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
       </section>
 
       <footer className="mm-footer">
-        运行时间 <span className="mm-uptime">{humanizeUptime(sample.uptimeSec)}</span>
+        {t('ssh.monitor.uptime')} <span className="mm-uptime">{humanizeUptime(sample.uptimeSec)}</span>
       </footer>
     </div>
   )

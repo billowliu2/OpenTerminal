@@ -23,6 +23,7 @@ import * as Zmodem from 'zmodem.js'
 import { Ipc } from '../shared/ipc'
 import type { ZmodemDoneEvent, ZmodemResponse } from '../shared/ipc'
 import type { TransferProgressEvent } from '../shared/sftp'
+import { t } from '../shared/i18n'
 
 /** How long to wait for the renderer to answer a ZMODEM_OFFER (ms). */
 const OFFER_TIMEOUT_MS = 120_000
@@ -137,7 +138,7 @@ function finalize(
   engine.progressEmitted = true
 
   if (ok) emitDone(engine, true)
-  else emitDone(engine, false, message ?? '传输失败')
+  else emitDone(engine, false, message ?? t('main.zmodem.transferFailed'))
 }
 
 /** Called by the zsession's own 'session_end' event (its `this` is the session). */
@@ -149,7 +150,7 @@ function touchActivity(engine: Engine): void {
   if (engine.stallTimer) clearTimeout(engine.stallTimer)
   const timer = setTimeout(() => {
     if (engine.stallTimer === null) return // already finalized
-    finalize(engine, false, '传输超时')
+    finalize(engine, false, t('main.zmodem.transferTimeout'))
   }, STALL_TIMEOUT_MS)
   engine.stallTimer = timer
 }
@@ -196,7 +197,7 @@ async function sendOneFile(
         xfer.send(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength))
       } catch (err) {
         rs.destroy()
-        reject(err instanceof Error ? err : new Error('发送失败'))
+        reject(err instanceof Error ? err : new Error(t('main.zmodem.sendFailed')))
         return
       }
       engine.bytes += buf.length
@@ -233,7 +234,7 @@ async function runSend(engine: Engine, paths: string[]): Promise<void> {
     // Final state + ZMODEM_DONE come from the session_end event fired by close().
     await session.close()
   } catch (err) {
-    finalize(engine, false, err instanceof Error ? err.message : '上传失败')
+    finalize(engine, false, err instanceof Error ? err.message : t('main.zmodem.uploadFailed'))
   }
 }
 
@@ -277,7 +278,7 @@ function handleOffer(engine: Engine, offer: Zmodem.Offer): void {
       } catch {
         // already gone
       }
-      finalize(engine, false, err instanceof Error ? err.message : '接收失败')
+      finalize(engine, false, err instanceof Error ? err.message : t('main.zmodem.receiveFailed'))
     })
 }
 
@@ -329,7 +330,9 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
         }
         touchActivity(engine)
         engine.offerTimer = setTimeout(() => {
-          if (engine.detection && !engine.confirmed) abortWithoutSession(engine, '未选择文件，已取消')
+          if (engine.detection && !engine.confirmed) {
+            abortWithoutSession(engine, t('main.zmodem.offerTimedOut'))
+          }
         }, OFFER_TIMEOUT_MS)
       },
       on_retract: () => {
@@ -405,7 +408,9 @@ export function feedZmodem(sessionId: string, data: Buffer): void {
     engine.sentry.consume(data)
   } catch (err) {
     // A zmodem.js Error (peer abort / corrupt frame) ends the session.
-    if (!engine.doneEmitted) finalize(engine, false, err instanceof Error ? err.message : 'ZMODEM 传输异常')
+    if (!engine.doneEmitted) {
+      finalize(engine, false, err instanceof Error ? err.message : t('main.zmodem.abnormal'))
+    }
   }
 }
 
@@ -423,13 +428,13 @@ export function respondZmodem(resp: ZmodemResponse): void {
   if (!engine || engine.confirmed) return
 
   if (resp.cancelled) {
-    abortWithoutSession(engine, '已取消')
+    abortWithoutSession(engine, t('main.zmodem.cancelled'))
     return
   }
 
   const detection = engine.detection
   if (!detection || !detection.is_valid()) {
-    abortWithoutSession(engine, '会话已失效')
+    abortWithoutSession(engine, t('main.zmodem.sessionInvalid'))
     return
   }
 
@@ -441,14 +446,14 @@ export function respondZmodem(resp: ZmodemResponse): void {
   }
   engine.session = detection.confirm()
   if (!engine.session) {
-    abortWithoutSession(engine, '无法建立 ZMODEM 会话')
+    abortWithoutSession(engine, t('main.zmodem.sessionCreateFailed'))
     return
   }
   wireSession(engine)
 
   if (engine.mode === 'receive') {
     if (!resp.dir) {
-      abortSession(engine, '未指定保存目录')
+      abortSession(engine, t('main.zmodem.noSaveDir'))
       return
     }
     engine.dir = resp.dir
@@ -456,11 +461,13 @@ export function respondZmodem(resp: ZmodemResponse): void {
     session.on('offer', (offer) => handleOffer(engine, offer))
     void session
       .start()
-      .catch((err) => finalize(engine, false, err instanceof Error ? err.message : '接收失败'))
+      .catch((err) =>
+        finalize(engine, false, err instanceof Error ? err.message : t('main.zmodem.receiveFailed'))
+      )
   } else {
     const paths = resp.paths ?? []
     if (paths.length === 0) {
-      abortSession(engine, '未选择文件')
+      abortSession(engine, t('main.zmodem.noFiles'))
       return
     }
     void runSend(engine, paths)

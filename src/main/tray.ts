@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, Menu, nativeImage, Tray } from 'electron'
 import type { SystemSettings } from '@shared/settings'
+import { t } from '@shared/i18n'
 import { loadSettings, mutateSettings } from './settingsStore'
 import trayIconPath from './assets/tray.png?asset'
 
@@ -8,6 +9,8 @@ export type CloseAction = NonNullable<SystemSettings['closeAction']>
 let tray: Tray | null = null
 let quitting = false
 let balloonShown = false
+/** Window-restore callback handed to initTray; kept so the menu can be rebuilt. */
+let showOrCreateRef: (() => void) | null = null
 
 /** Once true, window close events pass through and the app really quits. */
 export function markQuitting(): void {
@@ -42,17 +45,19 @@ function refreshContextMenu(showOrCreate: () => void): void {
     persistCloseAction(value)
     refreshContextMenu(showOrCreate)
   }
+  // Labels are resolved while the template is built, so rebuilding the menu
+  // after a language change picks up the new strings.
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: '显示主窗口', click: (): void => showMainWindow(showOrCreate) },
+      { label: t('main.tray.showWindow'), click: (): void => showMainWindow(showOrCreate) },
       { type: 'separator' },
-      { label: '关闭按钮行为', enabled: false },
-      { label: '每次询问', type: 'radio', checked: action === 'ask', click: setAction('ask') },
-      { label: '最小化到托盘', type: 'radio', checked: action === 'tray', click: setAction('tray') },
-      { label: '直接退出', type: 'radio', checked: action === 'exit', click: setAction('exit') },
+      { label: t('main.tray.closeAction'), enabled: false },
+      { label: t('main.tray.askEveryTime'), type: 'radio', checked: action === 'ask', click: setAction('ask') },
+      { label: t('main.tray.minimizeToTray'), type: 'radio', checked: action === 'tray', click: setAction('tray') },
+      { label: t('main.tray.exitDirectly'), type: 'radio', checked: action === 'exit', click: setAction('exit') },
       { type: 'separator' },
       {
-        label: '退出',
+        label: t('main.tray.exit'),
         click: (): void => {
           markQuitting()
           app.quit()
@@ -62,10 +67,20 @@ function refreshContextMenu(showOrCreate: () => void): void {
   )
 }
 
+/**
+ * Rebuild the tray menu (after a language change, or any time the labels must
+ * be current). Safe to call before the tray exists.
+ */
+export function refreshTrayMenu(): void {
+  if (!tray || !showOrCreateRef) return
+  refreshContextMenu(showOrCreateRef)
+}
+
 /** Create the tray icon and wire left-click to window restore. */
 export function initTray(showOrCreate: () => void): void {
   const icon = nativeImage.createFromPath(trayIconPath)
   tray = new Tray(icon)
+  showOrCreateRef = showOrCreate
   tray.setToolTip('OpenTerminal')
   tray.on('click', (): void => showMainWindow(showOrCreate))
   refreshContextMenu(showOrCreate)
@@ -79,8 +94,8 @@ function hideToTray(win: BrowserWindow): void {
       iconType: 'info',
       // The Windows toast already prints the app name as its header, so the
       // balloon title carries the state only — no "OpenTerminal" twice.
-      title: '已最小化到托盘',
-      content: '终端会话仍在后台运行，点击托盘图标可恢复窗口。'
+      title: t('main.tray.balloonTitle'),
+      content: t('main.tray.balloonContent')
     })
   }
 }
@@ -101,13 +116,13 @@ export async function onMainWindowClose(win: BrowserWindow, e: Electron.Event, s
   e.preventDefault()
   const { response, checkboxChecked } = await dialog.showMessageBox(win, {
     type: 'question',
-    title: '关闭 OpenTerminal',
-    message: '最小化到托盘，还是直接退出？',
-    detail: '最小化到托盘时终端会话保持运行。',
-    buttons: ['最小化到托盘', '直接退出'],
+    title: t('main.tray.closeTitle'),
+    message: t('main.tray.closeMessage'),
+    detail: t('main.tray.closeDetail'),
+    buttons: [t('main.tray.minimizeToTray'), t('main.tray.exitDirectly')],
     defaultId: 0,
     cancelId: 1,
-    checkboxLabel: '记住我的选择，不再询问',
+    checkboxLabel: t('main.tray.rememberChoice'),
     checkboxChecked: false,
     noLink: true
   })

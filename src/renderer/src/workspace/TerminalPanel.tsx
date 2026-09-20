@@ -3,6 +3,7 @@ import type { IDockviewPanelProps } from 'dockview-react'
 import { Button } from 'antd'
 import { AreaChartOutlined } from '@ant-design/icons'
 
+import { t } from '@shared/i18n'
 import { TerminalView } from '../terminal/TerminalView'
 import { MonitorPanel } from '../monitor/MonitorPanel'
 import { SshBottomPanel } from './SshBottomPanel'
@@ -78,8 +79,8 @@ export function TerminalPanel({ params, api, onSessionDead }: TerminalPanelProps
           size="small"
           className="workspace-terminal-monitor-toggle"
           icon={<AreaChartOutlined />}
-          aria-label={sideOpen ? '收起侧边栏' : '展开侧边栏'}
-          title={sideOpen ? '收起侧边栏' : '展开侧边栏'}
+          aria-label={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
+          title={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
           onClick={() => setSideOpen((prev) => !prev)}
         />
       )}

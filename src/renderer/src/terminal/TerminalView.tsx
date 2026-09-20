@@ -8,6 +8,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { ClearOutlined, CopyOutlined, ExportOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
 import { Checkbox, Modal } from 'antd'
+import { t } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
 import type { CommandItem } from '@shared/commands'
 import type { TerminalSettings } from '@shared/settings'
@@ -113,7 +114,7 @@ function SearchBar({ value, onChange, onPrev, onNext, onClose, enabled, result }
         className="term-searchbar-input"
         type="text"
         value={value}
-        placeholder="搜索"
+        placeholder={t('terminal.search.placeholder')}
         spellCheck={false}
         autoFocus
         onChange={(e) => onChange(e.target.value)}
@@ -123,10 +124,10 @@ function SearchBar({ value, onChange, onPrev, onNext, onClose, enabled, result }
           else if (e.key === 'Escape') onClose()
         }}
       />
-      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onPrev}>上一个</button>
-      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onNext}>下一个</button>
+      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onPrev}>{t('terminal.search.prev')}</button>
+      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onNext}>{t('terminal.search.next')}</button>
       <span className="term-searchbar-count">{result}</span>
-      <button type="button" className="term-searchbar-btn" onClick={onClose}>关闭</button>
+      <button type="button" className="term-searchbar-btn" onClick={onClose}>{t('common.close')}</button>
     </div>
   )
 }
@@ -454,7 +455,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       dir === 1
         ? addon.findNext(q, { decorations: SEARCH_DECORATIONS })
         : addon.findPrevious(q, { decorations: SEARCH_DECORATIONS })
-    setResultInfo(found ? '已找到' : '未找到')
+    setResultInfo(found ? t('terminal.search.found') : t('terminal.search.notFound'))
   }, [])
 
   /** Record a submitted command line; cd-style lines also update cwd memory. */
@@ -1122,7 +1123,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
               onClick={() => runMenuAction(() => void copySelection())}
             >
               <CopyOutlined />
-              <span className="term-menu-label">复制</span>
+              <span className="term-menu-label">{t('common.copy')}</span>
               <kbd>Ctrl+Shift+C</kbd>
             </button>
             <button
@@ -1132,23 +1133,23 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
               onClick={() => runMenuAction(() => void pasteFromClipboard())}
             >
               <SnippetsOutlined />
-              <span className="term-menu-label">粘贴</span>
+              <span className="term-menu-label">{t('common.paste')}</span>
               <kbd>Ctrl+Shift+V</kbd>
             </button>
             <div className="term-menu-sep" />
             <button type="button" className="term-menu-item" onClick={() => runMenuAction(openSearch)}>
               <SearchOutlined />
-              <span className="term-menu-label">查找</span>
+              <span className="term-menu-label">{t('terminal.menu.find')}</span>
               <kbd>Ctrl+F</kbd>
             </button>
             <button type="button" className="term-menu-item" onClick={() => runMenuAction(() => termRef.current?.selectAll())}>
               <SelectOutlined />
-              <span className="term-menu-label">全选</span>
+              <span className="term-menu-label">{t('terminal.menu.selectAll')}</span>
               <kbd />
             </button>
             <button type="button" className="term-menu-item" onClick={() => runMenuAction(() => termRef.current?.clear())}>
               <ClearOutlined />
-              <span className="term-menu-label">清屏</span>
+              <span className="term-menu-label">{t('terminal.menu.clear')}</span>
               <kbd />
             </button>
           </div>
@@ -1170,8 +1171,8 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           <button
             type="button"
             className={`term-rec-btn${recording ? ' is-recording' : ''}`}
-            title={recording ? '停止记录会话日志' : '开始记录会话日志'}
-            aria-label={recording ? '停止记录' : '开始记录'}
+            title={recording ? t('terminal.rec.stopLog') : t('terminal.rec.startLog')}
+            aria-label={recording ? t('terminal.rec.stop') : t('terminal.rec.start')}
             onClick={() => {
               if (recording) void handleLogStop()
               else void handleLogStart()
@@ -1184,8 +1185,8 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           <button
             type="button"
             className="term-rec-btn"
-            title="打开日志目录"
-            aria-label="打开日志目录"
+            title={t('terminal.rec.openLogs')}
+            aria-label={t('terminal.rec.openLogs')}
             onClick={() => window.api.openLogsDir()}
           >
             <FolderOpenOutlined />
@@ -1195,8 +1196,8 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           <button
             type="button"
             className="term-rec-btn"
-            title="打开工作区目录"
-            aria-label="打开工作区目录"
+            title={t('terminal.rec.openCwd')}
+            aria-label={t('terminal.rec.openCwd')}
             onClick={() => {
               const dir = getSessionCwd(sessionId)
               if (dir) void window.api.openDirectory(dir)
@@ -1208,29 +1209,29 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       </div>
       <Modal
         open={paste !== null}
-        title="确认粘贴"
-        okText="粘贴"
-        cancelText="取消"
+        title={t('terminal.paste.title')}
+        okText={t('common.paste')}
+        cancelText={t('common.cancel')}
         width={420}
         maskClosable={false}
         onOk={acceptPaste}
         onCancel={cancelPaste}
       >
         <div className="term-paste-confirm">
-          <p>检测到多行或潜在危险命令，确定要粘贴到终端吗？</p>
+          <p>{t('terminal.paste.message')}</p>
           <Checkbox
             checked={paste?.noPrompt ?? false}
             onChange={(e) => setPaste((prev) => (prev ? { ...prev, noPrompt: e.target.checked } : prev))}
           >
-            本次会话不再提示
+            {t('terminal.paste.noPrompt')}
           </Checkbox>
           <Checkbox
             checked={paste?.disableDetection ?? false}
             onChange={(e) => setPaste((prev) => (prev ? { ...prev, disableDetection: e.target.checked } : prev))}
           >
-            关闭后续粘贴检测
+            {t('terminal.paste.disableDetection')}
           </Checkbox>
-          <p className="term-paste-confirm-hint">可在通用终端设置中重新开启或切换检测策略。</p>
+          <p className="term-paste-confirm-hint">{t('terminal.paste.hint')}</p>
         </div>
       </Modal>
       {/* Relative-positioned wrapper around the xterm surface: the suggestion
@@ -1258,14 +1259,14 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
                 </button>
               ))}
             </div>
-            <div className="term-suggest-hint">↑/↓ 选择 · Tab 接受 · Esc 关闭</div>
+            <div className="term-suggest-hint">{t('terminal.suggest.hint')}</div>
           </div>
         )}
         <div className="terminal-view-dock" ref={hostRef}>
           {dead && (
             <div className="term-dead-mask">
-              <div>进程已退出 (代码 {exitCode})</div>
-              <button type="button" className="term-dead-btn" onClick={() => onCloseRef.current()}>关闭</button>
+              <div>{t('terminal.dead.message', { code: exitCode })}</div>
+              <button type="button" className="term-dead-btn" onClick={() => onCloseRef.current()}>{t('common.close')}</button>
             </div>
           )}
         </div>

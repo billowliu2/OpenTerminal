@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'r
 import { Button, Collapse, Popconfirm, Tooltip } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type { SshConnection } from '@shared/connections'
+import { t } from '@shared/i18n'
 import { AuthTags } from './Common'
 import { ConnectionEditDialog } from './ConnectionEditDialog'
 import { CommandsPanel } from '../commands/CommandsPanel'
@@ -28,18 +29,16 @@ export interface ConnectionSidebarHandle {
   refresh: () => Promise<void>
 }
 
-const DEFAULT_GROUP = '默认'
-
 /** Short human "time ago" for the recent-session rows. */
 function formatRelativeTime(ts: number): string {
   const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000))
-  if (diffSec < 60) return '刚刚'
+  if (diffSec < 60) return t('ssh.sidebar.timeJustNow')
   const mins = Math.floor(diffSec / 60)
-  if (mins < 60) return `${mins} 分钟前`
+  if (mins < 60) return t('ssh.sidebar.timeMinutesAgo', { n: mins })
   const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours} 小时前`
+  if (hours < 24) return t('ssh.sidebar.timeHoursAgo', { n: hours })
   const days = Math.floor(hours / 24)
-  if (days < 30) return `${days} 天前`
+  if (days < 30) return t('ssh.sidebar.timeDaysAgo', { n: days })
   return new Date(ts).toLocaleDateString()
 }
 
@@ -87,27 +86,28 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
     }, [])
 
     // Fold every group open whenever the dataset changes.
+    const defaultGroup = t('ssh.sidebar.defaultGroup')
     const activeGroups = useMemo(() => {
       const groups = new Set<string>()
-      for (const c of connections) groups.add(c.group ?? DEFAULT_GROUP)
+      for (const c of connections) groups.add(c.group ?? defaultGroup)
       return [...groups]
-    }, [connections])
+    }, [connections, defaultGroup])
 
     const groups = useMemo(() => {
       const map = new Map<string, SshConnection[]>()
       for (const c of connections) {
-        const key = c.group ?? DEFAULT_GROUP
+        const key = c.group ?? defaultGroup
         const list = map.get(key)
         if (list) list.push(c)
         else map.set(key, [c])
       }
       const entries = [...map.entries()].sort((a, b) => {
-        if (a[0] === DEFAULT_GROUP) return -1
-        if (b[0] === DEFAULT_GROUP) return 1
+        if (a[0] === defaultGroup) return -1
+        if (b[0] === defaultGroup) return 1
         return a[0].localeCompare(b[0])
       })
       return entries.map(([group, list]) => ({ group, list }))
-    }, [connections])
+    }, [connections, defaultGroup])
 
     const openCreate = (): void => {
       setEditing(null)
@@ -163,16 +163,16 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
     return (
       <aside className={className ?? 'connections-sidebar'}>
         <div className="connections-mode-title">
-          {isTerminal ? '终端工作区' : 'SSH 工作区'}
+          {isTerminal ? t('ssh.sidebar.modeTerminal') : t('ssh.sidebar.modeSsh')}
         </div>
         <div className="connections-header">
-          <span className="connections-title">连接</span>
+          <span className="connections-title">{t('ssh.sidebar.title')}</span>
           <Button
             type="text"
             size="small"
             icon={<PlusOutlined />}
             onClick={openCreate}
-            aria-label="新建连接"
+            aria-label={t('ssh.sidebar.newConnection')}
           />
         </div>
 
@@ -180,11 +180,11 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
         {isTerminal && (
         <section className="connections-section">
           <div className="connections-section-head">
-            <span className="connections-section-title">终端</span>
+            <span className="connections-section-title">{t('ssh.sidebar.sectionTerminals')}</span>
             <span className="connections-section-count">{localPanels.length}</span>
           </div>
           {localPanels.length === 0 ? (
-            <div className="connections-section-empty">无打开的本地终端</div>
+            <div className="connections-section-empty">{t('ssh.sidebar.noLocalTerminals')}</div>
           ) : (
             <ul className="connections-local-list">
               {localPanels.map((panel) => (
@@ -195,7 +195,7 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
                   title={panel.title}
                 >
                   <span className="connections-local-name">{panel.title}</span>
-                  <span className="connections-local-tag">本地</span>
+                  <span className="connections-local-tag">{t('ssh.sidebar.local')}</span>
                 </li>
               ))}
             </ul>
@@ -206,16 +206,16 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
         {!isTerminal && (
         <section className="connections-section">
           <div className="connections-section-head">
-            <span className="connections-section-title">SSH 服务器</span>
+            <span className="connections-section-title">{t('ssh.sidebar.sectionServers')}</span>
           </div>
           {connections.length === 0 ? (
             <div className="connections-empty">
               {loaded ? (
                 <button type="button" className="connections-empty-create" onClick={openCreate}>
-                  暂无连接，点击＋新建
+                  {t('ssh.sidebar.empty')}
                 </button>
               ) : (
-                <span>加载中…</span>
+                <span>{t('ssh.sidebar.loading')}</span>
               )}
             </div>
           ) : (
@@ -231,7 +231,7 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
           {recent.length > 0 && (
             <div className="connections-recent">
               <div className="connections-recent-head">
-                <span className="connections-recent-title">最近会话</span>
+                <span className="connections-recent-title">{t('ssh.sidebar.recent')}</span>
               </div>
               {recent.map((conn) => (
                 <button
@@ -255,7 +255,7 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
         {isTerminal && (
         <section className="connections-section commands-sidebar-section">
           <div className="connections-section-head">
-            <span className="connections-section-title">命令</span>
+            <span className="connections-section-title">{t('panels.commands.sectionTitle')}</span>
           </div>
           <CommandsPanel onRun={onRunCommand ?? ((): void => undefined)} />
         </section>
@@ -290,7 +290,7 @@ function Row({
       <div className="connections-row-main">
         <div className="connections-row-name">
           <span className="connections-row-label">{conn.name}</span>
-          <Tooltip title={conn.host === conn.host ? `双击连接 ${conn.host}` : undefined}>
+          <Tooltip title={conn.host === conn.host ? t('ssh.sidebar.dblClickConnect', { host: conn.host }) : undefined}>
             <AuthTags auth={conn.auth} />
           </Tooltip>
         </div>
@@ -300,19 +300,19 @@ function Row({
         </div>
       </div>
       <div className="connections-row-actions">
-        <Button type="text" size="small" icon={<EditOutlined />} onClick={onEdit} aria-label="编辑" />
+        <Button type="text" size="small" icon={<EditOutlined />} onClick={onEdit} aria-label={t('common.edit')} />
         <Popconfirm
-          title="删除该连接？"
-          description="连接配置删除后不可恢复。已保存的密钥数据会同步删除。"
-          okText="删除"
-          cancelText="取消"
+          title={t('ssh.sidebar.deleteTitle')}
+          description={t('ssh.sidebar.deleteDesc')}
+          okText={t('common.delete')}
+          cancelText={t('common.cancel')}
           okButtonProps={{ danger: true }}
           open={confirming}
           onConfirm={onDelete}
           onOpenChange={(visible) => setConfirming(visible)}
           onCancel={() => setConfirming(false)}
         >
-          <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label="删除" />
+          <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label={t('common.delete')} />
         </Popconfirm>
       </div>
     </div>

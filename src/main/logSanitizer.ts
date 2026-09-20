@@ -17,7 +17,9 @@
  * emulation; their committed lines are preserved as-is.
  */
 
-const MARKER = '\n──── [全屏界面(TUI)输出已省略] ────\n'
+import { t } from '../shared/i18n'
+
+const MARKER = (): string => `\n──── [${t('main.log.tuiOmitted')}] ────\n`
 
 type Mode = 'text' | 'esc' | 'esc-skip1' | 'csi' | 'osc' | 'osc-esc'
 
@@ -88,7 +90,7 @@ export class LogSanitizer {
               this.alt = false
               if (this.altDirty) {
                 this.altDirty = false
-                out += MARKER
+                out += MARKER()
               }
             }
             this.seq = ''
@@ -128,7 +130,7 @@ export class LogSanitizer {
     }
     if (this.altDirty) {
       this.altDirty = false
-      out += MARKER
+      out += MARKER()
     }
     return out
   }

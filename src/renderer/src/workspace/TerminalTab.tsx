@@ -6,6 +6,7 @@ import type { IDockviewPanelHeaderProps } from 'dockview-react'
 
 import { useBroadcastStore } from './broadcastStore'
 import { SshHostBadge } from './SshHostBadge'
+import { t } from '@shared/i18n'
 import type { LayoutMeta } from '@shared/ipc'
 
 export type TerminalTabProps = IDockviewPanelHeaderProps<{
@@ -35,7 +36,7 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
     ? hostLabel && hostLabel !== title
       ? `${title} — ${hostLabel}`
       : (hostLabel || title)
-    : '本地终端'
+    : t('workspace.tab.localTerminal')
   // M6 broadcast: show a badge on tabs that are current broadcast targets.
   const isBroadcastTarget = useBroadcastStore((state) => state.targets.has(params?.sessionId ?? ''))
 
@@ -54,9 +55,9 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
 
   const menu: MenuProps = {
     items: [
-      { key: 'close', label: '关闭' },
-      { key: 'closeOthers', label: '关闭其他', disabled: panel.panels.length <= 1 },
-      { key: 'closeRight', label: '关闭右侧', disabled: selfIndex === -1 || selfIndex === panel.panels.length - 1 }
+      { key: 'close', label: t('common.close') },
+      { key: 'closeOthers', label: t('workspace.tab.closeOthers'), disabled: panel.panels.length <= 1 },
+      { key: 'closeRight', label: t('workspace.tab.closeRight'), disabled: selfIndex === -1 || selfIndex === panel.panels.length - 1 }
     ],
     onClick: ({ key }) => {
       if (key === 'close') {
@@ -85,16 +86,16 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
         {isBroadcastTarget && (
           <span
             className="workspace-terminal-tab-bcast"
-            title="广播目标"
-            aria-label="广播目标"
+            title={t('workspace.tab.broadcastTarget')}
+            aria-label={t('workspace.tab.broadcastTarget')}
           >
-            播
+            {t('workspace.tab.broadcastBadge')}
           </span>
         )}
         <button
           type="button"
           className="workspace-terminal-tab-close"
-          aria-label="关闭"
+          aria-label={t('common.close')}
           onPointerDown={(event) => event.preventDefault()}
           onClick={(event) => {
             event.preventDefault()
@@ -144,17 +145,17 @@ export function SaveTemplateModal({
 
   return (
     <Modal
-      title="保存布局模板"
+      title={t('workspace.template.saveTitle')}
       open={open}
       onCancel={onCancel}
       onOk={handleOk}
-      okText="保存"
-      cancelText="取消"
+      okText={t('common.save')}
+      cancelText={t('common.cancel')}
       confirmLoading={saving}
       okButtonProps={{ disabled: !name.trim() }}
     >
       <Input
-        placeholder="模板名称"
+        placeholder={t('workspace.template.namePlaceholder')}
         value={name}
         autoFocus
         onChange={(event) => setName(event.target.value)}
@@ -210,9 +211,9 @@ export function ApplyTemplateModal({
   }
 
   return (
-    <Modal title="应用布局模板" open={open} onCancel={onClose} footer={null} width={420}>
+    <Modal title={t('workspace.template.applyTitle')} open={open} onCancel={onClose} footer={null} width={420}>
       {items.length === 0 ? (
-        <div className="workspace-template-empty">暂无已保存的模板</div>
+        <div className="workspace-template-empty">{t('workspace.template.empty')}</div>
       ) : (
         <ul className="workspace-template-list">
           {items.map((meta) => (
@@ -229,16 +230,16 @@ export function ApplyTemplateModal({
                   loading={busyId === meta.id}
                   onClick={() => void handleApply(meta)}
                 >
-                  应用
+                  {t('workspace.template.apply')}
                 </Button>
                 <Popconfirm
-                  title="删除该模板？"
-                  okText="删除"
-                  cancelText="取消"
+                  title={t('workspace.template.deleteConfirm')}
+                  okText={t('common.delete')}
+                  cancelText={t('common.cancel')}
                   onConfirm={() => void handleDelete(meta)}
                 >
                   <Button size="small" danger disabled={busyId === meta.id}>
-                    删除
+                    {t('common.delete')}
                   </Button>
                 </Popconfirm>
               </Space>

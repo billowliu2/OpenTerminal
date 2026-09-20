@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { Input, InputNumber, Radio, Select, Switch } from 'antd'
 import type { ThemeColors } from '@shared/theme'
+import { DEFAULT_LANGUAGE, LANGUAGES, t, type Language } from '@shared/i18n'
 import { useSettingsStore, useResolvedTheme } from './store'
 import {
   DEFAULT_FONT_STACK,
@@ -57,17 +58,20 @@ export function FontSettingsTab(): React.JSX.Element {
   return (
     <div className="settings-pane">
       <SettingRow
-        label="字体"
-        desc="内置默认字体或系统等宽字体"
+        label={t('settings.font.label')}
+        desc={t('settings.font.desc')}
         control={
           <Select
             className="settings-select"
             showSearch
-            placeholder="选择字体"
+            placeholder={t('settings.font.placeholder')}
             value={selectedFont()}
             onChange={handleFontChange}
             options={[
-              { value: 'default', label: <span style={{ fontFamily: DEFAULT_FONT_STACK }}>默认</span> },
+              {
+                value: 'default',
+                label: <span style={{ fontFamily: DEFAULT_FONT_STACK }}>{t('settings.font.default')}</span>
+              },
               ...fontOptions
             ]}
             filterOption={(input, option) =>
@@ -78,8 +82,8 @@ export function FontSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="字号"
-        desc="终端文字的像素大小"
+        label={t('settings.font.size')}
+        desc={t('settings.font.sizeDesc')}
         control={
           <InputNumber
             className="settings-input-number"
@@ -93,8 +97,8 @@ export function FontSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="字重"
-        desc="400 为常规，700 为粗体"
+        label={t('settings.font.weight')}
+        desc={t('settings.font.weightDesc')}
         control={
           <Select
             className="settings-select"
@@ -107,8 +111,8 @@ export function FontSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="粗体字重"
-        desc="粗体文字所用的字重"
+        label={t('settings.font.boldWeight')}
+        desc={t('settings.font.boldWeightDesc')}
         control={
           <Select
             className="settings-select"
@@ -121,8 +125,8 @@ export function FontSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="字间距"
-        desc="字符之间的水平间距"
+        label={t('settings.font.letterSpacing')}
+        desc={t('settings.font.letterSpacingDesc')}
         control={
           <InputNumber
             className="settings-input-number"
@@ -137,8 +141,8 @@ export function FontSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="行高"
-        desc="相邻两行之间的垂直距离"
+        label={t('settings.font.lineHeight')}
+        desc={t('settings.font.lineHeightDesc')}
         control={
           <InputNumber
             className="settings-input-number"
@@ -171,8 +175,8 @@ export function CursorSettingsTab(): React.JSX.Element {
   return (
     <div className="settings-pane">
       <SettingRow
-        label="光标闪烁"
-        desc="光标是否周期性闪烁"
+        label={t('settings.cursor.blink')}
+        desc={t('settings.cursor.blinkDesc')}
         control={
           <Switch
             checked={settings.terminal.cursorBlink}
@@ -181,8 +185,8 @@ export function CursorSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="光标样式"
-        desc="光标的显示形状"
+        label={t('settings.cursor.style')}
+        desc={t('settings.cursor.styleDesc')}
         control={
           <Select
             className="settings-select"
@@ -190,13 +194,13 @@ export function CursorSettingsTab(): React.JSX.Element {
             onChange={(v) => {
               if (v !== null) void updateTerminal({ cursorStyle: v })
             }}
-            options={cursorStyleOptions}
+            options={cursorStyleOptions()}
           />
         }
       />
       <SettingRow
-        label="非活动光标样式"
-        desc="窗口失焦时光标样式"
+        label={t('settings.cursor.inactiveStyle')}
+        desc={t('settings.cursor.inactiveStyleDesc')}
         control={
           <Select
             className="settings-select"
@@ -204,13 +208,13 @@ export function CursorSettingsTab(): React.JSX.Element {
             onChange={(v) => {
               if (v !== null) void updateTerminal({ cursorInactiveStyle: v })
             }}
-            options={inactiveCursorStyleOptions}
+            options={inactiveCursorStyleOptions()}
           />
         }
       />
       <SettingRow
-        label="滚动缓冲区"
-        desc="屏幕上可回滚的行数"
+        label={t('settings.cursor.scrollback')}
+        desc={t('settings.cursor.scrollbackDesc')}
         control={
           <InputNumber
             className="settings-input-number"
@@ -231,26 +235,27 @@ export function CursorSettingsTab(): React.JSX.Element {
 export function RenderSettingsTab(): React.JSX.Element {
   const settings = useSettingsStore((s) => s.settings)
   const updateTerminal = useSettingsStore((s) => s.updateTerminal)
+  const rendererModes = rendererModeOptions()
   return (
     <div className="settings-pane">
       <div className="settings-block-label">
-        渲染模式
-        <span className="settings-block-hint">终端单元渲染加速方式，改动将应用到所有终端</span>
+        {t('settings.render.modeLabel')}
+        <span className="settings-block-hint">{t('settings.render.modeHint')}</span>
       </div>
       <Radio.Group
         className="settings-radio-group"
         value={settings.terminal.rendererMode}
         onChange={(e) => void updateTerminal({ rendererMode: e.target.value })}
-        options={rendererModeOptions}
+        options={rendererModes}
         optionType="button"
         buttonStyle="solid"
       />
       <div className="settings-block-hint settings-render-hint">
-        {rendererModeOptions.find((o) => o.value === settings.terminal.rendererMode)?.hint}
+        {rendererModes.find((o) => o.value === settings.terminal.rendererMode)?.hint}
       </div>
       <SettingRow
-        label="自动换行"
-        desc="超出宽度时自动折行"
+        label={t('settings.render.autoWrap')}
+        desc={t('settings.render.autoWrapDesc')}
         control={
           <Switch
             checked={settings.terminal.autoWrap}
@@ -259,8 +264,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="选中即复制"
-        desc="鼠标选中文字时自动复制"
+        label={t('settings.render.copyOnSelect')}
+        desc={t('settings.render.copyOnSelectDesc')}
         control={
           <Switch
             checked={settings.terminal.copyOnSelect}
@@ -269,8 +274,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="粘贴风险确认"
-        desc="多行文本（或超长单行）粘贴前弹出确认；单行直接粘贴"
+        label={t('settings.render.pasteRiskConfirm')}
+        desc={t('settings.render.pasteRiskConfirmDesc')}
         control={
           <Switch
             checked={settings.terminal.pasteRiskConfirm}
@@ -279,8 +284,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="输入建议"
-        desc="输入时弹出命令建议；Tab 接受，回车始终直接执行"
+        label={t('settings.render.suggest')}
+        desc={t('settings.render.suggestDesc')}
         control={
           <Switch
             checked={settings.terminal.suggestEnabled}
@@ -289,8 +294,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="记录命令历史"
-        desc="关闭后不再记录新命令；已保存的历史仍然保留"
+        label={t('settings.render.history')}
+        desc={t('settings.render.historyDesc')}
         control={
           <Switch
             checked={settings.terminal.historyEnabled}
@@ -299,8 +304,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="历史条数上限"
-        desc="命令历史最多保留多少条，重复命令只记一次"
+        label={t('settings.render.historyLimit')}
+        desc={t('settings.render.historyLimitDesc')}
         control={
           <InputNumber
             min={1}
@@ -316,8 +321,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="终端工具栏 · 录制"
-        desc="右上角显示「记录会话日志」按钮"
+        label={t('settings.render.recButton')}
+        desc={t('settings.render.recButtonDesc')}
         control={
           <Switch
             checked={settings.terminal.showRecButton}
@@ -326,8 +331,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="终端工具栏 · 打开日志目录"
-        desc="右上角显示「打开日志目录」按钮"
+        label={t('settings.render.openLogsButton')}
+        desc={t('settings.render.openLogsButtonDesc')}
         control={
           <Switch
             checked={settings.terminal.showOpenLogsButton}
@@ -336,8 +341,8 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="终端工具栏 · 打开工作区目录"
-        desc="右上角显示「打开当前目录」按钮（SSH 会话不显示；目录随 cd 实时跟踪，需开启 shell 集成或使用 cd 命令）"
+        label={t('settings.render.openCwdButton')}
+        desc={t('settings.render.openCwdButtonDesc')}
         control={
           <Switch
             checked={settings.terminal.showOpenCwdButton}
@@ -354,9 +359,20 @@ export function SystemSettingsTab(): React.JSX.Element {
   const updateSystem = useSettingsStore((s) => s.updateSystem)
   return (
     <div className="settings-pane">
+      {/* Interface language — first row: the whole dialog re-renders on change. */}
+      <div className="settings-block-label">{t('common.language')}</div>
+      <Radio.Group
+        className="settings-language-group"
+        value={settings.system.language ?? DEFAULT_LANGUAGE}
+        onChange={(e) => void updateSystem({ language: e.target.value as Language })}
+        options={LANGUAGES.map((l) => ({ value: l.value, label: l.label }))}
+        optionType="button"
+        buttonStyle="solid"
+      />
+      <div className="settings-block-hint settings-language-hint">{t('common.languageDesc')}</div>
       <SettingRow
-        label="开机时自启动"
-        desc="开机时自动启动软件（开发模式下注册的是开发版程序）"
+        label={t('settings.system.launchAtLogin')}
+        desc={t('settings.system.launchAtLoginDesc')}
         control={
           <Switch
             checked={settings.system.launchAtLogin}
@@ -365,8 +381,8 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="阻止系统休眠"
-        desc="开启后 OpenTerminal 将阻止系统自动休眠；关闭则允许系统按系统设置休眠"
+        label={t('settings.system.preventSleep')}
+        desc={t('settings.system.preventSleepDesc')}
         control={
           <Switch
             checked={settings.system.preventSleep}
@@ -375,8 +391,8 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="启动时恢复上次会话"
-        desc="下次启动恢复分屏布局，并让每个终端回到它上次所在的目录；关闭则每次都以单个终端启动"
+        label={t('settings.system.restoreSession')}
+        desc={t('settings.system.restoreSessionDesc')}
         control={
           <Switch
             checked={settings.system.restoreSession !== false}
@@ -385,8 +401,8 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="Shell 集成"
-        desc="让 shell 主动上报工作目录（OSC 7），路径记忆更精确（含脚本内的 cd）；会包装你的命令提示符，遇到提示符主题异常时关掉即可"
+        label={t('settings.system.shellIntegration')}
+        desc={t('settings.system.shellIntegrationDesc')}
         control={
           <Switch
             checked={settings.system.shellIntegration === true}
@@ -395,24 +411,24 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
-        label="关闭按钮行为"
-        desc="点击窗口关闭按钮时的动作；最小化到托盘后可在托盘图标右键菜单中退出"
+        label={t('settings.system.closeAction')}
+        desc={t('settings.system.closeActionDesc')}
         control={
           <Select
             className="settings-select"
             value={settings.system.closeAction ?? 'tray'}
             onChange={(value) => void updateSystem({ closeAction: value })}
             options={[
-              { value: 'tray', label: '最小化到托盘' },
-              { value: 'exit', label: '直接退出' },
-              { value: 'ask', label: '每次询问' }
+              { value: 'tray', label: t('settings.system.closeActionTray') },
+              { value: 'exit', label: t('settings.system.closeActionExit') },
+              { value: 'ask', label: t('settings.system.closeActionAsk') }
             ]}
           />
         }
       />
       <SettingRow
-        label="全局唤起快捷键"
-        desc="点击输入框后直接按下组合键；Esc 取消，退格清空禁用"
+        label={t('settings.system.globalShortcut')}
+        desc={t('settings.system.globalShortcutDesc')}
         control={
           <ShortcutInput
             value={settings.system.globalShowHide ?? ''}
@@ -421,7 +437,7 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <div className="settings-block-hint settings-shortcut-hint">
-        配合全局键可在任何界面唤起/隐藏窗口；若注册失败（与其他软件冲突）则不生效，应用不会报错。
+        {t('settings.system.globalShortcutHint')}
       </div>
     </div>
   )
@@ -481,8 +497,8 @@ function ShortcutInput({ value, onChange }: { value: string; onChange: (v: strin
     <Input
       className={`settings-select shortcut-input${recording ? ' is-recording' : ''}`}
       readOnly
-      value={recording ? '按下组合键…' : value}
-      placeholder="点击后按下快捷键，留空禁用"
+      value={recording ? t('settings.system.shortcutRecording') : value}
+      placeholder={t('settings.system.shortcutPlaceholder')}
       onFocus={() => setRecording(true)}
       onBlur={() => setRecording(false)}
       onKeyDown={(e) => {
@@ -557,7 +573,7 @@ function TerminalPreview({
   }
   return (
     <div className="settings-preview" style={{ background: colors.background }}>
-      <span className="settings-preview-title">预览</span>
+      <span className="settings-preview-title">{t('settings.preview')}</span>
       <div className="settings-preview-grid" style={gridStyle}>
         {lines.map((l, i) => (
           <div key={i} className="settings-preview-line">

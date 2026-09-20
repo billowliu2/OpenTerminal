@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
+import { t } from '@shared/i18n'
 import { FilePanel } from '../sftp/FilePanel'
 
 export interface SshBottomPanelProps {
@@ -55,7 +56,7 @@ export function SshBottomPanel({ sessionId, terminal }: SshBottomPanelProps): Re
         className="ssh-bottom-divider"
         role="separator"
         aria-orientation="horizontal"
-        aria-label="调整文件面板高度"
+        aria-label={t('ssh.bottomPanel.resize')}
         onMouseDown={onDividerMouseDown}
       />
       <div className="ssh-bottom-files" style={{ height: filesHeight }}>

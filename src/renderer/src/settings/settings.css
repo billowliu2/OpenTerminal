@@ -163,16 +163,46 @@
   color: color-mix(in srgb, var(--chrome-fg, #cccccc) 45%, transparent);
 }
 
+/* Button-style radio groups render as one joined strip (no gaps, shared
+   borders) — matches the language picker and the reference UI. */
 .settings-radio-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: inline-flex;
   margin-bottom: 16px;
 }
 
 .settings-radio-group .ant-radio-button-wrapper {
   min-width: 120px;
   text-align: center;
+}
+
+/* Language picker: one joined strip (no gaps, shared borders) instead of the
+   spread-out radio buttons used elsewhere. */
+.settings-language-group {
+  display: inline-flex;
+  margin-bottom: 16px;
+}
+
+.settings-language-group .ant-radio-button-wrapper {
+  min-width: 104px;
+  text-align: center;
+}
+
+/* Selected segment: the filled (primary) background needs a light label —
+   antd's own checked colour loses to our text overrides, so pin it here. */
+.settings-radio-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled),
+.settings-language-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
+  color: #fff;
+}
+
+.settings-radio-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover,
+.settings-language-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover {
+  color: #fff;
+}
+
+/* Own positive spacing: the shared `.settings-render-hint` uses a negative
+   top margin that lands the text on top of the button strip here. */
+.settings-language-hint {
+  margin: 6px 0 18px;
 }
 
 .settings-render-hint {

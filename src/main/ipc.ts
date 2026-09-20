@@ -3,6 +3,7 @@ import fontList from 'font-list'
 import { homedir } from 'os'
 import { statSync } from 'fs'
 import { Ipc, type AppInfo, type LayoutMeta, type PtyCreateOptions } from '../shared/ipc'
+import { t } from '../shared/i18n'
 import type { HostKeyAction, SessionOpenOptions, SshConnection, SshConnectionInput } from '../shared/connections'
 import { getLayout, listLayouts, saveLayout, deleteLayout } from './layouts'
 import { startPolling, stopPolling } from './sysinfo'
@@ -64,7 +65,7 @@ export function registerIpc(): void {
     broadcast: (channel, ...args) => broadcast(channel, ...args),
     getConnection: (connectionId) => {
       const found = connectionsStore.listConnections().find((c) => c.id === connectionId)
-      if (!found) throw new Error(`连接书签不存在 (${connectionId})`)
+      if (!found) throw new Error(t('main.ipc.connectionMissing', { id: connectionId }))
       return found
     },
     getSecret: (conn, field) => connectionsStore.getSecret(conn, field),

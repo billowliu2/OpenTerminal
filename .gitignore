@@ -24,6 +24,7 @@ research/
 .sftp-dl-*
 
 tests/.commands-store.cjs
+tests/.settings-store.cjs
 tests/.session-e2e.cjs
 tests/.hl-split-smoke.cjs
 tests/.zmodem-e2e.cjs
@@ -33,8 +34,8 @@ release/
 .min-test.bin
 .min2-test.bin
 
-# release notes draft (consumed by scripts/release.cjs)
-RELEASE_NOTES.md
+# release notes drafts (consumed by scripts/release.cjs + sync-changelog.cjs)
+RELEASE_NOTES*.md
 
 tmp-test/
 tmp-test*

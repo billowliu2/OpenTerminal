@@ -49,6 +49,20 @@ const store = new commandsMod.CommandsStore(userData, async (p) => {
 })
 
 // ---- 3. History record / dedupe / cap ------------------------------------------
+// Recording is off by default (the setting ships disabled); every test below that
+// exercises recording enables it explicitly through this helper. A call site that
+// passes `historyEnabled: false` still wins, because the spread comes last.
+const writeSettings = (terminal) =>
+  writeFileSync(
+    join(userData, 'settings.json'),
+    JSON.stringify({ terminal: { historyEnabled: true, ...terminal }, system: {} }),
+    'utf8'
+  )
+const DEFAULT_LIMIT = 100
+// The settings file has to exist before the first recordCommand: with no file,
+// the store falls back to the shipped defaults, where recording is off.
+writeSettings({})
+
 store.recordCommand('  echo hello  ')     // trims to 'echo hello'
 store.recordCommand('ls -la')
 store.recordCommand('ps aux')
@@ -82,9 +96,6 @@ store.clearHistory()
 ok(store.listHistory().length === 0, 'clearHistory empties history')
 
 // ---- 3b. History limit + the recording switch -----------------------------------
-const writeSettings = (terminal) =>
-  writeFileSync(join(userData, 'settings.json'), JSON.stringify({ terminal, system: {} }), 'utf8')
-const DEFAULT_LIMIT = 100
 
 // The bundled default raises past the old hard cap of 500 only when configured;
 // out of the box the list is trimmed to the default limit.

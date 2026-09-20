@@ -11,6 +11,7 @@ import {
   Tooltip
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import { t } from '@shared/i18n'
 import { DEFAULT_HIGHLIGHT_RULES } from '@shared/settings'
 import type { HighlightRule } from '@shared/settings'
 import { useSettingsStore } from './store'
@@ -31,7 +32,7 @@ function tryCompile(pattern: string): { ok: boolean; message?: string } {
     new RegExp(pattern)
     return { ok: true }
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : '正则表达式无效' }
+    return { ok: false, message: err instanceof Error ? err.message : t('settings.highlight.invalidRegex') }
   }
 }
 
@@ -83,7 +84,7 @@ export function HighlightTab(): React.JSX.Element {
 
   const columns: ColumnsType<HighlightRule> = [
     {
-      title: '启用',
+      title: t('settings.highlight.enabled'),
       dataIndex: 'enabled',
       width: 64,
       align: 'center',
@@ -92,13 +93,13 @@ export function HighlightTab(): React.JSX.Element {
       )
     },
     {
-      title: '正则',
+      title: t('settings.highlight.pattern'),
       dataIndex: 'pattern',
       ellipsis: true,
       render: (pattern: string) => <PatternCell pattern={pattern} />
     },
     {
-      title: '优先级',
+      title: t('settings.highlight.priority'),
       dataIndex: 'priority',
       width: 76,
       align: 'center',
@@ -107,7 +108,7 @@ export function HighlightTab(): React.JSX.Element {
       render: (priority: number) => <span className="hl-cell-priority">{priority}</span>
     },
     {
-      title: '预览',
+      title: t('settings.preview'),
       dataIndex: 'color',
       width: 120,
       align: 'center',
@@ -124,32 +125,32 @@ export function HighlightTab(): React.JSX.Element {
       )
     },
     {
-      title: '备注',
+      title: t('settings.highlight.note'),
       dataIndex: 'note',
       ellipsis: true,
       render: (note: string | undefined) =>
         note ? <span className="hl-cell-note">{note}</span> : <span className="hl-cell-empty">—</span>
     },
     {
-      title: '操作',
+      title: t('settings.highlight.actions'),
       key: 'action',
       width: 120,
       align: 'center',
       render: (_, record) => (
         <div className="hl-actions">
           <Button size="small" onClick={() => openEdit(record)}>
-            编辑
+            {t('common.edit')}
           </Button>
           <Popconfirm
-            title="删除高亮规则"
-            description="删除后无法恢复，确定继续？"
-            okText="删除"
-            cancelText="取消"
+            title={t('settings.highlight.deleteTitle')}
+            description={t('settings.deleteConfirmDesc')}
+            okText={t('common.delete')}
+            cancelText={t('common.cancel')}
             okButtonProps={{ danger: true }}
             onConfirm={() => void handleDelete(record.id)}
           >
             <Button size="small" danger>
-              删除
+              {t('common.delete')}
             </Button>
           </Popconfirm>
         </div>
@@ -163,20 +164,20 @@ export function HighlightTab(): React.JSX.Element {
         type="info"
         showIcon
         closable
-        message="自定义高亮可增强显示效果，但会略微增加性能消耗。规则按优先级顺序应用。PS: 高亮在写入终端时注入颜色，对已有回滚内容不生效"
+        message={t('settings.highlight.alert')}
       />
       <div className="hl-toolbar">
         <Popconfirm
-          title="恢复默认高亮规则"
-          description="将替换当前全部规则为内置预设，不可恢复。"
-          okText="恢复"
-          cancelText="取消"
+          title={t('settings.highlight.resetTitle')}
+          description={t('settings.highlight.resetDesc')}
+          okText={t('settings.highlight.resetOk')}
+          cancelText={t('common.cancel')}
           onConfirm={() => void handleReset()}
         >
-          <Button>恢复默认</Button>
+          <Button>{t('common.reset')}</Button>
         </Popconfirm>
         <Button type="primary" onClick={openCreate}>
-          + 新增规则
+          {t('settings.highlight.addRule')}
         </Button>
       </div>
       <div className="hl-table">
@@ -186,7 +187,7 @@ export function HighlightTab(): React.JSX.Element {
           columns={columns}
           dataSource={sorted}
           pagination={false}
-          locale={{ emptyText: '暂无高亮规则，点击「+ 新增规则」创建' }}
+          locale={{ emptyText: t('settings.highlight.empty') }}
         />
       </div>
       <HighlightEditor
@@ -307,22 +308,22 @@ function HighlightEditor({
       open={open}
       onCancel={onClose}
       onOk={() => void handleSave()}
-      okText="保存"
-      cancelText="取消"
+      okText={t('common.save')}
+      cancelText={t('common.cancel')}
       confirmLoading={saving}
       destroyOnHidden
       width={560}
-      title={isCreate ? '新建高亮规则' : '编辑高亮规则'}
+      title={isCreate ? t('settings.highlight.createTitle') : t('settings.highlight.editTitle')}
       okButtonProps={{ disabled: !valid }}
     >
       <div className="hl-editor">
         <div className="hl-editor-row">
-          <span className="hl-editor-label">正则</span>
+          <span className="hl-editor-label">{t('settings.highlight.pattern')}</span>
           <div className="hl-editor-control">
             <Input.TextArea
               value={draft.pattern}
               onChange={(e) => patch({ pattern: e.target.value })}
-              placeholder="例如 \b(ERROR|FAILED)\b"
+              placeholder={t('settings.highlight.patternPlaceholder')}
               autoSize={{ minRows: 1, maxRows: 4 }}
               className={compile.ok ? undefined : 'hl-editor-input-bad'}
             />
@@ -333,7 +334,7 @@ function HighlightEditor({
         </div>
 
         <div className="hl-editor-row">
-          <span className="hl-editor-label">优先级</span>
+          <span className="hl-editor-label">{t('settings.highlight.priority')}</span>
           <InputNumber
             min={1}
             max={100}
@@ -342,19 +343,19 @@ function HighlightEditor({
               if (v !== null) patch({ priority: v })
             }}
           />
-          <span className="hl-editor-hint">值越小越先应用</span>
+          <span className="hl-editor-hint">{t('settings.highlight.priorityHint')}</span>
         </div>
 
         <div className="hl-editor-row">
-          <span className="hl-editor-label">颜色</span>
+          <span className="hl-editor-label">{t('settings.highlight.color')}</span>
           <div className="hl-editor-control">
             <ColorField
-              label="前景"
+              label={t('settings.color.foreground')}
               value={draft.fg}
               onChange={(v) => patch({ fg: v })}
             />
             <div className="hl-editor-inline">
-              <span className="hl-editor-sub-label">背景</span>
+              <span className="hl-editor-sub-label">{t('settings.color.background')}</span>
               {showBg ? (
                 <>
                   <ColorField
@@ -362,12 +363,12 @@ function HighlightEditor({
                     onChange={(v) => patch({ bg: v })}
                   />
                   <Button size="small" onClick={() => patch({ bg: undefined })}>
-                    清空
+                    {t('settings.highlight.clearBg')}
                   </Button>
                 </>
               ) : (
                 <Button size="small" onClick={() => setShowBg(true)}>
-                  添加
+                  {t('settings.highlight.addBg')}
                 </Button>
               )}
             </div>
@@ -375,9 +376,9 @@ function HighlightEditor({
         </div>
 
         <div className="hl-editor-row">
-          <span className="hl-editor-label">色板</span>
+          <span className="hl-editor-label">{t('settings.highlight.palette')}</span>
           <div className="hl-palette">
-            {showBg && <span className="hl-palette-tag">背景</span>}
+            {showBg && <span className="hl-palette-tag">{t('settings.color.background')}</span>}
             {PRESET_COLORS.map((c) => (
               <PaletteSwatch
                 key={c}
@@ -390,17 +391,17 @@ function HighlightEditor({
         </div>
 
         <div className="hl-editor-row">
-          <span className="hl-editor-label">备注</span>
+          <span className="hl-editor-label">{t('settings.highlight.note')}</span>
           <Input
             value={draft.note ?? ''}
             onChange={(e) => patch({ note: e.target.value })}
-            placeholder="规则说明（可选）"
+            placeholder={t('settings.highlight.notePlaceholder')}
             maxLength={60}
           />
         </div>
 
         <div className="hl-editor-row">
-          <span className="hl-editor-label">启用</span>
+          <span className="hl-editor-label">{t('settings.highlight.enabled')}</span>
           <Switch checked={draft.enabled} onChange={(c) => patch({ enabled: c })} />
         </div>
       </div>

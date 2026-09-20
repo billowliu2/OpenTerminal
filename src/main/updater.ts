@@ -1,6 +1,7 @@
 import { app, ipcMain, net, session } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { Ipc, type ReleaseNote, type UpdateState } from '../shared/ipc'
+import { t } from '../shared/i18n'
 import { broadcast } from './broadcast'
 import { loadSettings } from './settingsStore'
 import { markQuitting } from './tray'
@@ -77,7 +78,7 @@ async function checkWithFallback(): Promise<void> {
       await autoUpdater.checkForUpdates()
     } catch (err2) {
       const ghErr = err2 instanceof Error ? err2.message : String(err2)
-      throw new Error(`国内源: ${giteaErr}；GitHub: ${ghErr}`)
+      throw new Error(t('main.updater.feedFailed', { gitea: giteaErr, github: ghErr }))
     }
   }
 }

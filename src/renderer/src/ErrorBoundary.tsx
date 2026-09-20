@@ -1,5 +1,6 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
+import { t } from '@shared/i18n'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -38,7 +39,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             color: '#cccccc'
           }}
         >
-          <div>界面出现异常</div>
+          <div>{t('workspace.error.title')}</div>
           <pre
             style={{
               maxWidth: 720,
@@ -56,7 +57,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             onClick={() => window.location.reload()}
             style={{ padding: '6px 18px', cursor: 'pointer' }}
           >
-            重新加载
+            {t('workspace.error.reload')}
           </button>
         </div>
       )

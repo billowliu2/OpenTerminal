@@ -14,6 +14,7 @@
  */
 
 import type { SshConnection, SshSecretOverride } from '../shared/connections'
+import { t } from '../shared/i18n'
 import { Ipc } from '../shared/ipc'
 import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
@@ -85,7 +86,7 @@ export async function connectSsh(
   const armConnectTimer = (): void => {
     if (connectTimer) clearTimeout(connectTimer)
     connectTimer = setTimeout(() => {
-      fail(new Error(`连接超时 (${conn.host}:${conn.port})`))
+      fail(new Error(t('main.ssh.connectTimeout', { host: conn.host, port: conn.port })))
     }, timeouts.connect)
   }
 
@@ -129,13 +130,13 @@ export async function connectSsh(
           try {
             deps.knownHosts.accept(conn.host, conn.port, hostKey, fingerprint)
           } catch (err) {
-            verifierErr = `保存主机指纹失败: ${(err as Error).message}`
+            verifierErr = t('main.ssh.saveFingerprintFailed', { detail: (err as Error).message })
             verify(false)
             return
           }
           verify(true)
         } else {
-          verifierErr = '用户拒绝了主机指纹'
+          verifierErr = t('main.ssh.hostKeyRejected')
           verify(false)
         }
       })
@@ -156,7 +157,7 @@ export async function connectSsh(
       console.error(`[ssh] client error: ${err.message}`)
       const message = verifierErr ?? err.message
       if (!settled) {
-        fail(new Error(`连接失败 ${conn.host}:${conn.port}: ${message}`))
+        fail(new Error(t('main.ssh.connectFailed', { host: conn.host, port: conn.port, detail: message })))
         return
       }
       // Session already established: surface as a session exit and clean up.
@@ -177,7 +178,11 @@ export async function connectSsh(
         { term: 'xterm-256color', cols: 80, rows: 24 },
         (err: Error | undefined, shell: ClientChannel) => {
           if (err) {
-            fail(new Error(`无法打开 SSH shell (${conn.host}:${conn.port}): ${err.message}`))
+            fail(
+              new Error(
+                t('main.ssh.shellOpenFailed', { host: conn.host, port: conn.port, detail: err.message })
+              )
+            )
             return
           }
           if (settled) {
@@ -240,7 +245,11 @@ export async function connectSsh(
       handshake.connect(cfg)
     } catch (err) {
       // e.g. unparseable privateKey is thrown synchronously by ssh2
-      fail(new Error(`SSH 连接初始化失败 (${conn.host}:${conn.port}): ${(err as Error).message}`))
+      fail(
+        new Error(
+          t('main.ssh.initFailed', { host: conn.host, port: conn.port, detail: (err as Error).message })
+        )
+      )
     }
   })
 }
@@ -305,6 +314,6 @@ function readKeyFile(keyPath: string): string {
   try {
     return readFileSync(keyPath, 'utf8')
   } catch (err) {
-    throw new Error(`无法读取私钥文件 ${keyPath}: ${(err as Error).message}`)
+    throw new Error(t('main.ssh.readKeyFailed', { path: keyPath, detail: (err as Error).message }))
   }
 }

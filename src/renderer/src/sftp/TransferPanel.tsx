@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CloseOutlined } from '@ant-design/icons'
 import type { TransferKind, TransferProgressEvent } from '@shared/sftp'
+import { t } from '@shared/i18n'
 
 interface TransferState {
   kind: TransferKind
@@ -75,27 +76,27 @@ export function TransferPanel(): React.JSX.Element | null {
 
   return (
     <div className="sftp-transfer-panel">
-      {list.map(([id, t]) => {
-        const pct = t.totalBytes > 0 ? Math.min(100, Math.round((t.bytes / t.totalBytes) * 100)) : t.state === 'done' ? 100 : 0
+      {list.map(([id, tr]) => {
+        const pct = tr.totalBytes > 0 ? Math.min(100, Math.round((tr.bytes / tr.totalBytes) * 100)) : tr.state === 'done' ? 100 : 0
         return (
-          <div key={id} className={`sftp-transfer sftp-transfer-${t.state}`}>
+          <div key={id} className={`sftp-transfer sftp-transfer-${tr.state}`}>
             <div className="sftp-transfer-head">
               <span className="sftp-transfer-title">
-                {t.state === 'error'
-                  ? '传输失败'
-                  : t.state === 'cancelled'
-                    ? '已取消'
-                    : t.state === 'done'
-                      ? '传输完成'
-                      : t.kind === 'upload'
-                        ? '上传中'
-                        : t.kind === 'download'
-                          ? '下载中'
-                          : t.kind === 'zmodem-upload'
-                            ? 'ZMODEM 上传中'
-                            : 'ZMODEM 下载中'}
+                {tr.state === 'error'
+                  ? t('panels.transfer.failed')
+                  : tr.state === 'cancelled'
+                    ? t('panels.transfer.cancelled')
+                    : tr.state === 'done'
+                      ? t('panels.transfer.done')
+                      : tr.kind === 'upload'
+                        ? t('panels.transfer.uploading')
+                        : tr.kind === 'download'
+                          ? t('panels.transfer.downloading')
+                          : tr.kind === 'zmodem-upload'
+                            ? t('panels.transfer.zmodemUploading')
+                            : t('panels.transfer.zmodemDownloading')}
               </span>
-              {(t.state === 'error' || t.state === 'done') && (
+              {(tr.state === 'error' || tr.state === 'done') && (
                 <button
                   type="button"
                   className="sftp-transfer-close"
@@ -111,13 +112,13 @@ export function TransferPanel(): React.JSX.Element | null {
                 </button>
               )}
             </div>
-            <div className="sftp-transfer-file">{t.file || t.error || ''}</div>
-            {t.state === 'running' && t.totalBytes > 0 && (
+            <div className="sftp-transfer-file">{tr.file || tr.error || ''}</div>
+            {tr.state === 'running' && tr.totalBytes > 0 && (
               <div className="sftp-transfer-bar">
                 <div className="sftp-transfer-fill" style={{ width: `${pct}%` }} />
               </div>
             )}
-            {t.error && <div className="sftp-transfer-err">{t.error}</div>}
+            {tr.error && <div className="sftp-transfer-err">{tr.error}</div>}
           </div>
         )
       })}

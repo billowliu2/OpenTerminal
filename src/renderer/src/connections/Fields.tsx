@@ -2,6 +2,7 @@ import { Form, Input, Switch } from 'antd'
 import useFormInstance from 'antd/es/form/hooks/useFormInstance'
 import { useWatch } from 'antd/es/form/Form'
 import type { SshAuthMethod } from '@shared/connections'
+import { t } from '@shared/i18n'
 
 /**
  * Auth-method dependent fields rendered inside the edit dialog's <Form>.
@@ -16,7 +17,7 @@ export function AuthFieldsRenderer({ auth }: { auth: SshAuthMethod }): React.JSX
   const askPassphraseAtConnect = useWatch('askPassphraseAtConnect', form) ?? false
 
   if (auth === 'agent') {
-    return <div className="connections-auth-desc">使用本机 SSH Agent 中已加载的密钥进行认证，无需在本应用内保存任何密钥。</div>
+    return <div className="connections-auth-desc">{t('ssh.fields.agentDesc')}</div>
   }
 
   return (
@@ -25,36 +26,36 @@ export function AuthFieldsRenderer({ auth }: { auth: SshAuthMethod }): React.JSX
         <>
           <SwitchRow
             name="askPasswordAtConnect"
-            label="连接时询问密码"
-            hint="开启后每次连接弹出对话框输入密码，不再使用已保存的密码"
+            label={t('ssh.fields.askPasswordLabel')}
+            hint={t('ssh.fields.askPasswordHint')}
           />
           {!askPasswordAtConnect && (
-            <Form.Item name="password" label="密码" className="connections-secret-item">
-              <Input.Password placeholder="编辑时留空表示保留已保存的密码" autoComplete="off" />
+            <Form.Item name="password" label={t('ssh.auth.password')} className="connections-secret-item">
+              <Input.Password placeholder={t('ssh.fields.passwordPlaceholder')} autoComplete="off" />
             </Form.Item>
           )}
         </>
       ) : (
         <>
-          <Form.Item name="keyPath" label="私钥路径（服务器上的本地私钥路径，可留空）">
+          <Form.Item name="keyPath" label={t('ssh.fields.keyPath')}>
             <Input placeholder="/home/me/.ssh/id_rsa" autoComplete="off" />
           </Form.Item>
-          <Form.Item name="keyContent" label="私钥内容">
+          <Form.Item name="keyContent" label={t('ssh.fields.keyContent')}>
             <Input.TextArea
               rows={4}
-              placeholder="粘贴私钥内容；留空则使用上面的路径（编辑时留空表示保留已保存的私钥）"
+              placeholder={t('ssh.fields.keyContentPlaceholder')}
               autoComplete="off"
               spellCheck={false}
             />
           </Form.Item>
           <SwitchRow
             name="askPassphraseAtConnect"
-            label="连接时询问口令"
-            hint="开启后每次连接提示输入私钥口令"
+            label={t('ssh.fields.askPassphraseLabel')}
+            hint={t('ssh.fields.askPassphraseHint')}
           />
           {!askPassphraseAtConnect && (
-            <Form.Item name="passphrase" label="私钥口令" className="connections-secret-item">
-              <Input.Password placeholder="编辑时留空表示保留已保存的口令" autoComplete="off" />
+            <Form.Item name="passphrase" label={t('ssh.fields.passphrase')} className="connections-secret-item">
+              <Input.Password placeholder={t('ssh.fields.passphrasePlaceholder')} autoComplete="off" />
             </Form.Item>
           )}
         </>

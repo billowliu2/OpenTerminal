@@ -17,6 +17,7 @@ import {
 import { App, Button, Checkbox, Dropdown, Input, Modal, Popconfirm, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import type { SftpEntry, TransferProgressEvent } from '@shared/sftp'
+import { getLanguage, t } from '@shared/i18n'
 import './sftp.css'
 
 /** Remote file browser for one SSH session (M4). */
@@ -70,8 +71,14 @@ function fmtTime(ms: number): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-const PERM_ROW_LABELS = ['所有者', '组', '其他'] as const
-const PERM_COL_LABELS = ['读', '写', '执行'] as const
+/** Permission-grid labels are resolved per render so they follow the language. */
+function permRowLabels(): string[] {
+  return [t('ssh.file.permRowOwner'), t('ssh.file.permRowGroup'), t('ssh.file.permRowOther')]
+}
+
+function permColLabels(): string[] {
+  return [t('ssh.file.permColRead'), t('ssh.file.permColWrite'), t('ssh.file.permColExec')]
+}
 
 interface PermissionModalProps {
   open: boolean
@@ -89,6 +96,8 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
   const [gid, setGid] = useState('')
   const [saving, setSaving] = useState(false)
   const hasUidGid = entry != null && (entry.uid != null || entry.gid != null)
+  const rowLabels = permRowLabels()
+  const colLabels = permColLabels()
 
   const modeStr = useMemo(() => {
     if (!entry) return { type: '-', str: '---------' }
@@ -164,7 +173,7 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
           await window.api.chownRemote(sessionId, entry.path, u, g)
         }
         if (octalStr !== curOctal || ownerChanged) {
-          message.success('已应用权限')
+          message.success(t('ssh.file.permApplied'))
         }
         onClose()
         onSaved()
@@ -178,13 +187,13 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
 
   return (
     <Modal
-      title={`权限 · ${entry?.name ?? ''}`}
+      title={t('ssh.file.permTitle', { name: entry?.name ?? '' })}
       open={open}
       onOk={onSave}
       onCancel={onClose}
       confirmLoading={saving}
-      okText="保存"
-      cancelText="取消"
+      okText={t('common.save')}
+      cancelText={t('common.cancel')}
       width={380}
     >
       <div className="sftp-perm">
@@ -198,14 +207,14 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
         <div className="sftp-perm-grid">
           <div className="sftp-perm-grid-head">
             <span />
-            {PERM_COL_LABELS.map((l) => (
+            {colLabels.map((l) => (
               <span key={l}>{l}</span>
             ))}
           </div>
-          {PERM_ROW_LABELS.map((row, r) => (
+          {rowLabels.map((row, r) => (
             <div className="sftp-perm-grid-row" key={row}>
               <span className="sftp-perm-grid-label">{row}</span>
-              {PERM_COL_LABELS.map((_, c) => {
+              {colLabels.map((_, c) => {
                 const idx = r * 3 + c
                 return (
                   <Checkbox key={idx} checked={bits[idx]} onChange={() => toggleBit(idx)} />
@@ -216,11 +225,11 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
         </div>
 
         <div className="sftp-perm-octal-input">
-          <span className="sftp-perm-label">八进制</span>
+          <span className="sftp-perm-label">{t('ssh.file.octal')}</span>
           <Input
             value={octal}
             onChange={(e) => applyOctal(e.target.value)}
-            placeholder="如 755"
+            placeholder={t('ssh.file.octalPlaceholder')}
             addonAfter={bitsToModeStr(modeStr.type, bits)}
           />
         </div>
@@ -228,14 +237,22 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
         <div className="sftp-perm-own">
           <div className="sftp-perm-own-field">
             <span className="sftp-perm-label">UID</span>
-            <Input value={uid} onChange={(e) => setUid(e.target.value)} placeholder={hasUidGid ? '不改则留空' : '0'} />
+            <Input
+              value={uid}
+              onChange={(e) => setUid(e.target.value)}
+              placeholder={hasUidGid ? t('ssh.file.keepEmpty') : '0'}
+            />
           </div>
           <div className="sftp-perm-own-field">
             <span className="sftp-perm-label">GID</span>
-            <Input value={gid} onChange={(e) => setGid(e.target.value)} placeholder={hasUidGid ? '不改则留空' : '0'} />
+            <Input
+              value={gid}
+              onChange={(e) => setGid(e.target.value)}
+              placeholder={hasUidGid ? t('ssh.file.keepEmpty') : '0'}
+            />
           </div>
         </div>
-        <div className="sftp-perm-hint">UID/GID 留空表示不修改属主</div>
+        <div className="sftp-perm-hint">{t('ssh.file.ownerHint')}</div>
       </div>
     </Modal>
   )
@@ -363,12 +380,15 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
     void (async () => {
       try {
         await navigator.clipboard.writeText(entry.path)
-        message.success('已复制路径')
+        message.success(t('ssh.file.pathCopied'))
       } catch {
-        message.error('复制路径失败')
+        message.error(t('ssh.file.copyPathFailed'))
       }
     })()
   }
+
+  /** Active language; a dep of the menu below so translated labels refresh. */
+  const language = getLanguage()
 
   /** opens the mkdir modal in create-a-file mode (no-op: new files unsupported) */
   const menu: MenuProps = useMemo(() => {
@@ -377,51 +397,51 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
     const canAction = target != null
     return {
       items: [
-        { key: 'refresh', label: '刷新', icon: <ReloadOutlined /> },
+        { key: 'refresh', label: t('ssh.file.refresh'), icon: <ReloadOutlined /> },
         { type: 'divider' },
         {
           key: 'open',
-          label: isDir ? '打开' : '下载',
+          label: isDir ? t('ssh.file.open') : t('ssh.file.download'),
           icon: isDir ? <FolderOpenOutlined /> : <DownloadOutlined />,
           disabled: !canAction
         },
         {
           key: 'download',
-          label: '下载',
+          label: t('ssh.file.download'),
           icon: <DownloadOutlined />,
           disabled: !canAction || Boolean(isDir)
         },
-        { key: 'upload', label: '上传…', icon: <UploadOutlined /> },
+        { key: 'upload', label: t('ssh.file.upload'), icon: <UploadOutlined /> },
         {
           key: 'rename',
-          label: '重命名',
+          label: t('ssh.file.rename'),
           icon: <FormOutlined />,
           disabled: !canAction
         },
         {
           type: 'submenu',
           key: 'new',
-          label: '新建',
+          label: t('ssh.file.new'),
           icon: <FileAddOutlined />,
           children: [
-            { key: 'mkdir', label: '新建文件夹', icon: <FolderAddOutlined /> }
+            { key: 'mkdir', label: t('ssh.file.newFolder'), icon: <FolderAddOutlined /> }
             // 新建文件：无现成 SFTP 创建文件 API（main 仅 mkdir/rename/chmod/chown），不做
           ]
         },
         { type: 'divider' },
         {
           key: 'copyPath',
-          label: '复制路径',
+          label: t('ssh.file.copyPath'),
           icon: <CopyOutlined />,
           disabled: !canAction
         },
         {
           key: 'permission',
-          label: '文件权限…',
+          label: t('ssh.file.permission'),
           icon: <SafetyOutlined />,
           disabled: !canAction
         },
-        { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true, disabled: !canAction }
+        { key: 'delete', label: t('common.delete'), icon: <DeleteOutlined />, danger: true, disabled: !canAction }
       ],
       onClick: ({ key }) => {
         const entry = menuTarget
@@ -447,11 +467,11 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
           setPermOpen(true)
         } else if (key === 'delete') {
           modal.confirm({
-            title: '确认删除？',
+            title: t('ssh.file.deleteTitle'),
             content: entry ? `${entry.name}（${entry.path}）` : undefined,
-            okText: '删除',
+            okText: t('common.delete'),
             okButtonProps: { danger: true },
-            cancelText: '取消',
+            cancelText: t('common.cancel'),
             onOk: () =>
               new Promise<void>((resolve, reject) => {
                 if (!entry) {
@@ -471,12 +491,12 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuTarget, dir, refresh])
+  }, [menuTarget, dir, refresh, language])
 
   return (
     <div className="sftp-panel">
       <div className="sftp-toolbar">
-        <Tooltip title="上一级">
+        <Tooltip title={t('ssh.file.up')}>
           <Button
             type="text"
             size="small"
@@ -485,10 +505,10 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
             onClick={() => void refresh(parent)}
           />
         </Tooltip>
-        <Tooltip title="刷新">
+        <Tooltip title={t('ssh.file.refresh')}>
           <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => void refresh(dir)} />
         </Tooltip>
-        <Tooltip title="新建文件夹">
+        <Tooltip title={t('ssh.file.newFolder')}>
           <Button
             type="text"
             size="small"
@@ -499,10 +519,10 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
             }}
           />
         </Tooltip>
-        <Tooltip title="上传文件">
+        <Tooltip title={t('ssh.file.uploadFile')}>
           <Button type="text" size="small" icon={<UploadOutlined />} onClick={doUpload} />
         </Tooltip>
-        <Tooltip title="下载选中项">
+        <Tooltip title={t('ssh.file.downloadSelected')}>
           <Button
             type="text"
             size="small"
@@ -511,7 +531,7 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
             onClick={() => selected && doDownload(selected)}
           />
         </Tooltip>
-        <Tooltip title="重命名">
+        <Tooltip title={t('ssh.file.rename')}>
           <Button
             type="text"
             size="small"
@@ -523,7 +543,7 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
             }}
           />
         </Tooltip>
-        <Tooltip title="权限 / 属主">
+        <Tooltip title={t('ssh.file.permOwner')}>
           <Button
             type="text"
             size="small"
@@ -532,7 +552,12 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
             onClick={() => setPermOpen(true)}
           />
         </Tooltip>
-        <Popconfirm title="确认删除？" okText="删除" cancelText="取消" onConfirm={doDelete}>
+        <Popconfirm
+          title={t('ssh.file.deleteTitle')}
+          okText={t('common.delete')}
+          cancelText={t('common.cancel')}
+          onConfirm={doDelete}
+        >
           <Button type="text" size="small" icon={<DeleteOutlined />} disabled={!selected} danger />
         </Popconfirm>
       </div>
@@ -552,8 +577,8 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
         <div className="sftp-error">{error}</div>
       ) : (
         <div className="sftp-list">
-          {loading && entries.length === 0 && <div className="sftp-empty">加载中…</div>}
-          {!loading && entries.length === 0 && <div className="sftp-empty">空目录</div>}
+          {loading && entries.length === 0 && <div className="sftp-empty">{t('ssh.file.loading')}</div>}
+          {!loading && entries.length === 0 && <div className="sftp-empty">{t('ssh.file.empty')}</div>}
           {entries.map((e) => (
             <Dropdown
               key={e.path}
@@ -577,7 +602,7 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
                 <span className="sftp-name" title={e.name}>
                   {e.name}
                 </span>
-                <span className="sftp-mode" title={e.mode ?? '权限不可用'}>
+                <span className="sftp-mode" title={e.mode ?? t('ssh.file.modeUnavailable')}>
                   {e.mode ?? '----------'}
                 </span>
                 <span className="sftp-owner" title={`UID ${e.uid ?? '—'} / GID ${e.gid ?? '—'}`}>
@@ -601,29 +626,29 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
         onSaved={() => void refresh(dir)}
       />
       <Modal
-        title="新建文件夹"
+        title={t('ssh.file.newFolder')}
         open={mkdirOpen}
         onOk={doMkdir}
         onCancel={() => setMkdirOpen(false)}
-        okText="创建"
-        cancelText="取消"
+        okText={t('ssh.file.create')}
+        cancelText={t('common.cancel')}
         width={360}
       >
         <Input
           autoFocus
-          placeholder="文件夹名称"
+          placeholder={t('ssh.file.folderName')}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onPressEnter={doMkdir}
         />
       </Modal>
       <Modal
-        title={`重命名 ${selected?.name ?? ''}`}
+        title={t('ssh.file.renameTitle', { name: selected?.name ?? '' })}
         open={renameOpen}
         onOk={doRename}
         onCancel={() => setRenameOpen(false)}
-        okText="确定"
-        cancelText="取消"
+        okText={t('common.ok')}
+        cancelText={t('common.cancel')}
         width={360}
       >
         <Input

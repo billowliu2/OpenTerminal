@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Input, Modal } from 'antd'
+import { t } from '@shared/i18n'
 import type { ThemeColors, TerminalTheme } from '@shared/theme'
 import { DEFAULT_DARK, getThemeById } from '@shared/theme'
 import { useSettingsStore } from '../../settings/store'
@@ -22,11 +23,11 @@ interface FieldSpec {
   label: string
 }
 
-const HEADER_KEYS: FieldSpec[] = [
-  { key: 'foreground', label: '前景' },
-  { key: 'background', label: '背景' },
-  { key: 'cursor', label: '光标' },
-  { key: 'selectionBackground', label: '选区' }
+const headerKeys = (): FieldSpec[] => [
+  { key: 'foreground', label: t('settings.color.foreground') },
+  { key: 'background', label: t('settings.color.background') },
+  { key: 'cursor', label: t('settings.color.cursor') },
+  { key: 'selectionBackground', label: t('settings.color.selection') }
 ]
 
 const ANSI_KEYS: FieldSpec[] = [
@@ -78,7 +79,7 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
     } else {
       /** create mode: seed a fresh copy based on the currently active theme */
       const active = getThemeById(settings.terminal.themeId, settings.customThemes)
-      setName(active.name + '（副本）')
+      setName(active.name + t('settings.themeEditor.copySuffix'))
       setColors({ ...active.colors })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -122,27 +123,27 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
       open={open}
       onCancel={onClose}
       onOk={handleSave}
-      okText="保存"
-      cancelText="取消"
+      okText={t('common.save')}
+      cancelText={t('common.cancel')}
       confirmLoading={saving}
       destroyOnHidden
       width={560}
-      title={isCreate ? '新建主题' : '编辑主题'}
+      title={isCreate ? t('settings.theme.create') : t('settings.theme.editTitle')}
       okButtonProps={{ disabled: name.trim() === '' }}
     >
       <div className="theme-editor">
         <div className="theme-editor-row">
-          <span className="theme-editor-label">名称</span>
+          <span className="theme-editor-label">{t('settings.themeEditor.name')}</span>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="主题名称"
+            placeholder={t('settings.themeEditor.namePlaceholder')}
             maxLength={60}
           />
         </div>
 
         <div className="theme-editor-colors">
-          {HEADER_KEYS.map((spec) => (
+          {headerKeys().map((spec) => (
             <ColorField key={spec.key} spec={spec} value={colors[spec.key]} onChange={setColor} />
           ))}
           <div className="theme-editor-divider" />
@@ -152,7 +153,7 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
         </div>
 
         <div className="theme-editor-preview">
-          <span className="theme-editor-preview-label">预览</span>
+          <span className="theme-editor-preview-label">{t('settings.preview')}</span>
           <ThemePreviewSnippet colors={colors} />
         </div>
       </div>

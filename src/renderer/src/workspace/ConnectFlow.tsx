@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Button, Input, Modal } from 'antd'
 import { LoadingOutlined } from '@ant-design/icons'
 import type { SshConnection, SshSecretOverride } from '@shared/connections'
+import { t } from '@shared/i18n'
 
 /**
  * Connect-time gateways for one SSH connection attempt.
@@ -54,9 +55,9 @@ export function ConnectFlow({ conn, phase, onConfirmed, onCancel }: ConnectFlowP
     return (
       <SecretModal
         key={key}
-        title="输入连接密码"
+        title={t('workspace.connect.passwordTitle')}
         description={`${conn.username}@${conn.host}:${conn.port}`}
-        placeholder="密码"
+        placeholder={t('workspace.connect.passwordPlaceholder')}
         value={password}
         onChange={(v) => setPassword(v)}
         onOk={() => onConfirmed({ password })}
@@ -69,9 +70,9 @@ export function ConnectFlow({ conn, phase, onConfirmed, onCancel }: ConnectFlowP
     return (
       <SecretModal
         key={key}
-        title="输入私钥口令"
+        title={t('workspace.connect.passphraseTitle')}
         description={`${conn.username}@${conn.host}:${conn.port}`}
-        placeholder="私钥口令"
+        placeholder={t('workspace.connect.passphrasePlaceholder')}
         value={passphrase}
         onChange={(v) => setPassphrase(v)}
         onOk={() => onConfirmed({ passphrase })}
@@ -85,7 +86,7 @@ export function ConnectFlow({ conn, phase, onConfirmed, onCancel }: ConnectFlowP
       <Modal
         key={key}
         open
-        title="连接中…"
+        title={t('workspace.connect.connecting')}
         closable={false}
         maskClosable={false}
         keyboard={false}
@@ -95,7 +96,7 @@ export function ConnectFlow({ conn, phase, onConfirmed, onCancel }: ConnectFlowP
         <div className="connect-flow-connecting">
           <LoadingOutlined spin style={{ fontSize: 26 }} />
           <span className="connect-flow-connecting-text">
-            正在连接 {conn?.name != null ? conn.name : '…'}
+            {t('workspace.connect.connectingNamed', { name: conn?.name != null ? conn.name : '…' })}
           </span>
         </div>
       </Modal>
@@ -137,8 +138,8 @@ function SecretModal({
       key={key}
       open
       title={title}
-      okText="连接"
-      cancelText="取消"
+      okText={t('workspace.connect.action')}
+      cancelText={t('common.cancel')}
       onOk={handleOk}
       onCancel={onCancel}
       confirmLoading={submitting}
@@ -169,7 +170,7 @@ export function ConnectSpinnerButton({ busy }: { busy: boolean }): React.JSX.Ele
   return busy ? (
     <Button size="small" type="text" disabled className="workspace-connect-busy-button">
       <LoadingOutlined spin />
-      连接中…
+      {t('workspace.connect.connecting')}
     </Button>
   ) : null
 }

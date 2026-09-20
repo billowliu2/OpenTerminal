@@ -1,3 +1,4 @@
+import { t } from '../shared/i18n'
 import { spawn, type IPty } from '@lydell/node-pty'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
@@ -224,10 +225,10 @@ export async function openSession(opts: SessionOpenOptions): Promise<{ id: strin
 
   const deps = runtimeDeps
   if (!deps) {
-    throw new Error('SSH 会话服务尚未初始化')
+    throw new Error(t('main.pty.serviceNotReady'))
   }
   if (!opts.connectionId) {
-    throw new Error('SSH 会话缺少 connectionId')
+    throw new Error(t('main.pty.missingConnectionId'))
   }
 
   const conn = deps.getConnection(opts.connectionId)

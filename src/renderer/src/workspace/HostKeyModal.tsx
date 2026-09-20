@@ -1,5 +1,6 @@
 import { Alert, Button, Modal } from 'antd'
 import type { HostKeyPromptEvent } from '@shared/connections'
+import { t } from '@shared/i18n'
 
 /**
  * Host key verification dialog. Shown one at a time (Workspace keeps a FIFO
@@ -27,13 +28,13 @@ export function HostKeyModal({ event, onDecision }: HostKeyModalProps): React.JS
       open
       title={
         isChanged ? (
-          <div className="hostkey-changed-title">主机指纹已变更！</div>
+          <div className="hostkey-changed-title">{t('ssh.hostKey.changedTitle')}</div>
         ) : (
-          '未知主机'
+          t('ssh.hostKey.unknownHost')
         )
       }
-      okText="接受并连接"
-      cancelText="拒绝"
+      okText={t('ssh.hostKey.accept')}
+      cancelText={t('ssh.hostKey.reject')}
       okButtonProps={isChanged ? { danger: true } : { type: 'primary' }}
       cancelButtonProps={{ danger: !isChanged }}
       onOk={() => onDecision('accept')}
@@ -45,15 +46,17 @@ export function HostKeyModal({ event, onDecision }: HostKeyModalProps): React.JS
           <Alert
             type="warning"
             showIcon
-            message="可能遭受中间人攻击"
-            description="远程主机的密钥指纹与之前记录的不一致。如果这不是你本人更换了服务器密钥，可能有人正在冒充该主机。"
+            message={t('ssh.hostKey.mitmTitle')}
+            description={t('ssh.hostKey.mitmDesc')}
           />
         ) : (
-          <div className="hostkey-desc">首次连接该主机，尚未记录其指纹。</div>
+          <div className="hostkey-desc">{t('ssh.hostKey.firstConnect')}</div>
         )}
 
-        <div className="hostkey-target">主机：{target}</div>
-        <div className="hostkey-fingerprint">指纹：{event.fingerprint}</div>
+        <div className="hostkey-target">{t('ssh.hostKey.target', { target })}</div>
+        <div className="hostkey-fingerprint">
+          {t('ssh.hostKey.fingerprint', { fingerprint: event.fingerprint })}
+        </div>
       </div>
     </Modal>
   )

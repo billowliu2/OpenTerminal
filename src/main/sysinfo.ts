@@ -14,6 +14,7 @@
  */
 
 import { Ipc } from '../shared/ipc'
+import { t } from '../shared/i18n'
 import type { Client } from 'ssh2'
 import type { SysinfoMeta, SysinfoSample } from '../shared/sysinfo'
 
@@ -116,7 +117,7 @@ function pollOnce(id: string, state: PollState): void {
   if (state.stopped) return
   const client = clientProvider?.(id)
   if (!client) {
-    handleError(id, state, 'SSH 会话不存在或已断开')
+    handleError(id, state, t('main.sysinfo.sessionGone'))
     return
   }
 
@@ -124,7 +125,7 @@ function pollOnce(id: string, state: PollState): void {
     client.exec(COLLECT_CMD, (err: Error | undefined, stream) => {
       if (state.stopped) return
       if (err || !stream) {
-        handleError(id, state, err?.message || 'SSH exec 失败')
+        handleError(id, state, err?.message || t('main.sysinfo.execFailed'))
         return
       }
       let out = ''
@@ -220,7 +221,7 @@ function handleOutput(id: string, state: PollState, out: string): void {
       broadcastMeta(id, { hostname: parsed.hostname, os: parsed.osInfo })
     }
   } catch (err) {
-    handleError(id, state, `解析失败: ${(err as Error).message}`)
+    handleError(id, state, t('main.sysinfo.parseFailed', { message: (err as Error).message }))
     return
   }
   armNext(id, state)

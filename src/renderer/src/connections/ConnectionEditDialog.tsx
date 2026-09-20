@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Form, Input, InputNumber, Modal, Radio, Select } from 'antd'
 import type { SshAuthMethod, SshConnection, SshConnectionInput } from '@shared/connections'
+import { getLanguage, t } from '@shared/i18n'
 import { AuthFieldsRenderer } from './Fields'
 import { buildInput, num, hasSavedKind, type SecretKind } from './Common'
 
@@ -87,7 +88,7 @@ export function ConnectionEditDialog({
       onSaved()
       onClose()
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '保存失败，请检查输入后重试')
+      setErrorMsg(err instanceof Error ? err.message : t('ssh.dialog.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -97,21 +98,24 @@ export function ConnectionEditDialog({
     if (!saving) onClose()
   }
 
+  /** Active language; a dep of the memo below so translated labels refresh. */
+  const language = getLanguage()
+
   const savedNotes = useMemo(() => {
     if (!editing) return []
     const kinds: Array<{ kind: SecretKind; label: string }> = [
-      { kind: 'password', label: '密码' },
-      { kind: 'keyContent', label: '私钥' },
-      { kind: 'passphrase', label: '口令' }
+      { kind: 'password', label: t('ssh.auth.password') },
+      { kind: 'keyContent', label: t('ssh.auth.privateKey') },
+      { kind: 'passphrase', label: t('ssh.secret.passphrase') }
     ]
     const active = auth === 'password' ? ['password'] : auth === 'privateKey' ? ['keyContent', 'passphrase'] : []
     return kinds.filter((k) => active.includes(k.kind) && hasSavedKind(k.kind, editing.savedAuth))
-  }, [editing, auth])
+  }, [editing, auth, language])
 
   return (
     <Modal
       open={open}
-      title={editing ? '编辑连接' : '新建连接'}
+      title={editing ? t('ssh.dialog.titleEdit') : t('ssh.dialog.titleNew')}
       width={520}
       onCancel={handleCancel}
       destroyOnHidden
@@ -119,10 +123,10 @@ export function ConnectionEditDialog({
         <div className="connections-dialog-footer">
           <span className="connections-dialog-error">{errorMsg}</span>
           <Button onClick={onClose} disabled={saving} style={{ marginRight: 8 }}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button type="primary" loading={saving} onClick={() => void handleSave()}>
-            保存
+            {t('common.save')}
           </Button>
         </div>
       }
@@ -136,17 +140,17 @@ export function ConnectionEditDialog({
       >
         <Form.Item
           name="name"
-          label="名称"
-          rules={[{ required: true, whitespace: true, message: '请输入连接名称' }]}
+          label={t('ssh.dialog.name')}
+          rules={[{ required: true, whitespace: true, message: t('ssh.dialog.nameRequired') }]}
         >
-          <Input placeholder="例如：生产服务器" autoComplete="off" />
+          <Input placeholder={t('ssh.dialog.namePlaceholder')} autoComplete="off" />
         </Form.Item>
 
-        <Form.Item name="group" label="分组">
+        <Form.Item name="group" label={t('ssh.dialog.group')}>
           <Select
             allowClear
             mode="tags"
-            placeholder="选择或输入新分组，留空归入“默认”"
+            placeholder={t('ssh.dialog.groupPlaceholder')}
             options={groupOptions.map((g) => ({ value: g, label: g }))}
             maxCount={1}
           />
@@ -154,33 +158,33 @@ export function ConnectionEditDialog({
 
         <Form.Item
           name="host"
-          label="主机"
-          rules={[{ required: true, whitespace: true, message: '请输入主机地址' }]}
+          label={t('ssh.dialog.host')}
+          rules={[{ required: true, whitespace: true, message: t('ssh.dialog.hostRequired') }]}
         >
-          <Input placeholder="192.168.1.10 或 example.com" autoComplete="off" />
+          <Input placeholder={t('ssh.dialog.hostPlaceholder')} autoComplete="off" />
         </Form.Item>
 
         <Form.Item
           name="port"
-          label="端口"
-          rules={[{ type: 'number', min: 1, max: 65535, message: '端口需在 1–65535 之间' }]}
+          label={t('ssh.dialog.port')}
+          rules={[{ type: 'number', min: 1, max: 65535, message: t('ssh.dialog.portRange') }]}
         >
           <InputNumber className="connections-port-input" min={1} max={65535} placeholder="22" />
         </Form.Item>
 
         <Form.Item
           name="username"
-          label="用户名"
-          rules={[{ required: true, whitespace: true, message: '请输入用户名' }]}
+          label={t('ssh.dialog.username')}
+          rules={[{ required: true, whitespace: true, message: t('ssh.dialog.usernameRequired') }]}
         >
           <Input placeholder="root" autoComplete="off" />
         </Form.Item>
 
-        <Form.Item name="auth" label="认证方式">
+        <Form.Item name="auth" label={t('ssh.dialog.authMethod')}>
           <Radio.Group onChange={(e) => setAuth(e.target.value as SshAuthMethod)}>
-            <Radio value="password">密码</Radio>
-            <Radio value="privateKey">私钥</Radio>
-            <Radio value="agent">Agent</Radio>
+            <Radio value="password">{t('ssh.auth.password')}</Radio>
+            <Radio value="privateKey">{t('ssh.auth.privateKey')}</Radio>
+            <Radio value="agent">{t('ssh.auth.agent')}</Radio>
           </Radio.Group>
         </Form.Item>
 
@@ -191,7 +195,7 @@ export function ConnectionEditDialog({
               type="info"
               showIcon
               className="connections-secret-note"
-              message={`已保存${n.label}，留空将保留原值`}
+              message={t('ssh.dialog.savedSecret', { kind: n.label })}
             />
           ))}
 
@@ -199,9 +203,9 @@ export function ConnectionEditDialog({
 
         <Form.Item
           name="keepaliveIntervalSec"
-          label="Keepalive 间隔（秒）"
-          tooltip="0 表示关闭 keepalive"
-          rules={[{ type: 'number', min: 0, message: '不能为负数' }]}
+          label={t('ssh.dialog.keepalive')}
+          tooltip={t('ssh.dialog.keepaliveTooltip')}
+          rules={[{ type: 'number', min: 0, message: t('ssh.dialog.keepaliveMin') }]}
         >
           <InputNumber className="connections-keepalive-input" min={0} placeholder="30" />
         </Form.Item>

@@ -1,11 +1,25 @@
 import { useEffect, useState } from 'react'
+import { ConfigProvider } from 'antd'
+import zhCN from 'antd/locale/zh_CN'
+import zhTW from 'antd/locale/zh_TW'
+import enUS from 'antd/locale/en_US'
+import jaJP from 'antd/locale/ja_JP'
 import Workspace from '@renderer/workspace/Workspace'
 import { SettingsDialog } from '@renderer/settings/SettingsDialog'
 import { TransferPanel } from '@renderer/sftp/TransferPanel'
 import { useSettingsStore } from '@renderer/settings/store'
 import { getThemeById } from '@shared/theme'
+import { DEFAULT_LANGUAGE, setLanguage, type Language } from '@shared/i18n'
 import { applyChromeTheme, applyTabAccent } from '@renderer/theme/chrome'
 import appIconUrl from '../../../build/icon.png'
+
+/** antd's own component texts (empty states, pagination, date pickers). */
+const ANTD_LOCALES: Record<Language, typeof zhCN> = {
+  'zh-CN': zhCN,
+  'zh-TW': zhTW,
+  en: enUS,
+  ja: jaJP
+}
 
 /** Custom window title bar: draggable strip themed with the active terminal
  *  theme; native min/max/close buttons come from BrowserWindow titleBarOverlay. */
@@ -28,11 +42,17 @@ export default function App(): React.JSX.Element {
   const themeId = useSettingsStore((s) => s.settings.terminal.themeId)
   const customThemes = useSettingsStore((s) => s.settings.customThemes)
   const tabAccentColor = useSettingsStore((s) => s.settings.terminal.tabAccentColor)
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     void hydrate()
   }, [hydrate])
+
+  // Interface language: drives t() and antd's built-in component texts.
+  useEffect(() => {
+    setLanguage(language)
+  }, [language])
 
   // Sidebar / tab bars / dividers follow the active terminal theme.
   useEffect(() => {
@@ -45,11 +65,13 @@ export default function App(): React.JSX.Element {
   }, [tabAccentColor])
 
   return (
-    <div className="app-root">
-      <TitleBar />
-      <Workspace onOpenSettings={() => setSettingsOpen(true)} />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <TransferPanel />
-    </div>
+    <ConfigProvider locale={ANTD_LOCALES[language]}>
+      <div className="app-root">
+        <TitleBar />
+        <Workspace onOpenSettings={() => setSettingsOpen(true)} />
+        <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+        <TransferPanel />
+      </div>
+    </ConfigProvider>
   )
 }

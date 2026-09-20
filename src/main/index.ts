@@ -4,9 +4,10 @@ import { join } from 'path'
 import { registerIpc } from './ipc'
 import { killAllPtys } from './pty'
 import { applyStartupSystemSettings, loadSettings } from './settingsStore'
-import { initTray, markQuitting, onMainWindowClose } from './tray'
+import { initTray, markQuitting, onMainWindowClose, refreshTrayMenu } from './tray'
 import { configureAutoUpdater, registerUpdateIpc } from './updater'
 import { applyWindowChrome } from './windowChrome'
+import { onLanguageChange } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
 
 /** Re-create the main window (tray restore path after all windows are gone). */
@@ -122,6 +123,9 @@ app.whenReady().then(() => {
   applyStartupSystemSettings(loadSettings())
   createWindow()
   initTray(showOrCreate)
+  // Tray labels are resolved from the dictionary at build time, so the menu has
+  // to be rebuilt whenever the interface language changes.
+  onLanguageChange(() => refreshTrayMenu())
   configureAutoUpdater()
 
   app.on('activate', () => {

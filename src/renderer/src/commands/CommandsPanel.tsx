@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button, Modal, Popconfirm, Tabs } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import type { CommandItem } from '@shared/commands'
+import { t } from '@shared/i18n'
 import { useWorkspaceModeStore } from '../workspace/workspaceModeStore'
 import './commands.css'
 
@@ -88,8 +89,10 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
   return (
     <div className="commands-panel">
       <div className={`commands-mode-badge commands-mode-badge--${workspaceMode}`}>
-        <span className="commands-mode-badge-text">发送目标</span>
-        <span className="commands-mode-badge-tag">{workspaceMode === 'ssh' ? 'SSH 服务器' : '终端'}</span>
+        <span className="commands-mode-badge-text">{t('panels.commands.target')}</span>
+        <span className="commands-mode-badge-tag">
+          {workspaceMode === 'ssh' ? t('panels.commands.targetSsh') : t('panels.commands.targetTerminal')}
+        </span>
       </div>
       <Tabs
         size="small"
@@ -97,27 +100,29 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
         items={[
           {
             key: 'history',
-            label: '历史',
+            label: t('panels.commands.tabHistory'),
             children: (
               <div className="commands-section">
                 <div className="commands-section-head">
-                  <span className="commands-section-title">历史命令</span>
+                  <span className="commands-section-title">{t('panels.commands.historyTitle')}</span>
                   {history.length > 0 && (
                     <Popconfirm
-                      title="清空全部命令历史？"
-                      okText="清空"
-                      cancelText="取消"
+                      title={t('panels.commands.clearTitle')}
+                      okText={t('panels.commands.clear')}
+                      cancelText={t('common.cancel')}
                       okButtonProps={{ danger: true }}
                       onConfirm={() => void handleClearHistory()}
                     >
                       <Button type="text" size="small" danger className="commands-clear-btn">
-                        清空
+                        {t('panels.commands.clear')}
                       </Button>
                     </Popconfirm>
                   )}
                 </div>
                 {history.length === 0 ? (
-                  <div className="commands-empty">{loaded ? '暂无历史命令' : '加载中…'}</div>
+                  <div className="commands-empty">
+                    {loaded ? t('panels.commands.noHistory') : t('panels.commands.loading')}
+                  </div>
                 ) : (
                   <ul className="commands-list">
                     {history.map((item) => (
@@ -130,22 +135,24 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
           },
           {
             key: 'library',
-            label: '命令库',
+            label: t('panels.commands.tabLibrary'),
             children: (
               <div className="commands-section">
                 <div className="commands-section-head">
-                  <span className="commands-section-title">命令库</span>
+                  <span className="commands-section-title">{t('panels.commands.libraryTitle')}</span>
                   <Button
                     type="text"
                     size="small"
                     icon={<PlusOutlined />}
                     onClick={handleAdd}
-                    aria-label="新增命令"
-                    title="新增命令"
+                    aria-label={t('panels.commands.add')}
+                    title={t('panels.commands.add')}
                   />
                 </div>
                 {library.length === 0 ? (
-                  <div className="commands-empty">{loaded ? '命令库为空' : '加载中…'}</div>
+                  <div className="commands-empty">
+                    {loaded ? t('panels.commands.libraryEmpty') : t('panels.commands.loading')}
+                  </div>
                 ) : (
                   <ul className="commands-list">
                     {library.map((item) => (
@@ -166,9 +173,9 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
 
       <Modal
         open={addOpen}
-        title="新增命令"
-        okText="保存"
-        cancelText="取消"
+        title={t('panels.commands.add')}
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
         okButtonProps={{ disabled: command.trim().length === 0 }}
         onOk={() => void handleSave()}
         onCancel={() => setAddOpen(false)}
@@ -176,23 +183,23 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
       >
         <div className="commands-form">
           <label className="commands-field">
-            <span className="commands-field-label">名称</span>
+            <span className="commands-field-label">{t('panels.commands.name')}</span>
             <input
               className="commands-input"
               type="text"
               value={name}
-              placeholder="(可选)"
+              placeholder={t('panels.commands.optional')}
               spellCheck={false}
               onChange={(e) => setName(e.target.value)}
             />
           </label>
           <label className="commands-field">
-            <span className="commands-field-label">命令</span>
+            <span className="commands-field-label">{t('panels.commands.command')}</span>
             <input
               className="commands-input"
               type="text"
               value={command}
-              placeholder="如 ls -la"
+              placeholder={t('panels.commands.commandPlaceholder')}
               spellCheck={false}
               autoFocus
               onChange={(e) => setCommand(e.target.value)}
@@ -203,12 +210,12 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
             />
           </label>
           <label className="commands-field">
-            <span className="commands-field-label">备注</span>
+            <span className="commands-field-label">{t('panels.commands.note')}</span>
             <input
               className="commands-input"
               type="text"
               value={note}
-              placeholder="(可选)"
+              placeholder={t('panels.commands.optional')}
               spellCheck={false}
               onChange={(e) => setNote(e.target.value)}
             />
@@ -240,9 +247,9 @@ function Row({
       </div>
       {item.name && onDelete && (
         <Popconfirm
-          title="删除该命令？"
-          okText="删除"
-          cancelText="取消"
+          title={t('panels.commands.deleteTitle')}
+          okText={t('common.delete')}
+          cancelText={t('common.cancel')}
           okButtonProps={{ danger: true }}
           onConfirm={onDelete}
         >
@@ -252,7 +259,7 @@ function Row({
             danger
             icon={<DeleteOutlined />}
             className="commands-row-del"
-            aria-label="删除命令"
+            aria-label={t('panels.commands.deleteAria')}
           />
         </Popconfirm>
       )}

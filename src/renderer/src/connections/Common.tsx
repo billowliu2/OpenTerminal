@@ -1,4 +1,5 @@
 import type { SshAuthMethod, SshConnection, SshConnectionInput, SshSavedAuthFlags } from '@shared/connections'
+import { t } from '@shared/i18n'
 
 /**
  * Shared helpers for the connection manager UI (connections/**, renderer).
@@ -22,7 +23,11 @@ export function hasSavedKind(kind: SecretKind, savedAuth: SshSavedAuthFlags | un
 }
 
 export function authLabel(kind: SshAuthMethod): string {
-  return kind === 'privateKey' ? '私钥' : kind === 'agent' ? 'Agent' : '密码'
+  return kind === 'privateKey'
+    ? t('ssh.auth.privateKey')
+    : kind === 'agent'
+      ? t('ssh.auth.agent')
+      : t('ssh.auth.password')
 }
 
 export function AuthTags({ auth }: { auth: SshAuthMethod }): React.JSX.Element {

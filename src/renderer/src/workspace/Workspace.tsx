@@ -25,6 +25,7 @@ import type {
 import 'dockview-react/dist/styles/dockview.css'
 
 import type { HostKeyPromptEvent, SshConnection, SshSecretOverride } from '@shared/connections'
+import { t } from '@shared/i18n'
 import { ConnectionSidebar } from '../connections/ConnectionSidebar'
 import type { ConnectionSidebarHandle } from '../connections/ConnectionSidebar'
 import { ConnectFlow } from './ConnectFlow'
@@ -68,13 +69,21 @@ const TERMINAL_TAB_COMPONENT = 'terminal-tab'
  */
 function nextTerminalTitle(existing: Iterable<string | undefined>): string {
   const used = new Set<number>()
+  // The pattern is translated, so the number is read back through that same
+  // pattern (the `{n}` placeholder marks the digits) instead of a fixed one.
+  const [head, tail] = t('workspace.tab.terminalTitle', { n: '\u0000' }).split('\u0000')
+  const matcher = new RegExp(`^${escapeRegExp(head)}(\\d+)${escapeRegExp(tail ?? '')}$`)
   for (const title of existing) {
-    const n = title?.match(/^终端 (\d+)$/)?.[1]
+    const n = title?.match(matcher)?.[1]
     if (n) used.add(Number(n))
   }
   let n = 1
   while (used.has(n)) n++
-  return `终端 ${n}`
+  return t('workspace.tab.terminalTitle', { n })
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function sessionIdOf(panel: IDockviewPanel | undefined): string | undefined {
@@ -184,7 +193,7 @@ function createTabActions(mode: WorkspaceMode): (props: IDockviewHeaderActionsPr
     const { message } = App.useApp()
     const handleAdd = (): void => {
       if (mode === 'ssh') {
-        message.info('SSH 会话请从服务器列表连接')
+        message.info(t('workspace.hint.sshFromList'))
         return
       }
       void (async (): Promise<void> => {
@@ -665,7 +674,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         // B's sidebar refreshes lastConnectedAt on connect.
         void sidebarRef.current?.refresh()
       } catch (error) {
-        message.error(typeof error === 'string' ? error : 'SSH 连接失败')
+        message.error(typeof error === 'string' ? error : t('workspace.connect.failed'))
       } finally {
         setConnecting(false)
         setRequestedConn(null)
@@ -714,7 +723,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   const handleRailNewTerminal = useCallback((): void => {
     const mode = useWorkspaceModeStore.getState().mode
     if (mode === 'ssh') {
-      message.info('SSH 会话请从服务器列表连接')
+      message.info(t('workspace.hint.sshFromList'))
       return
     }
     void addTerminal()
@@ -732,7 +741,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const current = sshApiRef.current
       const hasSession = current ? current.panels.some((p) => sessionIdOf(p)) : false
       if (!hasSession) {
-        message.info('请先连接 SSH 服务器')
+        message.info(t('workspace.hint.connectSshFirst'))
         return
       }
       const reference = activeSshPanelRef.current
@@ -947,12 +956,12 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
     (cmd: string): void => {
       const panel = activePanelRef.current
       if (!panel) {
-        message.info('没有激活的终端：请至少打开一个本地终端或 SSH 会话')
+        message.info(t('workspace.hint.noActiveTerminal'))
         return
       }
       const sid = sessionIdOf(panel)
       if (!sid) {
-        message.info('当前激活面板没有可用的会话')
+        message.info(t('workspace.hint.noSessionInPanel'))
         return
       }
       writeBroadcast(sid, `${cmd}\r`)
@@ -963,11 +972,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
 
   const layoutMenu: MenuProps = {
     items: [
-      { key: 'split-right', label: '水平分屏' },
-      { key: 'split-below', label: '垂直分屏' },
+      { key: 'split-right', label: t('workspace.layout.splitRight') },
+      { key: 'split-below', label: t('workspace.layout.splitBelow') },
       { type: 'divider' },
-      { key: 'save', label: '保存为模板' },
-      { key: 'apply', label: '应用模板' }
+      { key: 'save', label: t('workspace.layout.saveTemplate') },
+      { key: 'apply', label: t('workspace.layout.applyTemplate') }
     ],
     onClick: ({ key }) => {
       if (key === 'split-right') handleSplit('right')
@@ -1022,14 +1031,14 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
             {terminalCount === 0 && (
               <div className="workspace-empty-overlay">
                 <div className="workspace-empty-inner">
-                  <div className="workspace-empty-title">暂无终端</div>
+                  <div className="workspace-empty-title">{t('workspace.empty.terminalTitle')}</div>
                   <Button
                     type="primary"
                     size="small"
                     icon={<PlusOutlined />}
                     onClick={handleNewTerminal}
                   >
-                    新建终端
+                    {t('workspace.newTerminal')}
                   </Button>
                 </div>
               </div>
@@ -1056,8 +1065,8 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
             {sshCount === 0 && (
               <div className="workspace-empty-overlay">
                 <div className="workspace-empty-inner">
-                  <div className="workspace-empty-title">暂无 SSH 会话</div>
-                  <div className="workspace-empty-hint">请从左侧服务器列表连接</div>
+                  <div className="workspace-empty-title">{t('workspace.empty.sshTitle')}</div>
+                  <div className="workspace-empty-hint">{t('workspace.empty.sshHint')}</div>
                 </div>
               </div>
             )}
@@ -1102,8 +1111,8 @@ function AddTerminalGroupButton({ onClick }: { onClick: () => void }): React.JSX
     <button
       type="button"
       className="workspace-tabbar-add"
-      title="在此分屏中新建终端"
-      aria-label="在此分屏中新建终端"
+      title={t('workspace.tab.addInSplit')}
+      aria-label={t('workspace.tab.addInSplit')}
       onClick={onClick}
     >
       <PlusOutlined />
@@ -1144,8 +1153,8 @@ function BroadcastToggleButton(): React.JSX.Element {
       <button
         type="button"
         className={cls}
-        title={enabled ? `广播中 (${targets.size} 个目标)` : '广播输入'}
-        aria-label="广播输入"
+        title={enabled ? t('workspace.broadcast.activeTitle', { count: targets.size }) : t('workspace.broadcast.toggle')}
+        aria-label={t('workspace.broadcast.toggle')}
         aria-pressed={enabled}
       >
         <ShareAltOutlined />
@@ -1179,21 +1188,27 @@ function WorkspaceBroadcastPopover({
     `${s.title}${s.isSsh ? ' (SSH)' : ''}`
   return (
     <div className="workspace-bcast-pop">
-      <div className="workspace-bcast-pop-mode">广播输入（{mode === 'ssh' ? 'SSH' : '终端'}）</div>
+      <div className="workspace-bcast-pop-mode">
+        {mode === 'ssh' ? t('workspace.broadcast.popoverSsh') : t('workspace.broadcast.popoverTerminal')}
+      </div>
       <div className="workspace-bcast-pop-switch">
-        <span className="workspace-bcast-pop-label">广播开关</span>
+        <span className="workspace-bcast-pop-label">{t('workspace.broadcast.switch')}</span>
         <Checkbox
           checked={enabled}
           disabled={targets.size < 2}
           onChange={(e) => onSetEnabled(e.target.checked)}
         >
-          {enabled ? `已启用 (${targets.size})` : targets.size < 2 ? '需至少选择 2 个目标' : '未启用'}
+          {enabled
+            ? t('workspace.broadcast.enabled', { count: targets.size })
+            : targets.size < 2
+              ? t('workspace.broadcast.needTwo')
+              : t('workspace.broadcast.disabled')}
         </Checkbox>
       </div>
       <div className="workspace-bcast-pop-list">
         {groupSessions.length === 0 ? (
           <div className="workspace-bcast-pop-empty">
-            {mode === 'ssh' ? '暂无 SSH 服务器会话' : '暂无终端'}
+            {mode === 'ssh' ? t('workspace.broadcast.emptySsh') : t('workspace.broadcast.emptyTerminal')}
           </div>
         ) : (
           groupSessions.map((s) => (
@@ -1205,7 +1220,7 @@ function WorkspaceBroadcastPopover({
           ))
         )}
       </div>
-      <div className="workspace-bcast-pop-hint">选择 ≥2 个终端后广播自动开启；关闭任意一个使目标少于 2 个时自动关闭。仅当前模式组的会话可被勾选。</div>
+      <div className="workspace-bcast-pop-hint">{t('workspace.broadcast.hint')}</div>
     </div>
   )
 }
@@ -1234,22 +1249,22 @@ function IconRail({
   return (
     <div className="workspace-rail">
       <RailButton
-        title={sidebarOpen ? '收起侧栏' : '展开侧栏'}
+        title={sidebarOpen ? t('workspace.rail.hideSidebar') : t('workspace.rail.showSidebar')}
         icon={sidebarOpen ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
         onClick={onToggleSidebar}
       />
       <div className="workspace-rail-divider" />
-      <RailButton title="新建终端" icon={<PlusOutlined />} onClick={onNewTerminal} />
+      <RailButton title={t('workspace.newTerminal')} icon={<PlusOutlined />} onClick={onNewTerminal} />
       <LayoutFlyout menu={layoutMenu} />
       <div className="workspace-rail-divider" />
       <ModeRailButtons />
       <div className="workspace-rail-spacer" />
       {connecting && (
-        <Tooltip title="正在连接…" placement="right">
+        <Tooltip title={t('workspace.rail.connecting')} placement="right">
           <span className="workspace-rail-busy" />
         </Tooltip>
       )}
-      <RailButton title="设置" icon={<SettingOutlined />} onClick={onOpenSettings} />
+      <RailButton title={t('workspace.rail.settings')} icon={<SettingOutlined />} onClick={onOpenSettings} />
     </div>
   )
 }
@@ -1261,13 +1276,13 @@ function ModeRailButtons(): React.JSX.Element {
   return (
     <>
       <RailButton
-        title="终端工作区"
+        title={t('workspace.rail.terminalWorkspace')}
         icon={<CodeOutlined />}
         active={mode === 'terminal'}
         onClick={() => setMode('terminal')}
       />
       <RailButton
-        title="SSH 工作区"
+        title={t('workspace.rail.sshWorkspace')}
         icon={<CloudServerOutlined />}
         active={mode === 'ssh'}
         onClick={() => setMode('ssh')}
@@ -1310,11 +1325,11 @@ function LayoutFlyout({ menu }: { menu: MenuProps }): React.JSX.Element {
 
   return (
     <div className="workspace-flyout-anchor" ref={rootRef}>
-      <Tooltip title={open ? '' : '布局'} placement="right">
+      <Tooltip title={open ? '' : t('workspace.rail.layout')} placement="right">
         <button
           type="button"
           className={'workspace-rail-btn' + (open ? ' is-active' : '')}
-          aria-label="布局"
+          aria-label={t('workspace.rail.layout')}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
         >

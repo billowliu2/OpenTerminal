@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { createWriteStream, promises as fsp } from 'fs'
 import { basename, join } from 'path'
 import { Ipc } from '../shared/ipc'
+import { t } from '../shared/i18n'
 import type { SftpEntry, TransferProgressEvent } from '../shared/sftp'
 
 /** ssh2 Client lookup injected by pty.ts (kind === 'ssh' sessions only). */
@@ -51,13 +52,20 @@ export function formatMode(mode: number): string {
  */
 const sftpCache = new Map<string, SFTPWrapper>()
 
+/**
+ * Our own "session is gone" error. `isTransportError` classifies on the class,
+ * not on the message text: the message is translated, the classifier must not
+ * depend on the active locale.
+ */
+class SessionGoneError extends Error {}
+
 async function sftpOf(sessionId: string): Promise<SFTPWrapper> {
   const cached = sftpCache.get(sessionId)
   if (cached) return cached
   const client = clientProvider?.(sessionId)
   if (!client) {
     console.error(`[sftp-debug] provider=${typeof clientProvider} sessionId=${sessionId} cacheSize=${sftpCache.size}`)
-    throw new Error('SSH 会话不存在或已断开')
+    throw new SessionGoneError(t('main.sftp.sessionGone'))
   }
   const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
     client.sftp((err, sftp_) => (err != null ? reject(err) : resolve(sftp_)))
@@ -77,8 +85,9 @@ function evictSftp(sessionId: string): void {
  * dropping the whole connection. Only transport-level death retries.
  */
 function isTransportError(err: unknown): boolean {
+  if (err instanceof SessionGoneError) return true
   const msg = (err as Error | undefined)?.message ?? ''
-  return /not connected|会话不存在|ECONNRESET|EPIPE|timed out|disconnected|channel|read past end/i.test(msg)
+  return /not connected|ECONNRESET|EPIPE|timed out|disconnected|channel|read past end/i.test(msg)
 }
 
 /** Run `fn` with the session's cached sftp; a dead cached channel is evicted and retried once. */
@@ -185,7 +194,7 @@ export function deleteRemote(sessionId: string, paths: string[]): Promise<void> 
       }
     }
     if (paths.length > 0 && failures.length === paths.length) {
-      throw new Error(`删除失败: ${failures.join('; ')}`)
+      throw new Error(t('main.sftp.deleteFailed', { detail: failures.join('; ') }))
     }
   })
 }
@@ -205,19 +214,21 @@ function shQuote(value: string): string {
 }
 
 export function chmodRemote(sessionId: string, path: string, mode: string): Promise<void> {
-  if (!/^[0-7]{1,4}$/.test(mode)) throw new Error(`非法权限值: ${mode}`)
+  if (!/^[0-7]{1,4}$/.test(mode)) throw new Error(t('main.sftp.invalidMode', { mode }))
   return execQuiet(sessionId, `chmod ${mode} ${shQuote(path)}`)
 }
 
 export function chownRemote(sessionId: string, path: string, uid: number, gid: number): Promise<void> {
-  if (!Number.isInteger(uid) || !Number.isInteger(gid)) throw new Error('非法 uid/gid')
+  if (!Number.isInteger(uid) || !Number.isInteger(gid)) {
+    throw new Error(t('main.sftp.invalidUidGid'))
+  }
   return execQuiet(sessionId, `chown ${uid}:${gid} ${shQuote(path)}`)
 }
 
 /** Run a command on the session's shell channel and wait for it to finish. */
 function execQuiet(sessionId: string, cmd: string): Promise<void> {
   const client = clientProvider?.(sessionId)
-  if (!client) throw new Error('SSH 会话不存在或已断开')
+  if (!client) throw new SessionGoneError(t('main.sftp.sessionGone'))
   return new Promise((resolve, reject) => {
     client.exec(cmd, (err, stream) => {
       if (err) {
@@ -230,7 +241,7 @@ function execQuiet(sessionId: string, cmd: string): Promise<void> {
         stderr += d.toString('utf8')
       })
       stream.on('close', (code: number) => {
-        if (code) reject(new Error(stderr || `命令退出码 ${code}`))
+        if (code) reject(new Error(stderr || t('main.sftp.commandExitCode', { code })))
         else resolve()
       })
     })
@@ -290,7 +301,7 @@ export function uploadRemote(
               let lastEmit = 0
               const buf = Buffer.alloc(CHUNK)
               for (;;) {
-                if (transfer.cancelled) throw new Error('已取消')
+                if (transfer.cancelled) throw new Error(t('main.sftp.cancelled'))
                 if (firstError) throw firstError
                 while (inflight.size >= UPLOAD_WINDOW) {
                   await Promise.race(inflight)
@@ -378,7 +389,7 @@ export function downloadRemote(
               let lastEmit = 0
               const buf = Buffer.alloc(CHUNK)
               for (;;) {
-                if (transfer.cancelled) throw new Error('已取消')
+                if (transfer.cancelled) throw new Error(t('main.sftp.cancelled'))
                 const { bytesRead } = await p<{ bytesRead: number; buffer: Buffer }>(cb =>
                   sftp.read(handle, buf, 0, CHUNK, pos, cb)
                 )

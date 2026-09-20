@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as AntdApp, Button, Modal, Space, Typography } from 'antd'
 import type { ZmodemOfferEvent, ZmodemResponse } from '@shared/ipc'
+import { t } from '@shared/i18n'
 
 /**
  * M6 ZMODEM offer/done UX: renders one dialog per active zmodem offer.
@@ -82,8 +83,11 @@ export default function ZmodemOffers(): null | React.JSX.Element {
 
   const offDone = useCallback(
     (evt: { id: string; ok: boolean; message?: string }) => {
-      if (evt.ok) message.success('ZMODEM 传输完成')
-      else message.error(`ZMODEM 传输失败：${evt.message ?? '未知错误'}`)
+      if (evt.ok) message.success(t('ssh.zmodem.done'))
+      else
+        message.error(
+          t('ssh.zmodem.failed', { message: evt.message ?? t('ssh.zmodem.unknownError') })
+        )
     },
     [message]
   )
@@ -103,23 +107,21 @@ export default function ZmodemOffers(): null | React.JSX.Element {
       closable={false}
       maskClosable={false}
       keyboard={false}
-      title={isReceive ? '下载到本地' : '上传到服务器'}
+      title={isReceive ? t('ssh.zmodem.titleReceive') : t('ssh.zmodem.titleSend')}
       footer={
         <Space>
           <Button
             type="primary"
             onClick={() => (isReceive ? void handlePickDir(first.id) : void handlePickFiles(first.id))}
           >
-            {isReceive ? '选择保存目录' : '选择文件'}
+            {isReceive ? t('ssh.zmodem.pickDir') : t('ssh.zmodem.pickFiles')}
           </Button>
-          <Button onClick={() => handleCancel(first.id)}>取消</Button>
+          <Button onClick={() => handleCancel(first.id)}>{t('common.cancel')}</Button>
         </Space>
       }
     >
       <Typography.Text>
-        {isReceive
-          ? '检测到 sz 下载请求（远端正在发送文件），请选择保存在本地的目录。'
-          : '检测到 rz 上传请求（远端正在接收文件），请选择要上传的文件。'}
+        {isReceive ? t('ssh.zmodem.receiveDesc') : t('ssh.zmodem.sendDesc')}
       </Typography.Text>
     </Modal>
   )

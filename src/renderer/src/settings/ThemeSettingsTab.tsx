@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Button, ColorPicker, Popconfirm } from 'antd'
+import { t } from '@shared/i18n'
 import type { TerminalSettings } from '@shared/settings'
 import { DEFAULT_SETTINGS } from '@shared/settings'
 import type { TerminalTheme, ThemeColors } from '@shared/theme'
@@ -49,8 +50,8 @@ export function ThemeSettingsTab({
     <div className="theme-pane">
       <div className="theme-accent-row">
         <div>
-          <div className="settings-block-label">标签强调色</div>
-          <div className="settings-block-hint">活动标签边框、侧栏指示条与 SSH 徽章的强调颜色</div>
+          <div className="settings-block-label">{t('settings.theme.accent')}</div>
+          <div className="settings-block-hint">{t('settings.theme.accentDesc')}</div>
         </div>
         <div className="theme-accent-controls">
           <ColorPicker
@@ -61,33 +62,33 @@ export function ThemeSettingsTab({
             size="small"
             onClick={() => void updateTerminal({ tabAccentColor: DEFAULT_SETTINGS.terminal.tabAccentColor })}
           >
-            恢复默认
+            {t('common.reset')}
           </Button>
         </div>
       </div>
       <div className="theme-gallery">
-      {themeCards.map((t) => {
-        const selected = t.id === activeTheme.id
-        const isCustom = t.builtin === false
+      {themeCards.map((theme) => {
+        const selected = theme.id === activeTheme.id
+        const isCustom = theme.builtin === false
         return (
           <div
-            key={t.id}
+            key={theme.id}
             className={selected ? 'theme-card theme-card-selected' : 'theme-card'}
-            onClick={() => void updateTerminal({ themeId: t.id })}
-            title={t.name}
+            onClick={() => void updateTerminal({ themeId: theme.id })}
+            title={theme.name}
           >
-            <div className="theme-card-bg" style={{ background: t.colors.background }} />
+            <div className="theme-card-bg" style={{ background: theme.colors.background }} />
             <div className="theme-card-body">
               <div className="theme-card-name-row">
-                <span className="theme-card-name">{t.name}</span>
-                {isCustom && <span className="theme-card-badge">自定义</span>}
+                <span className="theme-card-name">{theme.name}</span>
+                {isCustom && <span className="theme-card-badge">{t('settings.theme.customBadge')}</span>}
               </div>
               <div className="theme-card-dots">
 {ANSI_KEYS.map((k) => (
                   <span
                     key={k}
                     className="theme-card-dot"
-                    style={{ background: t.colors[k] }}
+                    style={{ background: theme.colors[k] }}
                   />
                 ))}
               </div>
@@ -98,29 +99,29 @@ export function ThemeSettingsTab({
                       size="small"
                       onClick={(e) => {
                         e.stopPropagation()
-                        onEditTheme(t.id)
+                        onEditTheme(theme.id)
                       }}
                     >
-                      编辑
+                      {t('common.edit')}
                     </Button>
                     <Popconfirm
-                      title="删除自定义主题"
-                      description="删除后无法恢复，确定继续？"
-                      okText="删除"
-                      cancelText="取消"
+                      title={t('settings.theme.deleteTitle')}
+                      description={t('settings.deleteConfirmDesc')}
+                      okText={t('common.delete')}
+                      cancelText={t('common.cancel')}
                       okButtonProps={{ danger: true }}
                       onConfirm={(e) => {
                         e?.stopPropagation()
-                        void handleDelete(t.id)
+                        void handleDelete(theme.id)
                       }}
                     >
                       <Button
                         size="small"
                         danger
                         onClick={(e) => e.stopPropagation()}
-                        title="删除"
+                        title={t('common.delete')}
                       >
-                        删除
+                        {t('common.delete')}
                       </Button>
                     </Popconfirm>
                   </>
@@ -133,7 +134,7 @@ export function ThemeSettingsTab({
 
       <div className="theme-card theme-card-new" onClick={onCreateTheme}>
         <div className="theme-card-new-icon">+</div>
-        <div className="theme-card-new-text">新建主题</div>
+        <div className="theme-card-new-text">{t('settings.theme.create')}</div>
       </div>
       </div>
     </div>
