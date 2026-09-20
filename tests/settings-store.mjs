@@ -14,7 +14,7 @@
  *     --alias:@shared=./src/shared
  *   node tests/settings-store.mjs
  */
-import { mkdtempSync, readFileSync, existsSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -110,6 +110,10 @@ console.log('[warnings log]')
   store.loadSettings()
   ok(readFileSync(file, 'utf8').length === size, 'identical warnings are not appended twice')
 }
+
+// The store wrote settings into a temp userData dir; drop it so repeated runs do
+// not litter %TEMP%.
+rmSync(userData, { recursive: true, force: true })
 
 console.log(failed === 0 ? '\n[settings] ALL CHECKS PASSED' : `\n[settings] ${failed} CHECK(S) FAILED`)
 process.exit(failed === 0 ? 0 : 1)

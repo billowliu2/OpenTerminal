@@ -1,6 +1,7 @@
 // Real-server chmod/chown + mode-string verification (M4). Credentials from env:
 //   JD_HOST / JD_USER / JD_PASS
-// Prereq bundles: tests/.session-e2e.cjs (pty session layer), tests/.sftp-svc.mjs (sftp service)
+// Prereq bundles: `node tests/build-bundles.cjs` builds both of them —
+//   tests/.session-e2e.cjs (pty session layer), tests/.sftp-svc.mjs (sftp service)
 import { createRequire } from 'module'
 const require_ = createRequire(import.meta.url)
 const sessionLayer = require_('./.session-e2e.cjs')
@@ -71,7 +72,8 @@ try {
 console.log('[chmod] cleanup ok')
 
 const exits = events.filter((e) => e.channel === 'pty:exit')
-console.log('[chmod] unexpected exits:', exits.length)
+if (exits.length) fail(`session exited unexpectedly during the chmod test (${exits.length}x)`)
+console.log('[chmod] no unexpected session exits')
 
 sessionLayer.killPty(id)
 console.log('[chmod] ALL CHECKS PASSED')

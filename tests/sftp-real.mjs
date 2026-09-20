@@ -1,6 +1,7 @@
 // Real-server SFTP verification (M4). Credentials from env (never hardcoded):
 //   JD_HOST / JD_USER / JD_PASS
-// Prereq bundles: tests/.session-e2e.cjs (pty session layer), tests/.sftp-svc.cjs (sftp service)
+// Prereq bundles: `node tests/build-bundles.cjs` builds both of them —
+//   tests/.session-e2e.cjs (pty session layer), tests/.sftp-svc.mjs (sftp service)
 import { createRequire } from 'module'
 import { randomUUID } from 'crypto'
 import { promises as fsp } from 'fs'
@@ -100,7 +101,8 @@ try {
 console.log('[sftp] recursive delete ok')
 
 const exits = events.filter((e) => e.channel === 'pty:exit')
-console.log('[sftp] unexpected exits:', exits.length)
+if (exits.length) fail(`session exited unexpectedly during the transfer (${exits.length}x) — see the debug log above`)
+console.log('[sftp] no unexpected session exits')
 
 await fsp.rm(localFile, { force: true })
 await fsp.rm(dlDir, { recursive: true, force: true })

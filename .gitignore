@@ -33,6 +33,9 @@ release/
 # stray local test artifacts
 .min-test.bin
 .min2-test.bin
+.exact-test.bin
+tests/.zm-src-*/
+tests/.zm-out-*/
 
 # release notes drafts (consumed by scripts/release.cjs + sync-changelog.cjs)
 RELEASE_NOTES*.md

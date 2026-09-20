@@ -12,6 +12,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node tests/build-bundles.cjs && node tests/ssh-loopback.mjs && node tests/commands-store.mjs && node tests/settings-store.mjs && node tests/.hl-split-smoke.cjs && node tests/zmodem-e2e.mjs && node tests/ssh-session-e2e.mjs && node tests/sysinfo-e2e.mjs",
     "dist": "electron-vite build && electron-builder --win msi nsis",
     "dist:dir": "electron-vite build && electron-builder --win --dir"
   },
@@ -40,6 +41,7 @@
     "electron": "^44.2.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "esbuild": "^0.25.12",
     "typescript": "~5.9.0",
     "vite": "^7.0.0"
   }

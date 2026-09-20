@@ -5,9 +5,13 @@
  * broadcast, growing samples (usage + net rates), and that stopPolling halts
  * the stream.
  *
- * Pre-req: npx esbuild src/main/pty.ts --bundle --platform=node --format=cjs
- *          --outfile=tests/.session-e2e.cjs --external:@lydell/node-pty
- *          --external:ssh2 --alias:electron=./tests/electron-stub.cjs
+ * Pre-req: node tests/build-bundles.cjs   (or, by hand:)
+ *   npx esbuild src/main/pty.ts --bundle --platform=node --format=cjs
+ *     --outfile=tests/.session-e2e.cjs --external:@lydell/node-pty
+ *     --external:ssh2 --alias:electron=./tests/electron-stub.cjs
+ *     --alias:@shared=./src/shared
+ *   (--alias:@shared=./src/shared is required: pty.ts reaches @shared/theme
+ *   through settingsStore.ts -> windowChrome.ts)
  * Run:     node tests/sysinfo-e2e.mjs  (must exit 0)
  */
 

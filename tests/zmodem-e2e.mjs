@@ -38,6 +38,20 @@ const fail = (msg) => {
   process.exit(1)
 }
 
+// Temp dirs the scenarios create under tests/. They are removed on the way out,
+// including when fail() exits the process mid-scenario — hence the exit hook
+// next to the try/finally at the bottom.
+const tempDirs = []
+const mkTemp = (prefix) => {
+  const dir = mkdtempSync(join(__dirname, prefix))
+  tempDirs.push(dir)
+  return dir
+}
+const cleanupTempDirs = () => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+}
+process.on('exit', cleanupTempDirs)
+
 // ---- 0. ensure bundle ---------------------------------------------------------
 const bundlePath = join(__dirname, '.zmodem-e2e.cjs')
 if (!existsSync(bundlePath)) {
@@ -117,11 +131,11 @@ function makeRemoteSentry(remoteOnDetect, routeOut) {
 async function scenarioDownload() {
   console.log('\n=== 场景 1: 远端 sz + 本地接收 (download) ===')
   const sessionId = `sess-${randomBytes(3).toString('hex')}`
-  const srcDir = mkdtempSync(join(__dirname, '.zm-src-dl-'))
+  const srcDir = mkTemp('.zm-src-dl-')
   const srcFile = join(srcDir, 'transferred.bin')
   const payload = randomBytes(200_000)
   writeFileSync(srcFile, payload)
-  const outDir = mkdtempSync(join(__dirname, '.zm-out-dl-'))
+  const outDir = mkTemp('.zm-out-dl-')
 
   const events = []
   const remote = makeRemoteSentry((detection) => {
@@ -170,20 +184,17 @@ async function scenarioDownload() {
   }
   console.log(`[download] file received: ${got.length} bytes, content matches`)
   console.log(`[download] progress events: ${prog.length} (state->done), done(ok)=true`)
-
-  rmSync(srcDir, { recursive: true, force: true })
-  rmSync(outDir, { recursive: true, force: true })
 }
 
 // ---- SCENARIO 2: upload (our engine -> remote `rz`) ----------------------------
 async function scenarioUpload() {
   console.log('\n=== 场景 2: 本地上传 + 远端 rz (upload) ===')
   const sessionId = `sess-${randomBytes(3).toString('hex')}`
-  const srcDir = mkdtempSync(join(__dirname, '.zm-src-up-'))
+  const srcDir = mkTemp('.zm-src-up-')
   const srcFile = join(srcDir, 'sendme.bin')
   const payload = randomBytes(150_000)
   writeFileSync(srcFile, payload)
-  const outDir = mkdtempSync(join(__dirname, '.zm-out-up-'))
+  const outDir = mkTemp('.zm-out-up-')
 
   const events = []
   let remoteGot = null
@@ -243,15 +254,16 @@ async function scenarioUpload() {
   }
   console.log(`[upload] remote received ${remoteGot.length} bytes, content matches`)
   console.log(`[upload] progress events: ${prog.length}, done(ok)=true`)
-
-  rmSync(srcDir, { recursive: true, force: true })
-  rmSync(outDir, { recursive: true, force: true })
 }
 
 // ---- run ----------------------------------------------------------------------
 const timer = setTimeout(() => fail('zmodem-e2e timed out'), 30000)
-await scenarioDownload()
-await scenarioUpload()
-clearTimeout(timer)
+try {
+  await scenarioDownload()
+  await scenarioUpload()
+} finally {
+  clearTimeout(timer)
+  cleanupTempDirs()
+}
 console.log('\n[zmodem-e2e] ALL CHECKS PASSED')
 process.exit(0)

@@ -10,7 +10,7 @@
  *        --alias:@shared=./src/shared
  * Run:   node tests/commands-store.mjs   (must exit 0)
  */
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { createRequire } from 'module'
@@ -226,6 +226,10 @@ const expected =
   Array.from({ length: 100 }, (_, i) => `b${String(i).padStart(3, '0')}\n`).join('') +
   'partial-tail'
 ok(readFileSync(startB.file, 'utf8') === expected, 'burst writes + stop tail land in order')
+
+// The store wrote into a temp userData dir; drop it so repeated runs do not
+// litter %TEMP%.
+rmSync(userData, { recursive: true, force: true })
 
 console.log('\n[commands] ALL CHECKS PASSED')
 process.exit(0)
