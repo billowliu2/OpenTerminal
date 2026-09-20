@@ -53,6 +53,12 @@ const DICTS: Record<Language, Dict> = {
   ja
 }
 
+/** Own-property read: dictionary literals would otherwise answer `constructor`,
+ *  `toString`, … straight out of Object.prototype and then throw in replace(). */
+function lookup(dict: Dict, key: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(dict, key) ? dict[key] : undefined
+}
+
 let current: Language = DEFAULT_LANGUAGE
 const listeners = new Set<(lang: Language) => void>()
 
@@ -75,7 +81,7 @@ export function onLanguageChange(cb: (lang: Language) => void): () => void {
 
 /** Translate `key`; `{name}` placeholders are filled from `vars`. */
 export function t(key: string, vars?: Record<string, string | number>): string {
-  const raw = DICTS[current][key] ?? DICTS[DEFAULT_LANGUAGE][key] ?? key
+  const raw = lookup(DICTS[current], key) ?? lookup(DICTS[DEFAULT_LANGUAGE], key) ?? key
   if (!vars) return raw
   return raw.replace(/\{(\w+)\}/g, (match, name: string) =>
     vars[name] === undefined ? match : String(vars[name])

@@ -97,7 +97,7 @@ export interface AppApi {
 
   // ---- settings ----
   getSettings(): Promise<AppSettings>
-  saveSettings(next: AppSettings): Promise<AppSettings>
+  saveSettings(next: Partial<AppSettings>): Promise<AppSettings>
   onSettingsChanged(cb: (s: AppSettings) => void): () => void
 
   // ---- fonts ----
@@ -112,6 +112,8 @@ export interface AppApi {
 
   // ---- updater (domestic feed first, GitHub fallback) ----
   updateCheck(): Promise<UpdateState>
+  /** read the updater's current state without triggering a network check */
+  getUpdateState(): Promise<UpdateState>
   updateDownload(): Promise<void>
   updateInstall(): Promise<void>
   updateChangelog(): Promise<ReleaseNote[]>

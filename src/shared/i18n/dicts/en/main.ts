@@ -13,7 +13,7 @@ const main: Record<string, string> = {
   'main.tray.closeDetail': 'Minimizing to tray keeps your terminal sessions running.',
   'main.tray.rememberChoice': 'Remember my choice, never ask again',
 
-  'main.updater.feedFailed': 'Domestic feed: {gitea}; GitHub: {github}',
+  'main.updater.feedFailed': 'Gitea feed: {gitea}; GitHub: {github}',
 
   'main.ssh.connectTimeout': 'Connection timed out ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'Failed to save the host fingerprint: {detail}',
@@ -27,6 +27,7 @@ const main: Record<string, string> = {
   'main.sftp.deleteFailed': 'Delete failed: {detail}',
   'main.sftp.invalidMode': 'Invalid permission value: {mode}',
   'main.sftp.invalidUidGid': 'Invalid uid/gid',
+  'main.sftp.commandTimeout': 'Command timed out',
   'main.sftp.commandExitCode': 'Command exited with code {code}',
   'main.sftp.cancelled': 'Cancelled',
 
@@ -47,6 +48,7 @@ const main: Record<string, string> = {
 
   'main.sysinfo.sessionGone': 'SSH session is missing or disconnected',
   'main.sysinfo.execFailed': 'SSH exec failed',
+  'main.sysinfo.pollTimeout': 'Monitoring command timed out',
   'main.sysinfo.parseFailed': 'Parse failed: {message}',
   'main.pty.serviceNotReady': 'SSH session service is not initialised yet',
   'main.pty.missingConnectionId': 'SSH session is missing its connectionId',

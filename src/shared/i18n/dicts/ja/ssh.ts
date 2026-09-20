@@ -13,7 +13,7 @@ const ssh: Record<string, string> = {
   'ssh.fields.askPasswordHint':
     'オンにすると毎回の接続でパスワード入力ダイアログを表示し、保存済みのパスワードを使いません',
   'ssh.fields.passwordPlaceholder': '編集時に空欄のままにすると保存済みのパスワードを保持します',
-  'ssh.fields.keyPath': '秘密鍵のパス（サーバー上の秘密鍵のパス、省略可）',
+  'ssh.fields.keyPath': '秘密鍵ファイルのパス（このコンピューター上のパス、省略可）',
   'ssh.fields.keyContent': '秘密鍵の内容',
   'ssh.fields.keyContentPlaceholder':
     '秘密鍵の内容を貼り付けます。空欄の場合は上のパスを使用します（編集時に空欄のままにすると保存済みの秘密鍵を保持します）',
@@ -102,6 +102,8 @@ const ssh: Record<string, string> = {
   'ssh.file.up': '親フォルダへ',
   'ssh.file.refresh': '更新',
   'ssh.file.uploadFile': 'ファイルをアップロード',
+  'ssh.file.overwriteTitle': '既存のファイルを上書きしますか？',
+  'ssh.file.overwriteDesc': '対象ディレクトリに同名のファイルが存在します。アップロードすると内容が上書きされます。',
   'ssh.file.downloadSelected': '選択項目をダウンロード',
   'ssh.file.permOwner': '権限 / 所有者',
   'ssh.file.open': '開く',

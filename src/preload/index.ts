@@ -106,7 +106,7 @@ const api: AppApi = {
     ipcRenderer.send(Ipc.HOSTKEY_RESPOND, promptId, action),
 
   getSettings: () => ipcRenderer.invoke(Ipc.SETTINGS_GET),
-  saveSettings: (next: AppSettings) => ipcRenderer.invoke(Ipc.SETTINGS_SET, next),
+  saveSettings: (next: Partial<AppSettings>) => ipcRenderer.invoke(Ipc.SETTINGS_SET, next),
   onSettingsChanged: (cb: (s: AppSettings) => void) => {
     const listener = (_: unknown, s: AppSettings): void => cb(s)
     ipcRenderer.on(Ipc.SETTINGS_CHANGED, listener)
@@ -121,6 +121,7 @@ const api: AppApi = {
   deleteLayout: (id: string) => ipcRenderer.invoke(Ipc.LAYOUTS_DELETE, id),
 
   updateCheck: () => ipcRenderer.invoke(Ipc.UPDATE_CHECK),
+  getUpdateState: () => ipcRenderer.invoke(Ipc.UPDATE_STATE_GET),
   updateDownload: () => ipcRenderer.invoke(Ipc.UPDATE_DOWNLOAD),
   updateInstall: () => ipcRenderer.invoke(Ipc.UPDATE_INSTALL),
   updateChangelog: () => ipcRenderer.invoke(Ipc.UPDATE_CHANGELOG),

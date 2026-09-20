@@ -13,7 +13,7 @@ const ssh: Record<string, string> = {
   'ssh.fields.askPasswordHint':
     'Prompts for the password on every connection instead of using the saved one',
   'ssh.fields.passwordPlaceholder': 'Leave empty to keep the saved password',
-  'ssh.fields.keyPath': 'Private key path (path on the server, optional)',
+  'ssh.fields.keyPath': 'Private key file path (on this computer, optional)',
   'ssh.fields.keyContent': 'Private key content',
   'ssh.fields.keyContentPlaceholder':
     'Paste the private key; leave empty to use the path above (leave empty while editing to keep the saved key)',
@@ -100,6 +100,8 @@ const ssh: Record<string, string> = {
   'ssh.file.up': 'Parent folder',
   'ssh.file.refresh': 'Refresh',
   'ssh.file.uploadFile': 'Upload files',
+  'ssh.file.overwriteTitle': 'Overwrite existing file?',
+  'ssh.file.overwriteDesc': 'A file with the same name exists in the target directory; uploading will overwrite its contents.',
   'ssh.file.downloadSelected': 'Download selection',
   'ssh.file.permOwner': 'Permissions / owner',
   'ssh.file.open': 'Open',

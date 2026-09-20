@@ -97,6 +97,8 @@ export const Ipc = {
   UPDATE_DOWNLOAD: 'update:download',
   UPDATE_INSTALL: 'update:install',
   UPDATE_CHANGELOG: 'update:changelog',
+  /** renderer pulls the current updater state without triggering a check */
+  UPDATE_STATE_GET: 'update:stateGet',
   /** main -> renderer broadcast: UpdateState */
   UPDATE_STATE: 'update:state',
 

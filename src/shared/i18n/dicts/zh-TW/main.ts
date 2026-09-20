@@ -27,6 +27,7 @@ const main: Record<string, string> = {
   'main.sftp.deleteFailed': '刪除失敗: {detail}',
   'main.sftp.invalidMode': '權限值無效: {mode}',
   'main.sftp.invalidUidGid': 'uid/gid 無效',
+  'main.sftp.commandTimeout': '命令執行逾時',
   'main.sftp.commandExitCode': '指令結束碼 {code}',
   'main.sftp.cancelled': '已取消',
 
@@ -47,6 +48,7 @@ const main: Record<string, string> = {
 
   'main.sysinfo.sessionGone': 'SSH 工作階段不存在或已中斷',
   'main.sysinfo.execFailed': 'SSH exec 失敗',
+  'main.sysinfo.pollTimeout': '監控命令回應逾時',
   'main.sysinfo.parseFailed': '解析失敗: {message}',
   'main.pty.serviceNotReady': 'SSH 工作階段服務尚未初始化',
   'main.pty.missingConnectionId': 'SSH 工作階段缺少 connectionId',

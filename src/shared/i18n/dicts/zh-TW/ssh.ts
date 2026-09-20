@@ -11,7 +11,7 @@ const ssh: Record<string, string> = {
   'ssh.fields.askPasswordLabel': '連線時詢問密碼',
   'ssh.fields.askPasswordHint': '開啟後每次連線彈出對話框輸入密碼，不再使用已儲存的密碼',
   'ssh.fields.passwordPlaceholder': '編輯時留空表示保留已儲存的密碼',
-  'ssh.fields.keyPath': '私鑰路徑（伺服器上的本機私鑰路徑，可留空）',
+  'ssh.fields.keyPath': '私鑰檔案路徑（本機路徑，可留空）',
   'ssh.fields.keyContent': '私鑰內容',
   'ssh.fields.keyContentPlaceholder':
     '貼上私鑰內容；留空則使用上面的路徑（編輯時留空表示保留已儲存的私鑰）',
@@ -94,6 +94,8 @@ const ssh: Record<string, string> = {
   'ssh.file.up': '上一層',
   'ssh.file.refresh': '重新整理',
   'ssh.file.uploadFile': '上傳檔案',
+  'ssh.file.overwriteTitle': '覆蓋已存在的檔案？',
+  'ssh.file.overwriteDesc': '目標目錄已存在同名檔案，上傳將覆蓋其內容。',
   'ssh.file.downloadSelected': '下載選取項目',
   'ssh.file.permOwner': '權限 / 擁有者',
   'ssh.file.open': '開啟',

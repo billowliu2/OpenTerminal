@@ -13,7 +13,7 @@ const main: Record<string, string> = {
   'main.tray.closeDetail': 'トレイに最小化すると、ターミナルセッションは実行を続けます。',
   'main.tray.rememberChoice': '選択を記憶して今後確認しない',
 
-  'main.updater.feedFailed': '国内フィード: {gitea}；GitHub: {github}',
+  'main.updater.feedFailed': 'Gitea フィード: {gitea}；GitHub: {github}',
 
   'main.ssh.connectTimeout': '接続がタイムアウトしました ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'ホスト鍵のフィンガープリントを保存できませんでした: {detail}',
@@ -27,6 +27,7 @@ const main: Record<string, string> = {
   'main.sftp.deleteFailed': '削除に失敗しました: {detail}',
   'main.sftp.invalidMode': '不正なパーミッション値: {mode}',
   'main.sftp.invalidUidGid': '不正な uid/gid',
+  'main.sftp.commandTimeout': 'コマンドがタイムアウトしました',
   'main.sftp.commandExitCode': 'コマンドの終了コード {code}',
   'main.sftp.cancelled': 'キャンセルしました',
 
@@ -47,6 +48,7 @@ const main: Record<string, string> = {
 
   'main.sysinfo.sessionGone': 'SSH セッションが存在しないか切断されています',
   'main.sysinfo.execFailed': 'SSH exec に失敗しました',
+  'main.sysinfo.pollTimeout': '監視コマンドがタイムアウトしました',
   'main.sysinfo.parseFailed': '解析に失敗しました: {message}',
   'main.pty.serviceNotReady': 'SSH セッションサービスが未初期化です',
   'main.pty.missingConnectionId': 'SSH セッションに connectionId がありません',

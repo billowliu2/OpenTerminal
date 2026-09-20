@@ -11,7 +11,7 @@ const ssh: Record<string, string> = {
   'ssh.fields.askPasswordLabel': '连接时询问密码',
   'ssh.fields.askPasswordHint': '开启后每次连接弹出对话框输入密码，不再使用已保存的密码',
   'ssh.fields.passwordPlaceholder': '编辑时留空表示保留已保存的密码',
-  'ssh.fields.keyPath': '私钥路径（服务器上的本地私钥路径，可留空）',
+  'ssh.fields.keyPath': '私钥文件路径（本机路径，可留空）',
   'ssh.fields.keyContent': '私钥内容',
   'ssh.fields.keyContentPlaceholder':
     '粘贴私钥内容；留空则使用上面的路径（编辑时留空表示保留已保存的私钥）',
@@ -94,6 +94,8 @@ const ssh: Record<string, string> = {
   'ssh.file.up': '上一级',
   'ssh.file.refresh': '刷新',
   'ssh.file.uploadFile': '上传文件',
+  'ssh.file.overwriteTitle': '覆盖已存在的文件？',
+  'ssh.file.overwriteDesc': '目标目录已存在同名文件，上传将覆盖其内容。',
   'ssh.file.downloadSelected': '下载选中项',
   'ssh.file.permOwner': '权限 / 属主',
   'ssh.file.open': '打开',
