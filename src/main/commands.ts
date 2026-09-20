@@ -376,7 +376,7 @@ function loadHistoryPrefs(): { historyEnabled: boolean; historyLimit: number } {
   try {
     const terminal = loadSettings().terminal
     return {
-      historyEnabled: terminal.historyEnabled !== false,
+      historyEnabled: terminal.historyEnabled === true,
       historyLimit: normalizeLimit(terminal.historyLimit)
     }
   } catch {

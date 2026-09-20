@@ -80,6 +80,8 @@ export interface AppApi {
   logStop(sessionId: string): Promise<void>
   listSessionLogs(): Promise<SessionLogMeta[]>
   openLogsDir(): void
+  /** open a local directory in the OS file manager; false if not a directory */
+  openDirectory(dir: string): Promise<boolean>
 
   // ---- ssh connections ----
   listConnections(): Promise<SshConnection[]>

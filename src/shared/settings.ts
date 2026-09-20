@@ -40,6 +40,12 @@ export interface TerminalSettings {
   historyEnabled: boolean
   /** max entries kept in command history */
   historyLimit: number
+  /** terminal toolbar: session-log record button */
+  showRecButton: boolean
+  /** terminal toolbar: open logs folder button */
+  showOpenLogsButton: boolean
+  /** terminal toolbar: open working-directory button (local sessions only) */
+  showOpenCwdButton: boolean
   /** accent color for the active tab outline, rail indicator and SSH badges */
   tabAccentColor: string
 }
@@ -117,9 +123,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoWrap: true,
     copyOnSelect: false,
     pasteRiskConfirm: true,
-    suggestEnabled: true,
-    historyEnabled: true,
+    suggestEnabled: false,
+    historyEnabled: false,
     historyLimit: 100,
+    showRecButton: false,
+    showOpenLogsButton: false,
+    showOpenCwdButton: true,
     tabAccentColor: '#3fb950'
   },
   customThemes: [],

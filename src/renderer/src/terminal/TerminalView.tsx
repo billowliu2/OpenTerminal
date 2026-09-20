@@ -6,7 +6,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
-import { ClearOutlined, CopyOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
+import { ClearOutlined, CopyOutlined, ExportOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
 import { Checkbox, Modal } from 'antd'
 import { getThemeById } from '@shared/theme'
 import type { CommandItem } from '@shared/commands'
@@ -83,6 +83,8 @@ export interface TerminalViewProps {
   /** called once after the pty process exits and the user closes the dead pane */
   onClose: () => void
   className?: string
+  /** ssh sessions have a remote cwd — the open-directory button is hidden */
+  isSsh?: boolean
 }
 
 interface SearchBarProps {
@@ -248,7 +250,7 @@ function differenceWrite(sessionId: string, full: string, buf: string): void {
 }
 
 export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?: Ref<TerminalHandle> }> =
-  forwardRef<TerminalHandle, TerminalViewProps>(function TerminalViewInner({ sessionId, onClose, className }, ref) {
+  forwardRef<TerminalHandle, TerminalViewProps>(function TerminalViewInner({ sessionId, onClose, className, isSsh = false }, ref) {
   const settings = useSettingsStore((s) => s.settings)
 
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -1164,27 +1166,45 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
         />
       )}
       <div className="term-recbar">
-        <button
-          type="button"
-          className={`term-rec-btn${recording ? ' is-recording' : ''}`}
-          title={recording ? '停止记录会话日志' : '开始记录会话日志'}
-          aria-label={recording ? '停止记录' : '开始记录'}
-          onClick={() => {
-            if (recording) void handleLogStop()
-            else void handleLogStart()
-          }}
-        >
-          {recording ? <PauseOutlined /> : <SoundOutlined />}
-        </button>
-        <button
-          type="button"
-          className="term-rec-btn"
-          title="打开日志目录"
-          aria-label="打开日志目录"
-          onClick={() => window.api.openLogsDir()}
-        >
-          <FolderOpenOutlined />
-        </button>
+        {settings.terminal.showRecButton && (
+          <button
+            type="button"
+            className={`term-rec-btn${recording ? ' is-recording' : ''}`}
+            title={recording ? '停止记录会话日志' : '开始记录会话日志'}
+            aria-label={recording ? '停止记录' : '开始记录'}
+            onClick={() => {
+              if (recording) void handleLogStop()
+              else void handleLogStart()
+            }}
+          >
+            {recording ? <PauseOutlined /> : <SoundOutlined />}
+          </button>
+        )}
+        {settings.terminal.showOpenLogsButton && (
+          <button
+            type="button"
+            className="term-rec-btn"
+            title="打开日志目录"
+            aria-label="打开日志目录"
+            onClick={() => window.api.openLogsDir()}
+          >
+            <FolderOpenOutlined />
+          </button>
+        )}
+        {settings.terminal.showOpenCwdButton && !isSsh && (
+          <button
+            type="button"
+            className="term-rec-btn"
+            title="打开工作区目录"
+            aria-label="打开工作区目录"
+            onClick={() => {
+              const dir = getSessionCwd(sessionId)
+              if (dir) void window.api.openDirectory(dir)
+            }}
+          >
+            <ExportOutlined />
+          </button>
+        )}
       </div>
       <Modal
         open={paste !== null}

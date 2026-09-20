@@ -18,12 +18,14 @@
   margin: 0;
 }
 
-.commands-panel .ant-tabs-content-holder {
+/* antd v6 renamed the layout container: content-holder -> body-holder. */
+.commands-panel .ant-tabs-body-holder {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
 }
 
+.commands-panel .ant-tabs-body,
 .commands-panel .ant-tabs-content,
 .commands-panel .ant-tabs-tabpane {
   height: 100%;

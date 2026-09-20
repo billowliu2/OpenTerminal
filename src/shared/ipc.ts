@@ -106,7 +106,9 @@ export const Ipc = {
   /** resolve a cd-style argument against the current cwd, platform-aware */
   CWD_RESOLVE: 'session:cwdResolve',
   /** normalize a cwd reported by the shell (OSC 7 / OSC 9;9) */
-  CWD_REPORT: 'session:cwdReport'
+  CWD_REPORT: 'session:cwdReport',
+  /** open a local directory in the OS file manager (terminal toolbar) */
+  CWD_OPEN: 'session:cwdOpen'
 } as const
 
 export interface PtyCreateOptions {

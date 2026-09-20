@@ -80,6 +80,7 @@ const api: AppApi = {
   logStop: (sessionId: string) => ipcRenderer.invoke(Ipc.LOG_STOP, sessionId),
   listSessionLogs: () => ipcRenderer.invoke(Ipc.LOG_LIST),
   openLogsDir: () => ipcRenderer.send(Ipc.LOG_OPEN_DIR),
+  openDirectory: (dir: string) => ipcRenderer.invoke(Ipc.CWD_OPEN, dir),
 
   listConnections: () => ipcRenderer.invoke(Ipc.CONNECTIONS_LIST),
   saveConnection: (input: SshConnectionInput) => ipcRenderer.invoke(Ipc.CONNECTIONS_SAVE, input),

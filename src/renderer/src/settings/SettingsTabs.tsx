@@ -293,7 +293,7 @@ export function RenderSettingsTab(): React.JSX.Element {
         desc="关闭后不再记录新命令；已保存的历史仍然保留"
         control={
           <Switch
-            checked={settings.terminal.historyEnabled !== false}
+            checked={settings.terminal.historyEnabled}
             onChange={(checked) => void updateTerminal({ historyEnabled: checked })}
           />
         }
@@ -312,6 +312,36 @@ export function RenderSettingsTab(): React.JSX.Element {
               if (typeof value === 'number') void updateTerminal({ historyLimit: value })
             }}
             style={{ width: 110 }}
+          />
+        }
+      />
+      <SettingRow
+        label="终端工具栏 · 录制"
+        desc="右上角显示「记录会话日志」按钮"
+        control={
+          <Switch
+            checked={settings.terminal.showRecButton}
+            onChange={(checked) => void updateTerminal({ showRecButton: checked })}
+          />
+        }
+      />
+      <SettingRow
+        label="终端工具栏 · 打开日志目录"
+        desc="右上角显示「打开日志目录」按钮"
+        control={
+          <Switch
+            checked={settings.terminal.showOpenLogsButton}
+            onChange={(checked) => void updateTerminal({ showOpenLogsButton: checked })}
+          />
+        }
+      />
+      <SettingRow
+        label="终端工具栏 · 打开工作区目录"
+        desc="右上角显示「打开当前目录」按钮（SSH 会话不显示；目录随 cd 实时跟踪，需开启 shell 集成或使用 cd 命令）"
+        control={
+          <Switch
+            checked={settings.terminal.showOpenCwdButton}
+            onChange={(checked) => void updateTerminal({ showOpenCwdButton: checked })}
           />
         }
       />
@@ -382,13 +412,11 @@ export function SystemSettingsTab(): React.JSX.Element {
       />
       <SettingRow
         label="全局唤起快捷键"
-        desc="Control+Shift+Alt+T 等，留空禁用"
+        desc="点击输入框后直接按下组合键；Esc 取消，退格清空禁用"
         control={
-          <Input
-            className="settings-select"
-            placeholder="如 Control+Shift+Alt+T，留空禁用"
+          <ShortcutInput
             value={settings.system.globalShowHide ?? ''}
-            onChange={(e) => void updateSystem({ globalShowHide: e.target.value })}
+            onChange={(v) => void updateSystem({ globalShowHide: v })}
           />
         }
       />
@@ -396,6 +424,86 @@ export function SystemSettingsTab(): React.JSX.Element {
         配合全局键可在任何界面唤起/隐藏窗口；若注册失败（与其他软件冲突）则不生效，应用不会报错。
       </div>
     </div>
+  )
+}
+
+/**
+ * Convert a keydown into an Electron globalShortcut accelerator (e.g.
+ * "Control+Shift+Alt+T"). Returns null while only modifiers are held or for
+ * keys we don't want to bind. The Win key maps to Super.
+ */
+function acceleratorFromEvent(e: React.KeyboardEvent<HTMLInputElement>): string | null {
+  const modifierCodes = new Set([
+    'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight',
+    'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight'
+  ])
+  if (modifierCodes.has(e.code)) return null
+  const parts: string[] = []
+  if (e.ctrlKey) parts.push('Control')
+  if (e.altKey) parts.push('Alt')
+  if (e.shiftKey) parts.push('Shift')
+  if (e.metaKey) parts.push('Super')
+  let key: string | null = null
+  if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3)
+  else if (/^Digit\d$/.test(e.code)) key = e.code.slice(5)
+  else if (/^F\d{1,2}$/.test(e.code)) key = e.code
+  else if (/^Numpad[0-9]$/.test(e.code)) key = `num${e.code.slice(6)}`
+  else {
+    const named: Record<string, string> = {
+      Space: 'Space', Tab: 'Tab', Enter: 'Return', NumpadEnter: 'Return',
+      ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+      Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+      Insert: 'Insert', Delete: 'Delete', Backspace: 'Backspace',
+      Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+      Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backquote: '`',
+      NumpadAdd: 'numadd', NumpadSubtract: 'numsub',
+      NumpadMultiply: 'nummult', NumpadDivide: 'numdiv', NumpadDecimal: 'numdec'
+    }
+    key = named[e.code] ?? null
+  }
+  if (!key) return null
+  // Guard against hijacking plain typing: a global shortcut must involve a
+  // modifier, unless it is a function key (F1-F12 are safe standalone).
+  const isFunctionKey = /^F\d{1,2}$/.test(key)
+  if (parts.length === 0 && !isFunctionKey) return null
+  parts.push(key)
+  return parts.join('+')
+}
+
+/**
+ * Press-to-record input for the global shortcut: focus it, hit the combo, the
+ * accelerator is captured and saved. Esc cancels recording, Backspace/Delete
+ * clears (disables) the shortcut. Read-only so no stray text can be typed.
+ */
+function ShortcutInput({ value, onChange }: { value: string; onChange: (v: string) => void }): React.JSX.Element {
+  const [recording, setRecording] = useState(false)
+  return (
+    <Input
+      className={`settings-select shortcut-input${recording ? ' is-recording' : ''}`}
+      readOnly
+      value={recording ? '按下组合键…' : value}
+      placeholder="点击后按下快捷键，留空禁用"
+      onFocus={() => setRecording(true)}
+      onBlur={() => setRecording(false)}
+      onKeyDown={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.key === 'Escape') {
+          e.currentTarget.blur()
+          return
+        }
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+          onChange('')
+          e.currentTarget.blur()
+          return
+        }
+        const accel = acceleratorFromEvent(e)
+        if (accel) {
+          onChange(accel)
+          e.currentTarget.blur()
+        }
+      }}
+    />
   )
 }
 

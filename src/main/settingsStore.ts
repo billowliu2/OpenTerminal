@@ -1,5 +1,5 @@
 import { app, ipcMain, powerSaveBlocker } from 'electron'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { Ipc } from '../shared/ipc'
 import {
@@ -162,6 +162,32 @@ export function loadSettings(): AppSettings {
 let settingsQueue: Promise<unknown> = Promise.resolve()
 
 /**
+ * One-time reset for existing installs: input suggestions and command history
+ * are now off by default, but installs that upgraded from earlier versions
+ * already have `true` persisted — flip those off exactly once, then leave a
+ * marker so the user's later choices are never touched again.
+ */
+function migrateDefaultsOnce(): void {
+  try {
+    const flag = join(app.getPath('userData'), '.migrate-defaults-v2')
+    if (existsSync(flag)) return
+    const current = loadSettings()
+    if (current.terminal.suggestEnabled || current.terminal.historyEnabled) {
+      current.terminal.suggestEnabled = false
+      current.terminal.historyEnabled = false
+      mkdirSync(app.getPath('userData'), { recursive: true })
+      const path = settingsPath()
+      const tmp = `${path}.tmp`
+      writeFileSync(tmp, JSON.stringify(current, null, 2), 'utf8')
+      renameSync(tmp, path)
+    }
+    writeFileSync(flag, '', 'utf8')
+  } catch {
+    // best effort: a failed migration just keeps the old values
+  }
+}
+
+/**
  * Serialize a settings mutation against every other writer. Each queued step
  * re-reads the file so the mutation applies on top of the latest state — a
  * full-snapshot save can no longer silently revert a change written between
@@ -196,6 +222,7 @@ export function saveSettings(next: AppSettings): Promise<AppSettings> {
 }
 
 export function registerSettingsIpc(): void {
+  migrateDefaultsOnce()
   ipcMain.handle(Ipc.SETTINGS_GET, () => loadSettings())
   ipcMain.handle(Ipc.SETTINGS_SET, (_event, next: AppSettings) => saveSettings(next))
 }

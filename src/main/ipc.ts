@@ -1,6 +1,7 @@
-import { app, ipcMain } from 'electron'
+import { app, ipcMain, shell } from 'electron'
 import fontList from 'font-list'
 import { homedir } from 'os'
+import { statSync } from 'fs'
 import { Ipc, type AppInfo, type LayoutMeta, type PtyCreateOptions } from '../shared/ipc'
 import type { HostKeyAction, SessionOpenOptions, SshConnection, SshConnectionInput } from '../shared/connections'
 import { getLayout, listLayouts, saveLayout, deleteLayout } from './layouts'
@@ -181,4 +182,17 @@ export function registerIpc(): void {
     resolveCwd(current, arg)
   )
   ipcMain.handle(Ipc.CWD_REPORT, (_event, payload: string) => normalizeReportedCwd(payload))
+
+  // Open a local directory in the file manager. Validates the path is an
+  // existing directory so renderer-supplied values can't open arbitrary files.
+  ipcMain.handle(Ipc.CWD_OPEN, (_event, dir: unknown): boolean => {
+    if (typeof dir !== 'string' || dir === '') return false
+    try {
+      if (!statSync(dir).isDirectory()) return false
+    } catch {
+      return false
+    }
+    void shell.openPath(dir)
+    return true
+  })
 }

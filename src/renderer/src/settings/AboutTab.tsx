@@ -3,6 +3,7 @@ import { Button, Progress, Select, Switch, Tag } from 'antd'
 import type { AppInfo, ReleaseNote, UpdateState, UpdateStatus } from '@shared/ipc'
 import { useSettingsStore } from './store'
 import appIconUrl from '../../../../build/icon.png'
+import changelogMd from '../../../../CHANGELOG.md?raw'
 
 const STATUS_TEXT: Record<UpdateStatus, string> = {
   idle: '点击检查更新',
@@ -15,7 +16,22 @@ const STATUS_TEXT: Record<UpdateStatus, string> = {
   dev: '开发模式不支持更新检查'
 }
 
-/** 关于页：版本信息 + 更新检查/下载/安装 + 更新日志（国内源优先，GitHub 兜底）。 */
+/** Parse the bundled CHANGELOG.md into release notes. Sections look like
+ *  `## v1.0.12 - 2026-09-20`; the body below the heading is kept verbatim. */
+function parseChangelog(md: string): ReleaseNote[] {
+  const notes: ReleaseNote[] = []
+  for (const section of md.split(/^## /m).slice(1)) {
+    const lineEnd = section.indexOf('\n')
+    if (lineEnd < 0) continue
+    const head = section.slice(0, lineEnd).trim()
+    const m = /^(v[\d.]+)\s*-\s*(\d{4}-\d{2}-\d{2})/.exec(head)
+    const body = section.slice(lineEnd + 1).trim()
+    if (m && body) notes.push({ version: m[1], date: m[2], body })
+  }
+  return notes
+}
+
+/** 关于页：版本信息 + 更新检查/下载/安装 + 更新日志（内置 CHANGELOG 优先，网络兜底）。 */
 export function AboutTab(): React.JSX.Element {
   const [version, setVersion] = useState('')
   const [state, setState] = useState<UpdateState | null>(null)
@@ -25,7 +41,10 @@ export function AboutTab(): React.JSX.Element {
 
   useEffect(() => {
     void window.api.appInfo().then((i: AppInfo) => setVersion(i.appVersion))
-    void window.api.updateChangelog().then(setNotes).catch(() => undefined)
+    // Embedded changelog first (works offline); network sources as fallback.
+    const local = parseChangelog(changelogMd)
+    if (local.length > 0) setNotes(local)
+    else void window.api.updateChangelog().then(setNotes).catch(() => undefined)
     return window.api.onUpdateState(setState)
   }, [])
 

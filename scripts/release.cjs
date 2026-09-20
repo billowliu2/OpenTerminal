@@ -40,6 +40,13 @@ if (pkgVersion !== V) {
   console.error(`package.json is ${pkgVersion} but you asked to publish ${V}`)
   process.exit(1)
 }
+// The changelog ships inside the app, so it must mention this version — a
+// missing entry means `sync-changelog.cjs` was skipped before the build.
+const changelog = path.join(ROOT, 'CHANGELOG.md')
+if (!fs.existsSync(changelog) || !fs.readFileSync(changelog, 'utf8').includes(`## v${V} `)) {
+  console.error(`CHANGELOG.md has no v${V} entry — run: node scripts/sync-changelog.cjs (then rebuild)`)
+  process.exit(1)
+}
 const ymlPath = path.join(R, 'latest.yml')
 if (!fs.existsSync(ymlPath)) { console.error('missing release/latest.yml — run npm run dist first'); process.exit(1) }
 const ymlVersion = fs.readFileSync(ymlPath, 'utf8').match(/^version:\s*(\S+)/m)?.[1]

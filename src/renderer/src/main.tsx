@@ -57,6 +57,7 @@ if (typeof window !== 'undefined' && !window.api) {
     logStop: async () => undefined,
     listSessionLogs: async () => [],
     openLogsDir: noop,
+    openDirectory: async () => false,
     listConnections: async () => [],
     saveConnection: async (input) => ({
       id: input.id ?? stubId(),
