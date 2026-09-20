@@ -44,6 +44,13 @@
   background: color-mix(in srgb, var(--tab-accent, #3fb950) 16%, transparent);
 }
 
+/* antd paints the active tab label in the primary blue, which is hard to read
+   on the accent-tinted row; keep it identical to the inactive labels. The
+   extra .ant-tabs-tab class out-specifies antd's runtime-injected rule. */
+.settings-body .ant-tabs-left > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #ffffff;
+}
+
 .settings-body .ant-tabs-left > .ant-tabs-nav .ant-tabs-ink-bar {
   background: var(--tab-accent, #3fb950);
 }
