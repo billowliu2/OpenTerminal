@@ -15,9 +15,15 @@
 
 /* xterm.css defaults .xterm-viewport to #000; when the pane height isn't a
    multiple of the cell height the leftover bottom strip shows that black.
-   Pin it to the (theme-derived) chrome background so the gap is invisible. */
-.terminal-view .xterm .xterm-viewport {
+   Pin it to the (theme-derived) chrome background so the gap is invisible.
+   With a custom background image the viewport must stay transparent — this
+   opaque layer would cover the .term-bg-image behind the xterm surface. */
+.terminal-view:not(.has-bg-image) .xterm .xterm-viewport {
   background-color: var(--chrome-bg);
+}
+
+.terminal-view.has-bg-image .xterm .xterm-viewport {
+  background-color: transparent;
 }
 
 /* Slim slate scrollbar for the xterm viewport — the native Windows one renders
@@ -351,6 +357,24 @@
   min-height: 0;
   height: 100%;
   padding: 0;
+}
+
+/* ---- custom background image (设置 → 主题) ----
+   Sits behind the xterm screen; while an image is set the theme background is
+   transparent (allowTransparency), so this layer is what shows through. */
+.term-bg-image {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.terminal-view-dock > .xterm {
+  position: relative;
+  z-index: 1;
 }
 
 /* ---- dead process overlay ---- */

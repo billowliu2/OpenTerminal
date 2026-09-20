@@ -1,6 +1,7 @@
-import { app, BrowserWindow, globalShortcut, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, net, nativeImage, protocol, shell } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { isTrustedRendererUrl, registerIpc } from './ipc'
 import { killAllPtys, killPtysByOwner } from './pty'
 import { applyStartupSystemSettings, loadSettings } from './settingsStore'
@@ -45,6 +46,14 @@ if (!app.isPackaged) {
   app.setPath('userData', join(app.getPath('appData'), 'OpenTerminal-dev'))
 }
 
+// Custom background image (设置 → 主题): the renderer page cannot load file:
+// subresources directly (Chromium blocks them from non-file origins), so it
+// references them through this scheme instead. The handler serves exactly one
+// file — the configured background image — nothing else.
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'otimg', privileges: { secure: true, supportFetchAPI: false, corsEnabled: false } }
+])
+
 // Single instance: a second launch just surfaces the existing window (pulls
 // it out of the tray if hidden there) instead of starting another process.
 // The refused instance skips the whole startup path: `app.quit()` only asks
@@ -57,6 +66,19 @@ if (!gotSingleInstanceLock) {
   app.on('second-instance', () => showOrCreate())
 
   app.whenReady().then(() => {
+    // Serve the configured background image (path lives in settings; anything
+    // else — including a path that is no longer configured — is refused, so the
+    // protocol cannot be used to read arbitrary files).
+    protocol.handle('otimg', (request) => {
+      const url = new URL(request.url)
+      const requested = decodeURIComponent(url.pathname.replace(/^\//, ''))
+      const allowed = loadSettings().terminal.backgroundImage
+      if (allowed === '' || requested !== allowed || !existsSync(requested)) {
+        return new Response('', { status: 403 })
+      }
+      return net.fetch(pathToFileURL(requested).toString())
+    })
+
     registerIpc()
     registerUpdateIpc()
     // Before the window exists: a renderer-triggered check must not run against

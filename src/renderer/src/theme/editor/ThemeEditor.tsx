@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Input, Modal } from 'antd'
 import { t } from '@shared/i18n'
 import type { ThemeColors, TerminalTheme } from '@shared/theme'
-import { DEFAULT_DARK, getThemeById } from '@shared/theme'
+import { BUILTIN_THEMES, DEFAULT_DARK, getThemeById } from '@shared/theme'
 import { useSettingsStore } from '../../settings/store'
 
 export interface ThemeEditorProps {
@@ -49,6 +49,17 @@ const ANSI_KEYS: FieldSpec[] = [
   { key: 'brightWhite', label: 'Bright White' }
 ]
 
+/** The native colour input only accepts #rrggbb: clamp every seeded value so a
+ *  hand-edited or migrated theme can't render the picker as solid black. */
+function normalizeThemeColors(colors: ThemeColors, fallback: ThemeColors): ThemeColors {
+  const out = { ...fallback }
+  for (const key of Object.keys(fallback) as (keyof ThemeColors)[]) {
+    const value = colors[key] ?? ''
+    out[key] = /^#[0-9a-f]{6}$/i.test(value) ? value : (fallback[key] ?? '')
+  }
+  return out
+}
+
 export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React.JSX.Element {
   const settings = useSettingsStore((s) => s.settings)
   const updateTerminal = useSettingsStore((s) => s.updateTerminal)
@@ -64,6 +75,11 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
   const [name, setName] = useState('')
   const [colors, setColors] = useState<ThemeColors>(DEFAULT_DARK.colors)
   const [saving, setSaving] = useState(false)
+  /** another theme (builtin or custom) already uses this name (allowed, but the user should know) */
+  const duplicateName =
+    name.trim() !== '' &&
+    (BUILTIN_THEMES.some((th) => th.name === name.trim()) ||
+      settings.customThemes.some((th) => th.id !== themeId && th.name === name.trim()))
 
   // (re)initialize the form each time the modal opens
   useEffect(() => {
@@ -75,12 +91,12 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
         return
       }
       setName(editingTheme.name)
-      setColors({ ...editingTheme.colors })
+      setColors(normalizeThemeColors(editingTheme.colors, DEFAULT_DARK.colors))
     } else {
       /** create mode: seed a fresh copy based on the currently active theme */
       const active = getThemeById(settings.terminal.themeId, settings.customThemes)
       setName(active.name + t('settings.themeEditor.copySuffix'))
-      setColors({ ...active.colors })
+      setColors(normalizeThemeColors(active.colors, DEFAULT_DARK.colors))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -141,6 +157,7 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
             maxLength={60}
           />
         </div>
+        {duplicateName && <div className="theme-editor-hint">{t('settings.themeEditor.duplicateName')}</div>}
 
         <div className="theme-editor-colors">
           {headerKeys().map((spec) => (

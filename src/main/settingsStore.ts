@@ -138,11 +138,15 @@ function sanitizeThemes(value: unknown, warnings: Warnings): TerminalTheme[] {
         : null
     const colors: ThemeColors = { ...DEFAULT_DARK.colors }
     const target = colors as unknown as Record<string, string>
+    const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
     for (const key of THEME_COLOR_KEYS) {
       const color = candidate?.[key]
-      if (typeof color === 'string' && color !== '') target[key] = color
-      else if (color !== undefined) {
-        warnings.push(`customThemes[${index}].colors.${key} repaired → built-in default`)
+      // Only well-formed hex colours survive: xterm would render anything else
+      // as black, and the theme editor's native colour input needs #rrggbb.
+      if (typeof color === 'string' && HEX_COLOR.test(color.trim())) {
+        target[key] = color.trim()
+      } else if (color !== undefined) {
+        warnings.push(`customThemes[${index}].colors.${key}: not a hex color — repaired`)
       }
     }
     themes.push({

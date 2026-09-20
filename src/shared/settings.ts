@@ -49,6 +49,10 @@ export interface TerminalSettings {
   showOpenCwdButton: boolean
   /** accent color for the active tab outline, rail indicator and SSH badges */
   tabAccentColor: string
+  /** absolute path to an image rendered behind the terminal; '' = none */
+  backgroundImage: string
+  /** background image layer opacity, 10..100 (%) */
+  backgroundImageOpacity: number
 }
 
 export interface SystemSettings {
@@ -132,7 +136,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     showRecButton: false,
     showOpenLogsButton: false,
     showOpenCwdButton: true,
-    tabAccentColor: '#3fb950'
+    tabAccentColor: '#3fb950',
+    backgroundImage: '',
+    backgroundImageOpacity: 60
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,

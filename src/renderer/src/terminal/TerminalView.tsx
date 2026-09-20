@@ -67,8 +67,20 @@ const SEARCH_DECORATIONS: NonNullable<NonNullable<Parameters<SearchAddon['findNe
 // xterm's default overviewRulerBorder (#7f7f7f) renders as a light vertical line
 // on the dark surface once scrollback exists. Force it transparent; search-match
 // marks in the ruler keep their own colors.
-function withChromeColors(colors: ITheme): ITheme {
-  return { ...colors, overviewRulerBorder: '#00000000' }
+function withChromeColors(colors: ITheme, transparentBackground: boolean): ITheme {
+  return {
+    ...colors,
+    overviewRulerBorder: '#00000000',
+    // While a custom background image is set the xterm surface goes fully
+    // transparent so the image layer behind the host is what shows through.
+    ...(transparentBackground ? { background: '#00000000' } : {})
+  }
+}
+
+/** URL for a background image, served by the main process's otimg:// handler
+ *  (the page itself cannot reference file: paths from non-file origins). */
+function toFileUrl(path: string): string {
+  return `otimg://bg/${encodeURIComponent(path)}`
 }
 
 export interface TerminalHandle {
@@ -673,8 +685,9 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       cursorBlink: tSettings.cursorBlink,
       cursorStyle: tSettings.cursorStyle,
       cursorInactiveStyle: tSettings.cursorInactiveStyle,
-      theme: withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme),
+      theme: withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme, Boolean(tSettings.backgroundImage)),
       allowProposedApi: true,
+      allowTransparency: true,
       overviewRuler: { width: 9, showTopBorder: false, showBottomBorder: false },
       drawBoldTextInBrightColors: true,
       minContrastRatio: 1,
@@ -1009,7 +1022,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     // Live-appliable in xterm 6: without this the setting only took effect for
     // terminals opened after the change, which reads as "the setting is broken".
     term.options.scrollback = tSettings.scrollback
-    term.options.theme = withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme)
+    term.options.theme = withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme, Boolean(tSettings.backgroundImage))
     scheduleFit()
   }, [tSettings, settings.customThemes, scheduleFit])
 
@@ -1048,7 +1061,13 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     [sessionId]
   )
 
-  const terminalClassName = useMemo(() => ['terminal-view', className].filter(Boolean).join(' '), [className])
+  const terminalClassName = useMemo(
+    () =>
+      ['terminal-view', settings.terminal.backgroundImage !== '' && 'has-bg-image', className]
+        .filter(Boolean)
+        .join(' '),
+    [className, settings.terminal.backgroundImage]
+  )
 
   /**
    * [M5] Compute and store the floating popup position so it hugs the text
@@ -1277,6 +1296,15 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           </div>
         )}
         <div className="terminal-view-dock" ref={hostRef}>
+          {settings.terminal.backgroundImage !== '' && (
+            <div
+              className="term-bg-image"
+              style={{
+                backgroundImage: `url("${toFileUrl(settings.terminal.backgroundImage)}")`,
+                opacity: Math.min(100, Math.max(10, settings.terminal.backgroundImageOpacity)) / 100
+              }}
+            />
+          )}
           {dead && (
             <div className="term-dead-mask">
               <div>{t('terminal.dead.message', { code: exitCode })}</div>

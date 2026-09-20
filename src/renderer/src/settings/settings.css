@@ -582,3 +582,11 @@
 .shortcut-input.is-recording .ant-input {
   border-color: var(--tab-accent, #3fb950);
 }
+
+/* theme editor: duplicate-name notice under the name field */
+.theme-editor-hint {
+  margin: -4px 0 10px;
+  padding-left: 2px;
+  font-size: 12px;
+  color: #d29922;
+}

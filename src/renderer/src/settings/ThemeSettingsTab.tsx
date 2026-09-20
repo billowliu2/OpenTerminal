@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Button, ColorPicker, Popconfirm } from 'antd'
+import { Button, ColorPicker, Popconfirm, Slider } from 'antd'
 import { t } from '@shared/i18n'
 import type { TerminalSettings } from '@shared/settings'
 import { DEFAULT_SETTINGS } from '@shared/settings'
@@ -46,8 +46,45 @@ export function ThemeSettingsTab({
     await setCustomThemes(next)
   }
 
+  const pickImage = async (): Promise<void> => {
+    const files = await window.api.pickFiles()
+    const image = files.find((f) => /\.(png|jpe?g|bmp|gif|webp|avif)$/i.test(f))
+    if (image) await updateTerminal({ backgroundImage: image })
+  }
+
   return (
     <div className="theme-pane">
+      <div className="theme-accent-row">
+        <div>
+          <div className="settings-block-label">{t('settings.theme.backgroundImage')}</div>
+          <div className="settings-block-hint">{t('settings.theme.backgroundImageDesc')}</div>
+        </div>
+        <div className="theme-accent-controls">
+          <Button size="small" onClick={() => void pickImage()}>
+            {t('settings.theme.chooseImage')}
+          </Button>
+          {settings.terminal.backgroundImage !== '' && (
+            <Button size="small" onClick={() => void updateTerminal({ backgroundImage: '' })}>
+              {t('settings.theme.clearImage')}
+            </Button>
+          )}
+        </div>
+      </div>
+      {settings.terminal.backgroundImage !== '' && (
+        <div className="theme-accent-row">
+          <div>
+            <div className="settings-block-label">{t('settings.theme.imageOpacity')}</div>
+          </div>
+          <Slider
+            style={{ width: 200 }}
+            min={10}
+            max={100}
+            step={5}
+            value={settings.terminal.backgroundImageOpacity}
+            onChange={(v) => void updateTerminal({ backgroundImageOpacity: v })}
+          />
+        </div>
+      )}
       <div className="theme-accent-row">
         <div>
           <div className="settings-block-label">{t('settings.theme.accent')}</div>
