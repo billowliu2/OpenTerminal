@@ -200,21 +200,35 @@ async function giteaChannel() {
   for (const [f, name] of ordered) {
     const stat = fs.statSync(f)
     const url = `${base}/${encodeURIComponent(name)}`
-    const resp = await fetch(url, {
-      method: 'PUT',
-      headers: { Authorization: `token ${env.GIT_TOKEN}`, 'Content-Type': 'application/octet-stream', 'Content-Length': String(stat.size) },
-      body: fs.createReadStream(f),
-      duplex: 'half'
-    })
+    const put = async () =>
+      fetch(url, {
+        method: 'PUT',
+        headers: { Authorization: `token ${env.GIT_TOKEN}`, 'Content-Type': 'application/octet-stream', 'Content-Length': String(stat.size) },
+        body: fs.createReadStream(f),
+        duplex: 'half'
+      })
+    let resp = await put()
     console.log(`  put ${name}: HTTP ${resp.status}`)
+    if (!resp.ok && (resp.status === 409 || resp.status === 422)) {
+      if (/\d+\.\d+\.\d+/.test(name)) {
+        // Version-named payloads are immutable per release: accept a stored
+        // copy only when it has exactly the same size.
+        if ((await channelFileSize(url)) === stat.size) {
+          console.log(`  ${name} is already published with the same size, kept`)
+          continue
+        }
+      } else {
+        // latest.yml / release-notes.md change every release and the atomic
+        // flow no longer wipes the channel up front, so replace them in place.
+        // The swap window is one small file (sub-second), not the whole channel.
+        const del = await fetch(url, { method: 'DELETE', headers: { Authorization: `token ${env.GIT_TOKEN}` } })
+        console.log(`  delete old ${name}: HTTP ${del.status}`)
+        resp = await put()
+        console.log(`  put ${name}: HTTP ${resp.status}`)
+      }
+    }
     if (!resp.ok) {
       const detail = (await resp.text()).slice(0, 200)
-      // Re-publishing the same version can hit an already-stored file; accept it
-      // only when the stored copy has exactly the same size.
-      if ((resp.status === 409 || resp.status === 422) && (await channelFileSize(url)) === stat.size) {
-        console.log(`  ${name} is already published with the same size, kept`)
-        continue
-      }
       throw new Error(`channel put failed (${resp.status}) for ${name}: ${detail}`)
     }
   }
