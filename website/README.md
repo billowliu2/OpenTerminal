@@ -23,12 +23,16 @@ website/
 ## 发新版本时需要更新的地方
 
 `index.html` 中搜索 `1.0.15`，共 3 处下载链接（hero 主按钮、下载表格 exe、msi）。
-下载链接格式（CodingPlan.Site 国内直连通道）：
+下载链接使用 GitHub Releases 原生地址：
 
 ```
-https://git.codingplan.site/admin/OpenTerminal/releases/download/v<版本>/OpenTerminal-<版本>-setup.exe
-https://git.codingplan.site/admin/OpenTerminal/releases/download/v<版本>/OpenTerminal-<版本>-setup.msi
+https://github.com/billowliu2/OpenTerminal/releases/download/v<版本>/OpenTerminal-<版本>-setup.exe
+https://github.com/billowliu2/OpenTerminal/releases/download/v<版本>/OpenTerminal-<版本>-setup.msi
 ```
+
+注意：发布新版本时需同时把安装包资产上传到 GitHub release
+（`HTTPS_PROXY=http://127.0.0.1:7897 node scripts/release.cjs <版本> --skip-gitea`），
+否则直链 404。
 
 同时更新「近期更新」小节（与 RELEASE_NOTES.md 内容保持一致）和下载表格里的文件大小。
 
