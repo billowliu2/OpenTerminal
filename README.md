@@ -2,6 +2,8 @@
 
 开源的现代化终端应用：本地终端 + SSH 远程会话 + 分屏管理 + 主题/字体定制。Electron + React + TypeScript，从 0 到 1 独立开发。
 
+> 产品官网（GitHub Pages）：<https://billowliu2.github.io/OpenTerminal/>，源码在 [`website/`](website/)。
+
 ## 快速开始
 
 ```bash

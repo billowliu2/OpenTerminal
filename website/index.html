@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenTerminal - 本地终端 / SSH / SFTP 桌面终端，开源 Windows 终端工具</title>
+  <meta name="description" content="OpenTerminal 是开源的 Windows 桌面终端：本地终端、SSH 远程会话、SFTP 文件管理、分屏与广播输入、主题定制。MIT 协议，支持自动更新。" />
+  <link rel="icon" type="image/png" href="assets/icon.png" />
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+
+  <header class="site-nav">
+    <div class="container nav-inner">
+      <a class="brand" href="#top">
+        <img src="assets/icon.png" alt="OpenTerminal 图标" width="24" height="24" />
+        <span>OpenTerminal</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">功能</a>
+        <a href="#download">下载</a>
+        <a href="#changelog">更新日志</a>
+        <a href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="hero-kicker">开源桌面终端 · MIT 协议</p>
+          <h1>本地终端、SSH 与 SFTP<br />装进同一个桌面应用</h1>
+          <p class="hero-sub">
+            OpenTerminal 面向开发和运维场景：WebGL 加速的终端渲染、可分屏的 SSH 会话、
+            内置 SFTP 文件管理与广播输入。安装即用，支持自动更新。
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" id="dl-exe" href="https://git.codingplan.site/admin/OpenTerminal/releases/download/v1.0.15/OpenTerminal-1.0.15-setup.exe">
+              下载 Windows 安装包
+            </a>
+            <a class="btn btn-ghost" href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener">
+              查看源码
+            </a>
+          </div>
+          <p class="hero-note">国内网络直连下载（git.codingplan.site），无需代理。</p>
+        </div>
+        <figure class="hero-shot">
+          <img src="assets/shot-terminal.png" alt="OpenTerminal 主界面：四个分屏终端会话" width="1282" height="801" />
+          <figcaption>四路分屏会话，每路独立连接本地或远程主机</figcaption>
+        </figure>
+      </div>
+      <div class="container spec-strip">
+        <span>当前版本 <strong class="mono">1.0.15</strong></span>
+        <span>Windows 10 / 11 · x64</span>
+        <span>MIT 开源协议</span>
+        <span>exe 支持应用内自动更新</span>
+      </div>
+    </section>
+
+    <section class="features" id="features">
+      <div class="container">
+        <h2>核心能力</h2>
+        <p class="section-sub">按使用场景划分的三组功能，全部能力见仓库 README。</p>
+
+        <div class="feature-row">
+          <div class="feature-copy">
+            <h3>终端核心</h3>
+            <ul>
+              <li>node-pty 本地会话，自动探测 PowerShell / zsh / bash</li>
+              <li>xterm.js WebGL 渲染，声明 256 色与真彩能力，异常时自动降级</li>
+              <li>内嵌搜索（Ctrl+F）、命令历史、粘贴风险确认</li>
+              <li>关键词高亮：内置 11 条规则（错误状态、路径、IP、URL 等），支持自定义正则</li>
+              <li>字体、字重、字距、行高、光标样式实时生效</li>
+            </ul>
+          </div>
+          <div class="feature-copy">
+            <h3>SSH 与 SFTP</h3>
+            <ul>
+              <li>ssh2 实现：密码、私钥（文件或粘贴内容）、SSH Agent 三种认证</li>
+              <li>多路分屏与广播输入，一次操作下发到多台主机</li>
+              <li>SFTP 文件面板：上传下载、同名覆盖确认、chmod / chown 权限编辑</li>
+              <li>ZMODEM 传输支持；主机指纹校验与首次连接确认</li>
+              <li>目录记忆：OSC 7 上报工作目录，新会话按上次位置恢复</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="feature-row media-row">
+          <figure class="feature-shot">
+            <img src="assets/shot-themes.png" alt="OpenTerminal 主题设置：主题画廊与背景图片配置" width="1282" height="801" />
+          </figure>
+          <div class="feature-copy">
+            <h3>定制与效率</h3>
+            <ul>
+              <li>主题编辑器：22 个颜色位逐项调整，实时预览；支持自定义背景图片与不透明度</li>
+              <li>内置 13 套主题，跟随系统明暗自动切换</li>
+              <li>命令库：保存常用命令片段，跨会话发送到指定终端</li>
+              <li>启动恢复上次会话布局；界面缩放 50% 至 150%</li>
+              <li>四语言界面：简体中文、繁体中文、English、日本語</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="download" id="download">
+      <div class="container">
+        <h2>下载</h2>
+        <p class="section-sub">
+          国内网络建议使用 CodingPlan.Site 通道直连下载；GitHub 仓库为镜像，内容一致。
+          <!-- 发新版本时更新下方两条直链与 hero 的 id=dl-exe 链接 -->
+        </p>
+        <table class="dl-table">
+          <thead>
+            <tr><th>安装包</th><th>适用场景</th><th>大小</th><th>链接</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="mono">OpenTerminal-1.0.15-setup.exe</td>
+              <td>常规安装，支持应用内自动更新（推荐）</td>
+              <td class="mono">122 MB</td>
+              <td>
+                <a href="https://git.codingplan.site/admin/OpenTerminal/releases/download/v1.0.15/OpenTerminal-1.0.15-setup.exe">国内直连</a>
+                <span class="sep">·</span>
+                <a href="https://github.com/billowliu2/OpenTerminal/releases" target="_blank" rel="noopener">GitHub</a>
+              </td>
+            </tr>
+            <tr>
+              <td class="mono">OpenTerminal-1.0.15-setup.msi</td>
+              <td>企业批量部署（MSI 无自动更新，需手动升级）</td>
+              <td class="mono">135 MB</td>
+              <td>
+                <a href="https://git.codingplan.site/admin/OpenTerminal/releases/download/v1.0.15/OpenTerminal-1.0.15-setup.msi">国内直连</a>
+              </td>
+            </tr>
+            <tr>
+              <td class="mono">历史版本</td>
+              <td>全部发布记录与更新说明</td>
+              <td class="mono">-</td>
+              <td>
+                <a href="https://git.codingplan.site/admin/OpenTerminal/releases" target="_blank" rel="noopener">releases 列表</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="update-note">
+          <h3>自动更新说明</h3>
+          <p>
+            应用内检查更新时优先访问 <span class="mono">git.codingplan.site</span> 更新通道（国内直连、不走系统代理），
+            失败时回退 GitHub Releases。更新包经 SHA-512 校验后安装。
+            更新说明文字从发布通道的 release-notes.md 读取，与每次发布同步更新。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="changelog" id="changelog">
+      <div class="container">
+        <h2>近期更新</h2>
+        <div class="changelog-list">
+          <article>
+            <h3><span class="mono">1.0.15</span> 2026-09-20</h3>
+            <ul>
+              <li>新增自定义终端背景图片与图片不透明度设置</li>
+              <li>主题编辑器重名提醒与颜色值校验</li>
+              <li>设置导航选中项文字对比度修复</li>
+            </ul>
+          </article>
+          <article>
+            <h3><span class="mono">1.0.14</span> 2026-09-20</h3>
+            <ul>
+              <li>修复大文件（约 250KB 以上）上传损坏与 SFTP 句柄泄漏</li>
+              <li>SSH 中文乱码、命令历史错乱等终端修复</li>
+              <li>权限编辑、连接错误提示等 20 余项修复</li>
+            </ul>
+          </article>
+          <article>
+            <h3><span class="mono">1.0.13</span> 2026-09-20</h3>
+            <ul>
+              <li>命令片段库与广播输入改进</li>
+              <li>监控面板历史曲线实时重绘</li>
+            </ul>
+          </article>
+        </div>
+        <p class="changelog-more">
+          完整日志见仓库 <a href="https://github.com/billowliu2/OpenTerminal/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>。
+        </p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <span>© 2026 CodingPlan.Site · OpenTerminal 以 MIT 协议开源</span>
+      <span class="mono">更新通道：git.codingplan.site</span>
+    </div>
+  </footer>
+
+</body>
+</html>
