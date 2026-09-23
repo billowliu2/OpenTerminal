@@ -11,10 +11,13 @@ import { Checkbox, Modal } from 'antd'
 import { t } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
 import type { CommandItem } from '@shared/commands'
-import type { TerminalSettings } from '@shared/settings'
-import { useSettingsStore } from '@renderer/settings/store'
+import { highlightModeOf, type TerminalSettings } from '@shared/settings'
+import { rulesForProfile } from '@shared/highlightProfiles'
+import { useResolvedTheme, useSettingsStore } from '@renderer/settings/store'
 import { writeBroadcast } from '@renderer/workspace/broadcastStore'
-import { compileRules, HighlightStream } from './highlightEngine'
+import { compileRules, HighlightStream, type RuleStat } from './highlightEngine'
+import { publishHighlightStats } from './highlightStats'
+import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
 import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
@@ -98,6 +101,8 @@ export interface TerminalViewProps {
   className?: string
   /** ssh sessions have a remote cwd — the open-directory button is hidden */
   isSsh?: boolean
+  /** saved connection behind an ssh session, used to look up its highlight profile */
+  connectionId?: string
 }
 
 interface SearchBarProps {
@@ -256,7 +261,10 @@ function differenceWrite(sessionId: string, full: string, buf: string): void {
 }
 
 export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?: Ref<TerminalHandle> }> =
-  forwardRef<TerminalHandle, TerminalViewProps>(function TerminalViewInner({ sessionId, onClose, className, isSsh = false }, ref) {
+  forwardRef<TerminalHandle, TerminalViewProps>(function TerminalViewInner(
+    { sessionId, onClose, className, isSsh = false, connectionId },
+    ref
+  ) {
   const settings = useSettingsStore((s) => s.settings)
 
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -301,7 +309,75 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // the (stable, single-construction) pty/term subscriptions always read the
   // latest rules without triggering a terminal rebuild. Only new output is
   // highlighted — the existing scrollback buffer is left untouched.
-  const compiledRules = useMemo(() => compileRules(settings.highlightRules), [settings.highlightRules])
+  //
+  // The mode empties the rule set instead of bypassing the stream: the stream
+  // holds a trailing text run back, and skipping it would drop those bytes. An
+  // empty set is ~free — applyHighlights returns the chunk before it tokenizes.
+  const highlightMode = highlightModeOf(settings.terminal.highlightMode)
+  const highlightTheme = useResolvedTheme()
+  // Per-host profiles (opt-in): an SSH session bound to a profile runs only that
+  // subset. The binding lives on the saved connection, so it is looked up once
+  // per session — and only while the feature is switched on.
+  const [boundProfileId, setBoundProfileId] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    if (connectionId === undefined || !settings.terminal.highlightPerHost) {
+      setBoundProfileId(undefined)
+      return undefined
+    }
+    let cancelled = false
+    void window.api
+      .listConnections()
+      .then((list) => {
+        if (!cancelled) {
+          setBoundProfileId(list.find((conn) => conn.id === connectionId)?.highlightProfileId)
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [connectionId, settings.terminal.highlightPerHost])
+
+  const compiledRules = useMemo(() => {
+    if (highlightMode === 'off') return []
+    const active =
+      highlightMode === 'basic'
+        ? settings.highlightRules.filter((rule) => rule.basic === true)
+        : settings.highlightRules
+    const perHost = settings.terminal.highlightPerHost
+      ? rulesForProfile(active, boundProfileId, settings.highlightProfiles)
+      : active
+    // Palette-consistent highlighting (opt-in): the rule keeps its meaning, the
+    // colour comes from the theme the terminal is actually drawn with.
+    return compileRules(
+      settings.terminal.highlightThemeColors ? applyThemeColors(perHost, highlightTheme) : perHost
+    )
+  }, [
+    highlightMode,
+    settings.highlightRules,
+    settings.highlightProfiles,
+    settings.terminal.highlightThemeColors,
+    settings.terminal.highlightPerHost,
+    boundProfileId,
+    highlightTheme
+  ])
+
+  // Optional per-rule stats (settings → highlight → "count hits and time").
+  // Attached and detached here, so toggling the switch never rebuilds the
+  // terminal, and published on a timer — a busy terminal would otherwise
+  // re-render the settings page once per chunk.
+  const statsRef = useRef<Map<string, RuleStat> | null>(null)
+  useEffect(() => {
+    const sink = settings.terminal.highlightStats
+      ? (statsRef.current ?? new Map<string, RuleStat>())
+      : null
+    statsRef.current = sink
+    streamRef.current?.setStats(sink ?? undefined)
+    if (sink === null) return undefined
+    publishHighlightStats(new Map(sink))
+    const timer = window.setInterval(() => publishHighlightStats(new Map(sink)), 1000)
+    return () => window.clearInterval(timer)
+  }, [settings.terminal.highlightStats])
   streamRef.current?.setRules(compiledRules)
 
   // M5: load completion candidates once per session (history + library cached).
@@ -767,6 +843,8 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     // across a sessionId rebind (e.g. template apply).
     const stream = new HighlightStream(compiledRules)
     streamRef.current = stream
+    // A session created while stats are on keeps collecting into the same map.
+    stream.setStats(statsRef.current ?? undefined)
     // The stream holds a trailing text run for cross-chunk anchor consistency.
     // A shell prompt is exactly such a run with no follow-up data, so flush the
     // carry on a short timer — prompts render within a frame, anchors survive.

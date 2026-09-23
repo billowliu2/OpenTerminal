@@ -67,6 +67,7 @@ export function TerminalPanel({ params, api, onSessionDead }: TerminalPanelProps
     <TerminalView
       sessionId={sessionId}
       isSsh={isSsh}
+      connectionId={params.connectionId}
       className="workspace-terminal-view"
       onClose={() => {
         if (closedRef.current) return

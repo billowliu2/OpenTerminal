@@ -41,6 +41,8 @@ const ssh: Record<string, string> = {
   'ssh.dialog.keepalive': 'Keepalive 間隔（秒）',
   'ssh.dialog.keepaliveTooltip': '0 表示關閉 keepalive',
   'ssh.dialog.keepaliveMin': '不能為負數',
+  'ssh.dialog.highlightProfile': '高亮規則集',
+  'ssh.dialog.highlightProfileDefault': '預設（全部規則）',
 
   // 連線側欄
   'ssh.sidebar.defaultGroup': '預設',

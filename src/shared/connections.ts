@@ -35,6 +35,8 @@ export interface SshConnection {
   createdAt: number
   lastConnectedAt?: number
   savedAuth: SshSavedAuthFlags
+  /** highlight profile bound to this host; absent = run every rule */
+  highlightProfileId?: string
 }
 
 /** Renderer-supplied connection data on save; secrets here are plaintext on purpose (one-way, encrypted before persisting). */
@@ -50,6 +52,8 @@ export interface SshConnectionInput {
   askPassphraseAtConnect: boolean
   keyPath?: string
   keepaliveIntervalSec: number
+  /** highlight profile bound to this host; absent = run every rule */
+  highlightProfileId?: string
   /** plain password to store; omit to keep the previously stored one */
   password?: string
   /** private key content to store inline; omit to keep the previously stored one */

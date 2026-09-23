@@ -59,17 +59,18 @@
 ```bash
 npm run typecheck   # tsconfig.node.json + tsconfig.web.json
 npm run build
-npm test            # = node tests/build-bundles.cjs && 下面 7 个测试（依次，全部离线可跑）
+npm test            # = node tests/build-bundles.cjs && 下面 8 个测试（依次，全部离线可跑）
 node tests/ssh-loopback.mjs
 node tests/commands-store.mjs
-node tests/settings-store.mjs        # 设置清洗器（closeAction/高亮规则修复/告警日志）
+node tests/settings-store.mjs        # 设置清洗器（closeAction/高亮规则修复/旧预设升级/告警日志）
 node tests/.hl-split-smoke.cjs
+node tests/.hl-rules.cjs             # 内置高亮预设（词边界、大小写、负向词、危险命令）
 node tests/zmodem-e2e.mjs
 node tests/ssh-session-e2e.mjs
 node tests/sysinfo-e2e.mjs
-# `node tests/build-bundles.cjs` 单独重建全部 6 个 esbuild bundle（别名只存在于该脚本）：
+# `node tests/build-bundles.cjs` 单独重建全部 7 个 esbuild bundle（别名只存在于该脚本）：
 #   .session-e2e.cjs(pty.ts) .sftp-svc.mjs(sftp.ts，ESM) .commands-store.cjs .settings-store.cjs
-#   .zmodem-e2e.cjs .hl-split-smoke.cjs —— 少 --alias:@shared=./src/shared 会编译失败
+#   .zmodem-e2e.cjs .hl-split-smoke.cjs .hl-rules.cjs —— 少 --alias:@shared=./src/shared 会编译失败
 # 真实服务器测试（需 JD 环境变量凭据，旧凭据已过期，不在 npm test 内）：
 # JD_HOST=... JD_USER=root JD_PASS=... node tests/sftp-real.mjs / tests/sftp-chmod.mjs
 # 打包：npm run dist（产物 release/）

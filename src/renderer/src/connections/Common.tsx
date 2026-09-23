@@ -57,6 +57,10 @@ export function buildInput(values: Record<string, unknown>, ctx: BuildCtx): SshC
       ? rawGroup.trim()
       : undefined
 
+  const rawProfile = values.highlightProfileId
+  const highlightProfileId =
+    typeof rawProfile === 'string' && rawProfile.trim() !== '' ? rawProfile.trim() : undefined
+
   const input: SshConnectionInput = {
     id: ctx.conn?.id,
     name: String(values.name ?? '').trim(),
@@ -67,7 +71,8 @@ export function buildInput(values: Record<string, unknown>, ctx: BuildCtx): SshC
     askPasswordAtConnect,
     askPassphraseAtConnect,
     keepaliveIntervalSec: num(values.keepaliveIntervalSec) ?? 30,
-    group
+    group,
+    highlightProfileId
   }
 
   const secret = (key: SecretKind): string | undefined => {

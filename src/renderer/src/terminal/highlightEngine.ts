@@ -12,15 +12,31 @@ import type { HighlightRule } from '@shared/settings'
 
 export interface CompiledRule {
   id: string
-  /** compiled with the 'g' flag, pattern's own flags otherwise untouched */
+  /** compiled with the 'g' flag (plus 'i' for case-insensitive rules) */
   regex: RegExp
   /** hex fg, e.g. "#3fb950" — converted to rgb only at wrap time */
   fg: string
   /** optional hex bg */
   bg?: string
+  /** optional value bands, ascending by `min` — see HighlightRule.bands */
+  bands?: { min: number; fg: string }[]
   /** copied from the source rule for stable priority ordering */
   priority: number
 }
+
+/** Per-rule counters, only filled when a stats sink is passed in (see `StatsSink`). */
+export interface RuleStat {
+  /** matches that were actually coloured */
+  hits: number
+  /** wall time spent scanning with this rule, milliseconds */
+  ms: number
+}
+
+/**
+ * Optional sink for the settings page's stats view. Absent on the default path,
+ * so an ordinary terminal write pays nothing for the counters.
+ */
+export type StatsSink = Map<string, RuleStat>
 
 type Token = { kind: 'seq' | 'text'; value: string }
 type Span = { start: number; end: number; fg: string; bg?: string }
@@ -84,18 +100,34 @@ export function compileRules(rules: HighlightRule[]): CompiledRule[] {
     if (typeof pattern !== 'string' || pattern.length === 0) continue
     let regex: RegExp
     try {
-      // 'g' always; case-sensitivity left to the pattern (no automatic 'i').
-      regex = new RegExp(pattern, 'g')
+      // 'g' always; 'i' when the rule asks for case-insensitive matching.
+      // Lookbehinds (used by the preset success rule to leave `not ok` alone)
+      // need no special handling — they are plain V8 regex syntax.
+      regex = new RegExp(pattern, rule.caseInsensitive === true ? 'gi' : 'g')
     } catch {
       continue // invalid pattern → silently skip
     }
     const fg = typeof rule.color?.fg === 'string' ? rule.color.fg : ''
     if (!/^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(fg)) continue
     const bg = typeof rule.color?.bg === 'string' ? rule.color.bg : undefined
-    out.push({ id: rule.id, regex, fg, bg, priority: rule.priority })
+    out.push({ id: rule.id, regex, fg, bg, bands: compileBands(rule.bands), priority: rule.priority })
   }
   out.sort((a, b) => a.priority - b.priority)
   return out
+}
+
+/** Keep only well-formed value bands, ascending — the engine walks them in order. */
+function compileBands(bands: HighlightRule['bands']): CompiledRule['bands'] {
+  if (!Array.isArray(bands)) return undefined
+  const kept: { min: number; fg: string }[] = []
+  for (const band of bands) {
+    if (!band || !Number.isFinite(band.min)) continue
+    if (typeof band.fg !== 'string' || !/^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(band.fg)) continue
+    kept.push({ min: band.min, fg: band.fg })
+  }
+  if (kept.length === 0) return undefined
+  kept.sort((a, b) => a.min - b.min)
+  return kept
 }
 
 /** Wrap one plain-text span with truecolor SGR. */
@@ -117,6 +149,26 @@ function overlaps(claimed: Span[], s: number, e: number): boolean {
   return false
 }
 
+/**
+ * Colour for one match: with value bands the match's first number picks the
+ * band (last `min` that is <= the value wins); everything else keeps the rule's
+ * own foreground.
+ */
+function bandColor(rule: CompiledRule, matched: string): string {
+  const bands = rule.bands
+  if (!bands || bands.length === 0) return rule.fg
+  const number = /-?\d+(?:\.\d+)?/.exec(matched)
+  if (number === null) return rule.fg
+  const value = Number(number[0])
+  if (!Number.isFinite(value)) return rule.fg
+  let fg = rule.fg
+  for (const band of bands) {
+    if (value < band.min) break
+    fg = band.fg
+  }
+  return fg
+}
+
 /** True when `text` holds a newline-free segment longer than MAX_LINE_LEN. */
 function hasLongLine(text: string): boolean {
   let start = 0
@@ -134,13 +186,17 @@ function hasLongLine(text: string): boolean {
  * SGR-injected text. With a global budget of zero for every rule the run is
  * returned untouched, as is a run holding an over-long line (see MAX_LINE_LEN).
  */
-function applyRun(text: string, rules: CompiledRule[], budgets: number[]): string {
+/** Millisecond clock for the optional stats sink; `performance` when present. */
+const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+
+function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?: StatsSink): string {
   if (text.length === 0) return ''
   if (hasLongLine(text)) return text
   const claimed: Span[] = []
   for (let ri = 0; ri < rules.length; ri++) {
     const rule = rules[ri]
     if (budgets[ri] <= 0) continue
+    const started = stats === undefined ? 0 : now()
     rule.regex.lastIndex = 0
     let m: RegExpExecArray | null
     let made = 0
@@ -153,12 +209,18 @@ function applyRun(text: string, rules: CompiledRule[], budgets: number[]): strin
         continue
       }
       if (!overlaps(claimed, start, end)) {
-        claimed.push({ start, end, fg: rule.fg, bg: rule.bg })
+        claimed.push({ start, end, fg: bandColor(rule, m[0]), bg: rule.bg })
         made++
         budgets[ri]--
         if (budgets[ri] <= 0) break
       }
       if (rule.regex.lastIndex === start) rule.regex.lastIndex++ // hard anti-recurse
+    }
+    if (stats !== undefined) {
+      const stat = stats.get(rule.id) ?? { hits: 0, ms: 0 }
+      stat.hits += made
+      stat.ms += now() - started
+      stats.set(rule.id, stat)
     }
   }
   if (claimed.length === 0) return text
@@ -177,8 +239,10 @@ function applyRun(text: string, rules: CompiledRule[], budgets: number[]): strin
 /**
  * Rewrite `chunk` with truecolor highlights. Returns the input unchanged when
  * there are no enabled rules, the chunk is empty, or it exceeds the budget.
+ * With a `stats` sink attached, per-rule hit counts and scan times are added to
+ * it — the settings page's stats view is the only caller that passes one.
  */
-export function applyHighlights(chunk: string, rules: CompiledRule[]): string {
+export function applyHighlights(chunk: string, rules: CompiledRule[], stats?: StatsSink): string {
   if (!chunk || rules.length === 0) return chunk
   if (chunk.length > MAX_CHUNK) return chunk
 
@@ -197,15 +261,54 @@ export function applyHighlights(chunk: string, rules: CompiledRule[]): string {
       continue
     }
     const before = budgets.reduce((a, b) => a + b, 0)
-    out += applyRun(token.value, rules, budgets)
+    out += applyRun(token.value, rules, budgets, stats)
     const after = budgets.reduce((a, b) => a + b, 0)
     if (after < before) usedBudget = true
   }
   return usedBudget ? out : chunk
 }
 
-/** True when `seg` is a dangling, unfinished escape fragment (must not be emitted). */
-function isIncompleteEscape(seg: string): boolean {
+/** One coloured or plain segment of a preview line. */
+export interface PreviewSpan {
+  text: string
+  fg?: string
+  bg?: string
+}
+
+/** "#rrggbb" from three decimal SGR colour components. */
+function toHex(r: string, g: string, b: string): string {
+  const part = (value: string): string => Number(value).toString(16).padStart(2, '0')
+  return `#${part(r)}${part(g)}${part(b)}`
+}
+
+/**
+ * Split `text` into coloured and plain segments for the settings preview.
+ *
+ * It runs the real highlighter and parses its own SGR output instead of
+ * re-implementing the matching, so the editor preview cannot drift from what the
+ * terminal actually receives. Escape sequences already in the sample are
+ * stripped first: this shows text the user typed, not a captured stream.
+ */
+export function previewSpans(text: string, rules: CompiledRule[]): PreviewSpan[] {
+  const out = applyHighlights(text.replace(ESCAPE_RE, ''), rules)
+  const spans: PreviewSpan[] = []
+  const SGR = /\x1b\[38;2;(\d+);(\d+);(\d+)(?:;48;2;(\d+);(\d+);(\d+))?m([\s\S]*?)\x1b\[0m/g
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = SGR.exec(out)) !== null) {
+    if (m.index > last) spans.push({ text: out.slice(last, m.index) })
+    spans.push({
+      text: m[7],
+      fg: toHex(m[1], m[2], m[3]),
+      ...(m[4] !== undefined ? { bg: toHex(m[4], m[5], m[6]) } : {})
+    })
+    last = m.index + m[0].length
+  }
+  if (last < out.length) spans.push({ text: out.slice(last) })
+  return spans
+}
+
+/** True when `seg` is a dangling, unfinished escape fragment (must not be emitted). */function isIncompleteEscape(seg: string): boolean {
   // `seg` is expected to start at (or be) a lone ESC.
   // A lone ESC — the leading half of any CSI/OSC/two-char/ST sequence.
   if (seg === '\x1b') return true
@@ -251,6 +354,7 @@ const MAX_CARRY = 1024
  */
 export class HighlightStream {
   private rules: CompiledRule[]
+  private stats?: StatsSink
   private buffer = ''
 
   constructor(rules: CompiledRule[]) {
@@ -260,6 +364,11 @@ export class HighlightStream {
   /** Swap the active rules without touching any buffered content. */
   setRules(rules: CompiledRule[]): void {
     this.rules = rules
+  }
+
+  /** Attach or drop the optional stats sink (see `highlightStats`). */
+  setStats(stats: StatsSink | undefined): void {
+    this.stats = stats
   }
 
   /** True while content is held back (a pending flush will release it). */
@@ -280,10 +389,10 @@ export class HighlightStream {
         // Give up waiting on a pathologically long unterminated sequence: emit
         // the fragment raw (applyHighlights skips raw \x1b in text runs).
         this.buffer = ''
-        return applyHighlights(head, this.rules) + tail
+        return applyHighlights(head, this.rules, this.stats) + tail
       }
       this.buffer = tail
-      return applyHighlights(head, this.rules)
+      return applyHighlights(head, this.rules, this.stats)
     }
 
     // (b) no incomplete escape -> find the last *closed* escape and emit only
@@ -295,20 +404,20 @@ export class HighlightStream {
       if (this.buffer.length > MAX_CHUNK) {
         const raw = this.buffer
         this.buffer = ''
-        return applyHighlights(raw, this.rules)
+        return applyHighlights(raw, this.rules, this.stats)
       }
       return ''
     }
     const head = this.buffer.slice(0, lastEnd)
     this.buffer = this.buffer.slice(lastEnd)
-    return applyHighlights(head, this.rules)
+    return applyHighlights(head, this.rules, this.stats)
   }
 
   /** Flush any held content (session end) — highlighted as a final run. */
   flush(): string {
     const b = this.buffer
     this.buffer = ''
-    return applyHighlights(b, this.rules)
+    return applyHighlights(b, this.rules, this.stats)
   }
 }
 

@@ -24,7 +24,9 @@ const BUNDLES = [
   // Sentry from the same library.
   { entry: 'src/main/zmodem.ts', out: 'tests/.zmodem-e2e.cjs', external: ['ssh2'] },
   // The smoke test imports the renderer engine (.ts), so it needs bundling too.
-  { entry: 'tests/hl-split-smoke.mjs', out: 'tests/.hl-split-smoke.cjs' }
+  { entry: 'tests/hl-split-smoke.mjs', out: 'tests/.hl-split-smoke.cjs' },
+  // Preset-rule assertions (word boundaries, case flag) over the same engine.
+  { entry: 'tests/hl-rules.mjs', out: 'tests/.hl-rules.cjs' }
 ]
 
 for (const { entry, out, format = 'cjs', external = [] } of BUNDLES) {

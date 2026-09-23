@@ -34,6 +34,7 @@ interface StoredConnection {
   askPassphraseAtConnect: boolean
   keyPath?: string
   keepaliveIntervalSec: number
+  highlightProfileId?: string
   createdAt: number
   lastConnectedAt?: number
   password_enc?: string
@@ -52,7 +53,8 @@ const PUBLIC_KEYS = [
   'askPasswordAtConnect',
   'askPassphraseAtConnect',
   'keyPath',
-  'keepaliveIntervalSec'
+  'keepaliveIntervalSec',
+  'highlightProfileId'
 ] as const satisfies readonly (keyof Omit<StoredConnection, 'password_enc' | 'keyContent_enc' | 'passphrase_enc'>)[]
 
 function encrypt(plain: string): string {
@@ -96,6 +98,7 @@ function toPublic(stored: StoredConnection): SshConnection {
     askPassphraseAtConnect: stored.askPassphraseAtConnect,
     keyPath: stored.keyPath,
     keepaliveIntervalSec: stored.keepaliveIntervalSec,
+    highlightProfileId: stored.highlightProfileId,
     createdAt: stored.createdAt,
     lastConnectedAt: stored.lastConnectedAt,
     savedAuth: {
@@ -175,6 +178,7 @@ export class ConnectionsStore {
         askPassphraseAtConnect: input.askPassphraseAtConnect,
         keyPath: input.keyPath,
         keepaliveIntervalSec: input.keepaliveIntervalSec,
+        highlightProfileId: input.highlightProfileId,
         createdAt: Date.now()
       }
       list.push(stored)

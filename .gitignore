@@ -27,6 +27,7 @@ tests/.commands-store.cjs
 tests/.settings-store.cjs
 tests/.session-e2e.cjs
 tests/.hl-split-smoke.cjs
+tests/.hl-rules.cjs
 tests/.zmodem-e2e.cjs
 release/
 

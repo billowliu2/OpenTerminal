@@ -84,6 +84,7 @@ if (typeof window !== 'undefined' && !window.api) {
       askPassphraseAtConnect: input.askPassphraseAtConnect,
       keyPath: input.keyPath,
       keepaliveIntervalSec: input.keepaliveIntervalSec,
+      highlightProfileId: input.highlightProfileId,
       createdAt: Date.now(),
       savedAuth: { hasPassword: false, hasKeyContent: false, hasPassphrase: false }
     }),

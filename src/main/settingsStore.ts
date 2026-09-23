@@ -5,6 +5,7 @@ import { Ipc } from '../shared/ipc'
 import {
   DEFAULT_HIGHLIGHT_RULES,
   DEFAULT_SETTINGS,
+  isHighlightCategory,
   type AppSettings,
   type HighlightRule,
   type SystemSettings,
@@ -12,6 +13,7 @@ import {
 } from '../shared/settings'
 import { DEFAULT_DARK, type TerminalTheme, type ThemeColors } from '../shared/theme'
 import { DEFAULT_LANGUAGE, isLanguage, setLanguage } from '../shared/i18n'
+import { sanitizeProfiles } from '../shared/highlightProfiles'
 import { broadcast } from './broadcast'
 import { applyGlobalShortcut } from './globalShortcuts'
 import { applyWindowChrome } from './windowChrome'
@@ -80,6 +82,39 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
     warnings.push(`highlightRules[${index}].color repaired → ${DEFAULT_RULE_COLOR}`)
   }
 
+  if (rule.caseInsensitive !== undefined && typeof rule.caseInsensitive !== 'boolean') {
+    warnings.push(`highlightRules[${index}].caseInsensitive ignored (not a boolean)`)
+  }
+  if (rule.basic !== undefined && typeof rule.basic !== 'boolean') {
+    warnings.push(`highlightRules[${index}].basic ignored (not a boolean)`)
+  }
+  if (rule.category !== undefined && !isHighlightCategory(rule.category)) {
+    warnings.push(`highlightRules[${index}].category ignored (unknown value)`)
+  }
+
+  // Value bands are repaired one entry at a time: a band without a usable min or
+  // colour is dropped, and what survives is sorted so the engine can walk it.
+  let bands: { min: number; fg: string }[] | undefined
+  if (rule.bands !== undefined) {
+    if (Array.isArray(rule.bands)) {
+      const kept: { min: number; fg: string }[] = []
+      rule.bands.forEach((entry, bandIndex) => {
+        const band = entry !== null && typeof entry === 'object' ? (entry as Record<string, unknown>) : null
+        const min = typeof band?.min === 'number' ? band.min : Number(band?.min)
+        const fg = typeof band?.fg === 'string' ? band.fg.trim() : ''
+        if (band === null || !Number.isFinite(min) || !/^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(fg)) {
+          warnings.push(`highlightRules[${index}].bands[${bandIndex}]: unusable — skipped`)
+          return
+        }
+        kept.push({ min, fg })
+      })
+      kept.sort((a, b) => a.min - b.min)
+      if (kept.length > 0) bands = kept
+    } else {
+      warnings.push(`highlightRules[${index}].bands ignored (not an array)`)
+    }
+  }
+
   return {
     ...rule,
     id: rule.id,
@@ -87,8 +122,80 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
     enabled,
     priority,
     color,
+    bands,
+    // `undefined` rather than `false` so the flag stays absent unless it is on.
+    caseInsensitive: rule.caseInsensitive === true ? true : undefined,
+    basic: rule.basic === true ? true : undefined,
+    category: isHighlightCategory(rule.category) ? rule.category : undefined,
     note: typeof rule.note === 'string' ? rule.note : undefined
   } as HighlightRule
+}
+
+/**
+ * Preset patterns shipped by earlier versions, keyed by rule id. A built-in rule
+ * whose pattern is still one of these was never edited by the user, so the
+ * load-time refresh below may swap in the current preset for it.
+ */
+const LEGACY_BUILTIN_PATTERNS: Record<string, string[]> = {
+  okstate: ['\\b(SUCCESS|PASS|OK|DONE|PASSED)\\b'],
+  badstate: ['\\b(FAILED|ERROR|FAIL|FATAL|WARN|WARNING|DENIED)\\b']
+}
+
+/** Built-in ids of the preset set as it stood before `warnstate`/`danger` existed. */
+const LEGACY_BUILTIN_IDS = [
+  'perm',
+  'path',
+  'shellkw',
+  'okstate',
+  'badstate',
+  'quoted',
+  'envvar',
+  'ipv4',
+  'datetime',
+  'numbers',
+  'url'
+]
+
+/**
+ * Carry an older install's preset rules onto the current ones.
+ *
+ * An upgrade must not throw the user's own work away, so both steps are guarded:
+ *  - a built-in rule still holding a shipped pattern is refreshed in place; the
+ *    pattern and case flag come from the preset, while id, colour, priority,
+ *    note and the enabled switch stay exactly as the user left them;
+ *  - preset rules that did not exist yet are appended only while the stored set
+ *    is still exactly the older preset set (nothing deleted, nothing added) —
+ *    the moment the list is the user's own, a rule they removed stays removed.
+ * Both steps are idempotent: a refreshed pattern no longer matches a legacy one,
+ * and an upgraded set never matches the older preset id list again.
+ */
+function refreshBuiltinRules(rules: HighlightRule[], warnings: Warnings): HighlightRule[] {
+  const presets = new Map(DEFAULT_HIGHLIGHT_RULES.map((rule) => [rule.id, rule]))
+  let changed = false
+  const refreshed = rules.map((rule) => {
+    const legacy = LEGACY_BUILTIN_PATTERNS[rule.id]
+    const preset = presets.get(rule.id)
+    if (!legacy || preset === undefined || rule.builtin !== true || !legacy.includes(rule.pattern)) {
+      return rule
+    }
+    changed = true
+    warnings.push(`highlightRules.${rule.id}: preset pattern updated`)
+    return { ...rule, pattern: preset.pattern, caseInsensitive: preset.caseInsensitive }
+  })
+
+  // Presets added since are appended only while the stored set is *exactly* the
+  // older preset set. Anything else — a rule deleted, one added by hand — means
+  // the set is the user's, and a preset they threw away must not come back on
+  // every load.
+  const present = refreshed.map((rule) => rule.id)
+  const pristine =
+    present.length === LEGACY_BUILTIN_IDS.length &&
+    LEGACY_BUILTIN_IDS.every((id) => present.includes(id))
+  if (!pristine) return changed ? refreshed : rules
+  const missing = DEFAULT_HIGHLIGHT_RULES.filter((rule) => !present.includes(rule.id))
+  if (missing.length === 0) return changed ? refreshed : rules
+  for (const rule of missing) warnings.push(`highlightRules.${rule.id}: new built-in rule added`)
+  return [...refreshed, ...missing.map((rule) => ({ ...rule }))].sort((a, b) => a.priority - b.priority)
 }
 
 function sanitizeRules(value: unknown, warnings: Warnings): HighlightRule[] {
@@ -101,7 +208,7 @@ function sanitizeRules(value: unknown, warnings: Warnings): HighlightRule[] {
     const rule = coerceRule(entry, index, warnings)
     if (rule) rules.push(rule)
   })
-  return rules
+  return refreshBuiltinRules(rules, warnings)
 }
 
 const THEME_COLOR_KEYS = Object.keys(DEFAULT_DARK.colors) as (keyof ThemeColors)[]
@@ -165,9 +272,15 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
   let terminal: TerminalSettings = { ...DEFAULT_SETTINGS.terminal }
   let customThemes: unknown = DEFAULT_SETTINGS.customThemes
   let highlightRules: unknown = DEFAULT_HIGHLIGHT_RULES
+  let highlightProfiles: unknown = []
 
   if (raw !== null && typeof raw === 'object') {
-    const packageSettings = raw as { terminal?: unknown; customThemes?: unknown; highlightRules?: unknown }
+    const packageSettings = raw as {
+      terminal?: unknown
+      customThemes?: unknown
+      highlightRules?: unknown
+      highlightProfiles?: unknown
+    }
     if (packageSettings.terminal !== null && typeof packageSettings.terminal === 'object') {
       const candidate = packageSettings.terminal as Record<string, unknown>
       const merged: Record<string, unknown> = { ...terminal }
@@ -186,6 +299,9 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
     }
     if (packageSettings.highlightRules !== undefined) {
       highlightRules = packageSettings.highlightRules
+    }
+    if (packageSettings.highlightProfiles !== undefined) {
+      highlightProfiles = packageSettings.highlightProfiles
     }
   }
 
@@ -217,12 +333,18 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
   }
 
   const themes = sanitizeThemes(customThemes, errors)
+  const rules = sanitizeRules(highlightRules, errors)
 
   return {
     settings: {
       terminal,
       customThemes: themes,
-      highlightRules: sanitizeRules(highlightRules, errors),
+      highlightRules: rules,
+      highlightProfiles: sanitizeProfiles(
+        highlightProfiles,
+        new Set(rules.map((rule) => rule.id)),
+        (message) => errors.push(message)
+      ),
       system: system as SystemSettings
     },
     errors
@@ -296,6 +418,7 @@ export function loadSettings(): AppSettings {
       terminal: { ...DEFAULT_SETTINGS.terminal },
       customThemes: [...DEFAULT_SETTINGS.customThemes],
       highlightRules: DEFAULT_HIGHLIGHT_RULES.map((rule) => ({ ...rule })),
+      highlightProfiles: [],
       system: { ...DEFAULT_SYSTEM }
     }
   }

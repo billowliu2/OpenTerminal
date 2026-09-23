@@ -3,13 +3,9 @@
 // deliberately nasty chunk splits, and requires byte-identical output vs the
 // single-chunk reference.
 import { compileRules, applyHighlights, HighlightStream } from '../src/renderer/src/terminal/highlightEngine.ts'
+import { DEFAULT_HIGHLIGHT_RULES } from '../src/shared/settings.ts'
 
-const rules = compileRules([
-  { id: 'okstate', pattern: '\\b(SUCCESS|PASS|OK|DONE)\\b', enabled: true, priority: 5, color: { fg: '#3fb950' } },
-  { id: 'badstate', pattern: '\\b(ERROR|FAILED)\\b', enabled: true, priority: 6, color: { fg: '#f85149' } },
-  { id: 'numbers', pattern: '\\b\\d+(?:\\.\\d+)?(?:%)?\\b', enabled: true, priority: 25, color: { fg: '#f2cc60' } },
-  { id: 'url', pattern: 'https?://[^\\s]+', enabled: true, priority: 30, color: { fg: '#58a6ff' } }
-])
+const rules = compileRules(DEFAULT_HIGHLIGHT_RULES)
 
 // kimi-like: truecolor SGR, OSC title, box drawing, per-line repaints
 const banner =

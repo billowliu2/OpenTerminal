@@ -43,6 +43,8 @@ const ssh: Record<string, string> = {
   'ssh.dialog.keepalive': 'Keepalive interval (seconds)',
   'ssh.dialog.keepaliveTooltip': '0 disables keepalive',
   'ssh.dialog.keepaliveMin': 'Cannot be negative',
+  'ssh.dialog.highlightProfile': 'Highlight rule set',
+  'ssh.dialog.highlightProfileDefault': 'Default (all rules)',
 
   // Connection sidebar
   'ssh.sidebar.defaultGroup': 'Default',

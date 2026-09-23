@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Form, Input, InputNumber, Modal, Radio, Select } from 'antd'
 import type { SshAuthMethod, SshConnection, SshConnectionInput } from '@shared/connections'
 import { getLanguage, t } from '@shared/i18n'
+import { useSettingsStore } from '@renderer/settings/store'
 import { AuthFieldsRenderer } from './Fields'
 import { buildInput, num, hasSavedKind, type SecretKind } from './Common'
 
@@ -55,6 +56,9 @@ export function ConnectionEditDialog({
       })
   }, [open])
 
+  // Named highlight-rule subsets defined in Settings, for the profile Select.
+  const highlightProfiles = useSettingsStore((s) => s.settings.highlightProfiles)
+
   // Populate / clear the form for each open + target change.
   useEffect(() => {
     if (!open) return
@@ -76,7 +80,8 @@ export function ConnectionEditDialog({
       askPasswordAtConnect: editing?.askPasswordAtConnect,
       askPassphraseAtConnect: editing?.askPassphraseAtConnect,
       keyPath: editing?.keyPath,
-      keepaliveIntervalSec: editing?.keepaliveIntervalSec
+      keepaliveIntervalSec: editing?.keepaliveIntervalSec,
+      highlightProfileId: editing?.highlightProfileId
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editKey, form])
@@ -213,6 +218,14 @@ export function ConnectionEditDialog({
           rules={[{ type: 'number', min: 0, message: t('ssh.dialog.keepaliveMin') }]}
         >
           <InputNumber className="connections-keepalive-input" min={0} placeholder="30" />
+        </Form.Item>
+
+        <Form.Item name="highlightProfileId" label={t('ssh.dialog.highlightProfile')}>
+          <Select
+            allowClear
+            placeholder={t('ssh.dialog.highlightProfileDefault')}
+            options={highlightProfiles.map((p) => ({ value: p.id, label: p.name }))}
+          />
         </Form.Item>
       </Form>
     </Modal>

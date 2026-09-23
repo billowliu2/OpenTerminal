@@ -15,6 +15,8 @@ export interface SettingsState {
   setCustomThemes: (themes: AppSettings['customThemes']) => Promise<void>
   /** replace highlightRules array and persist */
   setHighlightRules: (rules: AppSettings['highlightRules']) => Promise<void>
+  /** replace highlightProfiles array and persist */
+  setHighlightProfiles: (profiles: AppSettings['highlightProfiles']) => Promise<void>
   /** shallow-merge into settings.system and persist */
   updateSystem: (partial: Partial<SystemSettings>) => Promise<void>
 }
@@ -56,6 +58,9 @@ async function persist(
     const patch: Partial<AppSettings> = {}
     if (written.customThemes !== prev.customThemes) patch.customThemes = written.customThemes
     if (written.highlightRules !== prev.highlightRules) patch.highlightRules = written.highlightRules
+    if (written.highlightProfiles !== prev.highlightProfiles) {
+      patch.highlightProfiles = written.highlightProfiles
+    }
     const terminal = diffGroup(prev.terminal, written.terminal)
     // Main merges each group one level deep, so a group holding only the
     // changed sub-keys is a valid patch payload even though the contract types
@@ -114,6 +119,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const prev = get().settings
     const next: AppSettings = { ...prev, highlightRules: rules }
     await persist(get, set, next, prev, 'setHighlightRules')
+  },
+
+  setHighlightProfiles: async (profiles) => {
+    const prev = get().settings
+    const next: AppSettings = { ...prev, highlightProfiles: profiles }
+    await persist(get, set, next, prev, 'setHighlightProfiles')
   },
 
   updateSystem: async (partial) => {

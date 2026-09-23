@@ -55,6 +55,8 @@ interface TerminalParams {
   sessionId?: string
   sessionKind?: 'local' | 'ssh'
   hostLabel?: string
+  /** saved SSH connection this session came from, for per-host highlight profiles */
+  connectionId?: string
 }
 
 export type { TerminalParams }
@@ -744,7 +746,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           component: TERMINAL_COMPONENT,
           tabComponent: TERMINAL_TAB_COMPONENT,
           title: conn.name,
-          params: { sessionId: result.id, sessionKind: 'ssh', hostLabel: conn.host }
+          params: { sessionId: result.id, sessionKind: 'ssh', hostLabel: conn.host, connectionId: conn.id }
         })
         // B's sidebar refreshes lastConnectedAt on connect.
         void sidebarRef.current?.refresh()
@@ -834,7 +836,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         component: TERMINAL_COMPONENT,
         tabComponent: TERMINAL_TAB_COMPONENT,
         title: reference.title,
-        params: { sessionId, sessionKind: 'ssh', hostLabel: refParams?.hostLabel },
+        params: { sessionId, sessionKind: 'ssh', hostLabel: refParams?.hostLabel, connectionId: refParams?.connectionId },
         position: { referencePanel: reference.id, direction }
       })
     },

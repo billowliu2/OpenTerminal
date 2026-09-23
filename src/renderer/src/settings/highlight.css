@@ -69,6 +69,19 @@
   cursor: help;
 }
 
+/* marks a rule that matches without regard to letter case */
+.hl-case-badge {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--chrome-fg, #cccccc) 20%, transparent);
+  font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 14px;
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 70%, transparent);
+  cursor: help;
+}
+
 /* ---- misc cells ---- */
 
 .hl-cell-priority {
@@ -94,6 +107,110 @@
   font-weight: 600;
   line-height: 1;
   min-width: 74px;
+}
+
+/* master switch sits on the left of the toolbar */
+.hl-master {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  cursor: help;
+}
+
+/* rules are kept while highlighting is off — say so visually */
+.hl-table-off {
+  opacity: 0.45;
+}
+
+/* live preview line under the test-text box */
+.hl-preview-line {
+  font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 24px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 6%, transparent);
+}
+
+/* ---- per-host rule sets ---- */
+
+.hl-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hl-profiles-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* the rule picker can hold 20+ entries; keep the dialog from growing */
+.hl-profile-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.hl-profile-rules .ant-checkbox-wrapper {
+  align-items: flex-start;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+/* ---- import / export dialog ---- */
+
+.hl-io {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 4px;
+}
+
+.hl-io-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hl-io-label {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 70%, transparent);
+}
+
+.hl-io-json textarea {
+  font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+/* the file input is driven by the button next to it */
+.hl-io-file input {
+  display: none;
+}
+
+/* ---- value-banded rule: one chip per threshold, in that band's colour ---- */
+.hl-band-preview {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+}
+
+.hl-band-preview .hl-preview-text {
+  font-size: 11px;
+  font-weight: 500;
+  min-width: 0;
 }
 
 .hl-actions {

@@ -51,3 +51,26 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 - `TerminalView.scheduleFit`：fit 后**去抖 100ms** 再把 cols/rows 发给 PTY，并跳过与上次相同的尺寸。每次 ResizeObserver 都戳 PTY 会让全屏 TUI（Claude Code 等）在最大化/还原的中间尺寸上反复重绘，留下重复帧
 - 拖动窗口期间 xterm 网格立即更新，PTY 尺寸在停止后 100ms 生效
+
+## 关键词高亮
+
+- 预设规则表在 `src/shared/settings.ts` 的 `DEFAULT_HIGHLIGHT_RULES`（22 条），引擎在 `src/renderer/src/terminal/highlightEngine.ts`；规则按 priority 升序应用，**先匹配到的 span 归先跑的规则，后续规则遇到重叠直接跳过**
+- 状态类预设（danger/okstate/warnstate/badstate）priority 排在 `shellkw` **之前**：`done` 既是 shell 关键字又是成功词、`if` 还在 `dd if=` 里，先跑谁就由谁着色
+- 状态符号（`✓ ✔ ✅ ✗ ✘ ✖ ❌ ⚠`）**不能放进 `\b…\b` 组**：`\b✓` 永不成立。预设把它们写在 `\b(?:…)\b|[✓✔✅]\uFE0F?` 的第二个分支里，尾随的 `\uFE0F?` 是为了把 emoji 变体选择符一起圈进着色范围
+- 严重级别按颜色拆开：成功（okstate 绿）/ 警告（warnstate 黄）/ 错误·致命（badstate 红，含 `CRITICAL`、`FATAL`、`PANIC`）/ 删除·移动·覆盖（delop 橙）/ 新建·创建·安装（createop 亮绿）；`badstate` 里的 `NOT …` 分支负责 `not ok` / `not found`，`okstate` 的反向断言保证它不会被染绿
+- delop/createop 只列**操作动词**（delete/remove/rm/mkdir/touch/add/install/clone/…），`export` 等 shell 关键字仍归 `shellkw`，别把两边都写进去抢 span
+- **数值分级（`bands`）**：匹配里的第一个数字决定颜色（最后一个 `min <= 值` 的分级胜出），无数字或低于最小分级时回落到 `color.fg`；预设 `percent` 用它做百分比（<20% 红 / 20–50% 黄 / 50–80% 浅绿 / ≥80% 绿）。它的 priority 22 **必须早于 `numbers`(25)**，否则 `45%` 会先被数字规则整段吃掉；`numbers` 规则本身不含百分比分支
+- 词干要自带词尾（`DELET(?:E|ED|ES|ING|ION)` 而非 `DELETE(?:D|S|ING)?`，否则漏 `deleting`）；不成词的词干（MOV/SAV/CLON/PURG/ERAS/WIP/REVOK）必须强制要求词尾
+- 上下文敏感的规则用 **lookbehind/lookahead 只圈住关键词本身**，否则分级会读到错误的数字：`(?<=\bHTTP/\d(?:\.\d)?\s)[1-5]\d\d\b` 让 `HTTP/1.1 404` 只着色 `404`（若把 `HTTP/1.1` 一起匹配，bands 会读到版本号 `1`）。同理 `[1-5]\d\d(?=\s+OK|…)` 靠先行断言限定"后面跟原因短语"才算状态码，避免把 `123` 这类普通数字当成 404
+- 裸 3 位数（`[1-5]\d\d`）**不能单独成规则**，必须有上下文锚点；同理 MAC、短哈希这类高误伤模式不进预设
+- 导入 / 导出与实时预览：`src/shared/highlightIO.ts` 管 JSON 信封（`kind`/`version`，外来 JSON 直接拒绝）与 replace/append 合并；渲染层用剪贴板 + FileReader + Blob 下载完成，**不新增 IPC**。编辑器预览走引擎的 `previewSpans`（跑真实高亮再解析它自己的 SGR 输出），并且**带上当前其它规则**，这样 span 被别的规则抢走时能一眼看出来
+- 分类（`category`，`safety|status|file|net|text|metric`）：预设的分类放在 `PRESET_CATEGORIES` 一张表里，`basic` 集合必须始终是 safety+status 的子集（有测试守）；`settings.terminal.highlightGroupByCategory` 只影响设置页（加分类列 + 按分类聚簇，组内仍按 priority），**热路径完全不涉及**
+- 跟随主题（`settings.terminal.highlightThemeColors`，默认关）：`src/renderer/src/theme/highlightColors.ts` 按**色相分桶**把规则颜色映射到当前主题的 ANSI 调色板（不用"最近色"，否则语义会漂移），亮度决定用普通色还是 bright 色（这样 percent 的两档绿仍能区分）；饱和度低于 0.15 的中性色保持原样；**背景色不映射**（它是文字底块，不是语义信号）。映射在编译期一次性完成，热路径零成本；编辑器预览走同一函数，否则预览会与终端不一致
+- 统计（`settings.terminal.highlightStats`，默认关）：引擎的 `applyHighlights`/`HighlightStream` 接受可选 `StatsSink`，**只在传了 sink 时才计数与计时**（默认路径不插桩）；`TerminalView` 只在开关打开时挂 sink，并**每秒发布一次快照**（不是每块），否则忙碌的终端会把设置页重渲染到卡死；设置页通过 `subscribeHighlightStats` 订阅，多出「命中/耗时」两列（耗时按 µs/ms 格式化）
+- 性能护栏（别拆）：`MAX_CHUNK` 512KB 整块跳过、`MAX_LINE_LEN` 4KB 超长行不跑规则（挡 `(a+)+b` 这类回溯）、`MAX_PER_RULE` 300 每条规则每块上限。实测 180–200KB 混合输出：**全预设 4–9ms/块**（0.02–0.05ms/KB，取决于转义序列密度；典型 4KB chunk ≈ 0.05–0.26ms）、**basic 档 ~1.3ms/块（≈49µs/chunk）**、**off 档 0**；单条规则最贵的是 `http`(0.82ms)、`percent`、`danger`
+- 总开关是**三档模式** `settings.terminal.highlightMode`（`all` / `basic` / `off`，读取一律过 `highlightModeOf` 兜底）：`basic` 只跑带 `basic: true` 的规则（danger/secret/okstate/warnstate/badstate 这 5 条），`off` 时 `TerminalView` 把规则集清空而不是绕过 `HighlightStream`——stream 会 hold 住尾部文本，绕过会丢字节；空规则集在 tokenize 之前就返回，几乎零成本
+- 按主机绑定规则集（`settings.terminal.highlightPerHost`，默认关）：`HighlightProfile { id, name, ruleIds }` 存在 `AppSettings.highlightProfiles`（顶层数组，仿 `customThemes`），清洗在 `src/shared/highlightProfiles.ts`；`ruleIds` **为空 = 全部规则**，`rulesForProfile` 对未绑定 / 绑到不存在的 id / 空 profile 一律回落到全集，`excludedByProfile` 给设置页算「这个 profile 排除了哪些规则」。绑定存在 **`connections.json`**（`SshConnection.highlightProfileId`）而不是 settings，`TerminalView` 只在 mount 时查一次连接——改了绑定要重开会话才生效。新增连接字段时必须同时改三处：`PUBLIC_KEYS`（update 路径靠它回写）、`toPublic()`、`saveConnection()` 的新记录字面量，漏一处该字段会在某条路径上静默丢失
+- 编辑器预览的输入要**截断**（前 2000 字符）：200KB 样本会产出 7000+ 个 span，React 每敲一个键重渲染会卡
+- `caseInsensitive: true` 的规则编译成 `gi`（规则级开关，默认关闭）；预设里 `okstate` 带 `(?<!not\s)` 反向断言，把 `not ok` 让给 `badstate`
+- 词边界是这套预设的全部难点：新增关键词后请跑 `node tests/.hl-rules.cjs`（`invalid` 不能点亮 `valid`、`disabled` 不能点亮 `enabled` 等）
+- 升级旧安装：`settingsStore.refreshBuiltinRules` 只把**仍是出厂 pattern** 的内置规则升到新预设（保留用户的颜色/优先级/启停），且仅当规则集恰好等于旧预设集时才追加新增的内置规则——否则用户删掉的规则会每次加载都复活。改预设 pattern 时同步更新 `LEGACY_BUILTIN_PATTERNS` / `LEGACY_BUILTIN_IDS`
