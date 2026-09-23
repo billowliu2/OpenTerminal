@@ -1,5 +1,23 @@
 # OpenTerminal Changelog
 
+## v1.0.16 - 2026-09-23
+
+- **Built-in rules 11 → 22**: new dangerous/destructive commands (`rm -rf`, `mkfs`, `dd if=`, `chmod 777`, `drop database`, piping into `sh`, …), suspected secret/token reminders, delete/move/overwrite operations, create operations, log levels, exit codes, HTTP status codes, durations (ms), percentage progress, network & IP addresses, timestamps, `root@` prompts, shell keywords, quoted strings, environment variables and more
+- **Status words in three colours, case-insensitive**: success (`Success` / `Succeeded` / `good` / `done` / `OK` / `✓`), warning (`Warning` / `Caution` / `Deprecated` / `⚠`), error & fatal (`Error` / `NG` / `err` / `bug` / `fail` / `FATAL` / `CRITICAL` / `PANIC` / `✗`)
+- `not ok` / `not found` correctly show as errors instead of success green
+- **Value-banded colours**: percentages below 20% red, 20–50% yellow, 50–80% light green, 80%+ green; exit codes, HTTP status codes and durations are banded the same way
+- **Three highlight modes**: all / basic (only the key error, success, warning, dangerous-command and secret rules — about a quarter of the cost) / off (zero cost)
+- Rules support "ignore case" and "value bands" switches, with a live preview against your own test text in the editor
+- Import / export rules as JSON to share one palette across a team
+- **Per-host rule sets**: save a subset of rules as a named set and bind it to a host in the SSH connection editor (off by default; unbound hosts run every rule)
+- **Hit/duration stats**: per-rule hit count and scan time for the session (off by default, zero cost when off)
+- **Theme-following colours**: rule colours map onto the active terminal theme's palette (off by default)
+
+- The highlight settings page gained a category column (safety / status / file / network / text / metric) with grouping
+- Fixed the highlight settings toolbar squeezing labels into vertical text and mis-aligning buttons in narrow windows
+
+- New regression tests for the highlight presets (word boundaries, case flag, negative words, value bands, import/export, chunked streaming); the full `npm test` suite passes
+
 ## v1.0.15 - 2026-09-20
 
 - **Custom terminal background image**: Settings → Theme → Background image lets you use any local image as the terminal background, with 10%–100% image opacity control; removing the image restores the solid background
