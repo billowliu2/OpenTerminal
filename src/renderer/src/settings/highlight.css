@@ -14,9 +14,30 @@
 
 .hl-toolbar {
   display: flex;
-  justify-content: flex-end;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 8px;
   align-items: center;
+}
+
+/* Left group (the switches) and right group (the buttons) each wrap on their
+   own, so a narrow settings pane never squeezes a label into vertical text. */
+.hl-toolbar-controls,
+.hl-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hl-toolbar-controls {
+  min-width: 0;
+}
+
+/* `margin-left: auto` rather than `justify-content: space-between`: the buttons
+   stay against the right edge even on the line they wrap onto. */
+.hl-toolbar-actions {
+  margin-left: auto;
 }
 
 .hl-table .ant-table {
@@ -109,12 +130,14 @@
   min-width: 74px;
 }
 
-/* master switch sits on the left of the toolbar */
+/* A switch plus its caption. Never shrinks and never wraps: the caption is a
+   single word in some languages and a four-character phrase in others. */
 .hl-master {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-right: auto;
+  flex: none;
+  white-space: nowrap;
   cursor: help;
 }
 
@@ -142,6 +165,15 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 2%, transparent);
+}
+
+/* the shared hint class centres itself; under this header it reads as stray text */
+.hl-profiles > .hl-editor-hint {
+  align-self: flex-start;
 }
 
 .hl-profiles-head {
@@ -233,7 +265,10 @@
 }
 
 .hl-editor-label {
-  flex: 0 0 56px;
+  /* a fixed width forced longer captions ("包含的规则") onto two lines */
+  flex: 0 0 auto;
+  min-width: 56px;
+  white-space: nowrap;
   color: color-mix(in srgb, var(--chrome-fg, #cccccc) 88%, transparent);
   padding-top: 5px;
 }

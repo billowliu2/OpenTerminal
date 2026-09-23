@@ -282,69 +282,73 @@ export function HighlightTab(): React.JSX.Element {
         message={t('settings.highlight.alert')}
       />
       <div className="hl-toolbar">
-        <Tooltip title={t('settings.highlight.modeDesc')}>
-          <span className="hl-master">
-            <span className="hl-editor-sub-label">{t('settings.highlight.mode')}</span>
-            <Segmented
-              size="small"
-              value={highlightMode}
-              onChange={(value) => void updateTerminal({ highlightMode: value as HighlightMode })}
-              options={[
-                { value: 'all', label: t('settings.highlight.modeAll') },
-                { value: 'basic', label: t('settings.highlight.modeBasic') },
-                { value: 'off', label: t('settings.highlight.modeOff') }
-              ]}
-            />
-          </span>
-        </Tooltip>
-        <Tooltip title={t('settings.highlight.groupByCategory')}>
-          <span className="hl-master">
-            <Switch
-              size="small"
-              checked={groupByCategory}
-              onChange={(checked) => void updateTerminal({ highlightGroupByCategory: checked })}
-            />
-            <span className="hl-editor-sub-label">{t('settings.highlight.groupByCategory')}</span>
-          </span>
-        </Tooltip>
-        <Tooltip title={t('settings.highlight.statsHint')}>
-          <span className="hl-master">
-            <Switch
-              size="small"
-              checked={statsOn}
-              onChange={(checked) => void updateTerminal({ highlightStats: checked })}
-            />
-            <span className="hl-editor-sub-label">{t('settings.highlight.stats')}</span>
-          </span>
-        </Tooltip>
-        {statsOn && (
-          <Button size="small" onClick={() => resetHighlightStats()}>
-            {t('settings.highlight.statsReset')}
+        <div className="hl-toolbar-controls">
+          <Tooltip title={t('settings.highlight.modeDesc')}>
+            <span className="hl-master">
+              <span className="hl-editor-sub-label">{t('settings.highlight.mode')}</span>
+              <Segmented
+                size="small"
+                value={highlightMode}
+                onChange={(value) => void updateTerminal({ highlightMode: value as HighlightMode })}
+                options={[
+                  { value: 'all', label: t('settings.highlight.modeAll') },
+                  { value: 'basic', label: t('settings.highlight.modeBasic') },
+                  { value: 'off', label: t('settings.highlight.modeOff') }
+                ]}
+              />
+            </span>
+          </Tooltip>
+          <Tooltip title={t('settings.highlight.groupByCategory')}>
+            <span className="hl-master">
+              <Switch
+                size="small"
+                checked={groupByCategory}
+                onChange={(checked) => void updateTerminal({ highlightGroupByCategory: checked })}
+              />
+              <span className="hl-editor-sub-label">{t('settings.highlight.groupByCategory')}</span>
+            </span>
+          </Tooltip>
+          <Tooltip title={t('settings.highlight.statsHint')}>
+            <span className="hl-master">
+              <Switch
+                size="small"
+                checked={statsOn}
+                onChange={(checked) => void updateTerminal({ highlightStats: checked })}
+              />
+              <span className="hl-editor-sub-label">{t('settings.highlight.stats')}</span>
+            </span>
+          </Tooltip>
+          {statsOn && (
+            <Button size="small" onClick={() => resetHighlightStats()}>
+              {t('settings.highlight.statsReset')}
+            </Button>
+          )}
+          <Tooltip title={t('settings.highlight.themeColorsHint')}>
+            <span className="hl-master">
+              <Switch
+                size="small"
+                checked={themeColorsOn}
+                onChange={(checked) => void updateTerminal({ highlightThemeColors: checked })}
+              />
+              <span className="hl-editor-sub-label">{t('settings.highlight.themeColors')}</span>
+            </span>
+          </Tooltip>
+        </div>
+        <div className="hl-toolbar-actions">
+          <Button onClick={() => setIoOpen(true)}>{t('settings.highlight.importExport')}</Button>
+          <Popconfirm
+            title={t('settings.highlight.resetTitle')}
+            description={t('settings.highlight.resetDesc')}
+            okText={t('settings.highlight.resetOk')}
+            cancelText={t('common.cancel')}
+            onConfirm={() => void handleReset()}
+          >
+            <Button>{t('common.reset')}</Button>
+          </Popconfirm>
+          <Button type="primary" onClick={openCreate}>
+            {t('settings.highlight.addRule')}
           </Button>
-        )}
-        <Tooltip title={t('settings.highlight.themeColorsHint')}>
-          <span className="hl-master">
-            <Switch
-              size="small"
-              checked={themeColorsOn}
-              onChange={(checked) => void updateTerminal({ highlightThemeColors: checked })}
-            />
-            <span className="hl-editor-sub-label">{t('settings.highlight.themeColors')}</span>
-          </span>
-        </Tooltip>
-        <Button onClick={() => setIoOpen(true)}>{t('settings.highlight.importExport')}</Button>
-        <Popconfirm
-          title={t('settings.highlight.resetTitle')}
-          description={t('settings.highlight.resetDesc')}
-          okText={t('settings.highlight.resetOk')}
-          cancelText={t('common.cancel')}
-          onConfirm={() => void handleReset()}
-        >
-          <Button>{t('common.reset')}</Button>
-        </Popconfirm>
-        <Button type="primary" onClick={openCreate}>
-          {t('settings.highlight.addRule')}
-        </Button>
+        </div>
       </div>
       <HighlightImportExport open={ioOpen} onClose={() => setIoOpen(false)} />
       <HighlightProfiles />
