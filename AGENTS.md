@@ -62,7 +62,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 冷却阶梯 1s→2s→5s→10s→30s，失败计数与冷却同样落盘；`setPassword`/`clearPassword`/`unlock` 走内部串行队列（`serialize`），否则并发调用会同时通过闸门绕过冷却
 - 闲置锁屏：`powerMonitor.getSystemIdleTime()`，15s 轮询；读不到（无会话/工作站已锁）一律当「不闲置」。`settings.lock.autoLockMinutes` 是白名单 `{0,1,5,15,30,60}`（`src/shared/settings.ts` 的 `LOCK_AUTO_DELAYS`），0 = 从不
 - **清除密码会一并把 `settings.lock.enabled`/`lockAtStartup` 置 false**（`LockControllerOptions.clearLockPreferences`，默认走 `mutateSettings`）：设置页文案承诺「清除后锁屏会一并关闭」，留着会让用户下次设密码时被静默重新武装
-- 锁屏期间主进程在 `win.webContents.on('before-input-event')` 里吞掉 F5/Ctrl+R、Ctrl+±0（含 Shift 拼写）、Ctrl+Shift+I/J/C：遮罩是 DOM 层，拦不住浏览器进程处理的 Electron 默认菜单加速键，而重载会触发 `beforeunload` 把遮罩后面的会话全杀掉。渲染层另有一道 `document.documentElement.dataset.locked` 守卫（字体快捷键、`Ctrl+PgUp/PgDn`）
+- 锁屏期间主进程在 `win.webContents.on('before-input-event')` 里吞掉 F5/Ctrl+R、Ctrl+±0（含 Shift 拼写）、Ctrl+Shift+I/J/C：遮罩是 DOM 层，拦不住浏览器进程处理的 Electron 默认菜单加速键，而重载会触发 `beforeunload` 把遮罩后面的会话全杀掉。渲染层的 `document.documentElement.dataset.locked` 守卫（字体快捷键、`Ctrl+PgUp/PgDn`）**只允许 `return` 跳过自身逻辑，绝不能 `preventDefault`**——keydown 的默认动作就是「往聚焦输入框插字符」，窗口级 preventDefault 会把锁屏密码框的全部输入杀掉（v1.0.17 就是这么坏的，v1.0.18 修复）
+- **Ctrl+L = 立即锁屏**（同一 `before-input-event` 里捕获，终端里也生效——这正是它的意义）：仅在锁定真的生效时才 `preventDefault`，未设置密码的应用保留 Ctrl+L 给 shell 的清屏；已锁定时不再拦截
 - 启动时**不要**用 `locked: true` 作渲染层初值再直接画锁屏：`App.tsx` 用 `null` 表示「主进程还没答复」，此时只画 `.lock-screen-boot` 纯色层，否则每次启动都会给没设密码的用户闪一帧锁屏。`getLockState()` 失败时要落到「locked 且未配置」的状态，让输入框可达（主进程对无 verifier 的解锁请求直接放行）
 - 相关测试：`node tests/lock-store.mjs`（verifier + 状态存储）、`node tests/lock-controller.mjs`（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）
 

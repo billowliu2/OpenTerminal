@@ -157,15 +157,13 @@ function FontHotkeyListener(): null {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      // The lock overlay leaves Workspace mounted; window-capture hotkeys must
-      // not mutate font size on a shell hidden behind it. preventDefault matters
-      // here: returning alone lets the chord reach Electron's default menu
-      // accelerators (zoomIn/zoomOut/resetZoom), which rescale the whole UI
-      // behind the opaque mask and make Chromium persist that zoom per origin.
-      if (document.documentElement.dataset.locked === 'true') {
-        e.preventDefault()
-        return
-      }
+      // While locked, skip only this listener's own logic — and NEVER call
+      // preventDefault here. The default action of a keydown is inserting the
+      // character into the focused field, and it runs after the whole dispatch:
+      // preventing it at window level kills every keystroke the lock screen's
+      // password field would receive (shipped broken in v1.0.17). The menu
+      // accelerators are stopped in main, on before-input-event, instead.
+      if (document.documentElement.dataset.locked === 'true') return
       if (!e.ctrlKey || e.metaKey) return
       const target = e.target as HTMLElement | null
       const isXtermHelper =

@@ -131,7 +131,7 @@ const settings: Record<string, string> = {
   'settings.lock.lockAtStartup': '起動時にロック',
   'settings.lock.lockAtStartupDesc': '起動直後にパスワードの入力を求めます',
   'settings.lock.lockNow': '今すぐロック',
-  'settings.lock.lockNowDesc': 'メインウィンドウをすぐにロックします（セッションは動作を続けます）',
+  'settings.lock.lockNowDesc': 'メインウィンドウをすぐにロックします（セッションは動作を続けます、Ctrl+L）',
   'settings.lock.title': 'ロック中',
   'settings.lock.screenDesc': 'ロックパスワードを入力して解除します',
   'settings.lock.passwordPlaceholder': 'パスワード',

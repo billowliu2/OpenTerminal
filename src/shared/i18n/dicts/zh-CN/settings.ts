@@ -126,7 +126,7 @@ const settings: Record<string, string> = {
   'settings.lock.lockAtStartup': '启动时锁屏',
   'settings.lock.lockAtStartupDesc': '每次启动后先要求输入密码',
   'settings.lock.lockNow': '立即锁屏',
-  'settings.lock.lockNowDesc': '马上锁定主窗口（会话保持运行）',
+  'settings.lock.lockNowDesc': '马上锁定主窗口（会话保持运行，快捷键 Ctrl+L）',
   'settings.lock.title': '已锁定',
   'settings.lock.screenDesc': '输入锁屏密码解锁',
   'settings.lock.passwordPlaceholder': '密码',

@@ -126,7 +126,7 @@ const settings: Record<string, string> = {
   'settings.lock.lockAtStartup': '啟動時鎖定',
   'settings.lock.lockAtStartupDesc': '每次啟動後先要求輸入密碼',
   'settings.lock.lockNow': '立即鎖定',
-  'settings.lock.lockNowDesc': '馬上鎖定主視窗（工作階段保持運作）',
+  'settings.lock.lockNowDesc': '馬上鎖定主視窗（工作階段保持運作，快捷鍵 Ctrl+L）',
   'settings.lock.title': '已鎖定',
   'settings.lock.screenDesc': '輸入鎖定密碼以解鎖',
   'settings.lock.passwordPlaceholder': '密碼',

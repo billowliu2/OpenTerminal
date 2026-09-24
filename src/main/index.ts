@@ -166,12 +166,29 @@ function createWindow(): void {
     }
   })
 
+  // Ctrl+L is the panic lock: it must work from anywhere in the app, terminals
+  // included, so it is captured here ahead of the page. It only takes the chord
+  // away when a lock actually engages — an unconfigured app keeps Ctrl+L for
+  // the shell's clear-screen.
   // Swallow the menu accelerators that would otherwise act behind the lock
   // overlay (see isLockBlockedShortcut). A throw in here would break typing
   // altogether, so the whole guard is defensive.
   win.webContents.on('before-input-event', (event, input) => {
     try {
-      if (input.type !== 'keyDown' || !getLockController().isLocked()) return
+      if (input.type !== 'keyDown') return
+      const lock = getLockController()
+      if (
+        !lock.isLocked() &&
+        input.control &&
+        !input.shift &&
+        !input.alt &&
+        !input.meta &&
+        input.key.toLowerCase() === 'l'
+      ) {
+        if (lock.lockNow().locked) event.preventDefault()
+        return
+      }
+      if (!lock.isLocked()) return
       if (isLockBlockedShortcut(input)) event.preventDefault()
     } catch {
       /* an input guard must never take the window down with it */

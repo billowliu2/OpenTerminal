@@ -134,7 +134,7 @@ const settings: Record<string, string> = {
   'settings.lock.lockAtStartup': 'Lock at startup',
   'settings.lock.lockAtStartupDesc': 'Ask for the password right after every launch',
   'settings.lock.lockNow': 'Lock now',
-  'settings.lock.lockNowDesc': 'Lock the main window immediately (sessions keep running)',
+  'settings.lock.lockNowDesc': 'Lock the main window immediately (sessions keep running, Ctrl+L)',
   'settings.lock.title': 'Locked',
   'settings.lock.screenDesc': 'Enter the lock password to unlock',
   'settings.lock.passwordPlaceholder': 'Password',
