@@ -1,5 +1,27 @@
 # OpenTerminal Changelog
 
+## v1.0.17 - 2026-09-24
+
+- **New Settings → Lock tab**: set, change or remove a lock password (stored on this machine only, scrypt one-way hash — no plaintext, no account system)
+- **Three ways to lock**: lock now, auto-lock after the system is idle for a chosen time (1/5/15/30/60 minutes, off by default), and lock at startup
+- The mask is fully opaque; terminal sessions keep running behind it and stay connected — unlocking restores everything
+- Wrong attempts enter a growing cooldown (1s→30s) to stop guessing at the keyboard
+- **The lock survives quitting and relaunching**: tray exit, task-manager kill or a crash do not get around it
+- While locked, reload (Ctrl+R / F5), DevTools and zoom shortcuts are disabled, so the sessions behind the mask cannot be killed by accident
+- A forgotten password cannot be recovered; the only way back in is deleting this machine's `%APPDATA%\OpenTerminal\lock.json` and setting a new one
+
+- Packaged builds no longer honour `ELECTRON_RENDERER_URL` / `OT_UPDATE_URL`, closing an injection path that could point the app or its update feed at a hostile address
+- The renderer preload runs sandboxed again
+- An unreadable or corrupt known-hosts store now refuses connections and asks for the file to be repaired or deleted, instead of silently overwriting every pinned host fingerprint
+- Connect-time password/passphrase prompts now match the bookmark's auth method (a key/agent bookmark no longer pops a password dialog or offers a leftover stored password)
+- Fixed missing or duplicate session-exit broadcasts when an SSH connection dies — the terminal no longer hangs on "connecting"
+- Closing one split-pane monitor no longer stops the sibling pane's polling
+- Session-log index entries are path-validated, so a tampered index cannot write outside the log directory
+- Settings are saved atomically, with a retry for Windows file-lock errors
+
+- Added CI (GitHub Actions): typecheck + 10 offline tests + build
+- The freeze-detection log no longer reports timer throttling as a ~1-minute "stall" while the window is hidden in the tray
+
 ## v1.0.16 - 2026-09-23
 
 - **Built-in rules 11 → 22**: new dangerous/destructive commands (`rm -rf`, `mkfs`, `dd if=`, `chmod 777`, `drop database`, piping into `sh`, …), suspected secret/token reminders, delete/move/overwrite operations, create operations, log levels, exit codes, HTTP status codes, durations (ms), percentage progress, network & IP addresses, timestamps, `root@` prompts, shell keywords, quoted strings, environment variables and more

@@ -1,7 +1,7 @@
 {
   "name": "open-terminal",
   "productName": "OpenTerminal",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "Open-source terminal with SSH, split panes, themes and fonts",
   "main": "out/main/index.js",
   "author": "CodingPlan.Site",
@@ -12,7 +12,9 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "node tests/build-bundles.cjs && node tests/ssh-loopback.mjs && node tests/commands-store.mjs && node tests/settings-store.mjs && node tests/.hl-split-smoke.cjs && node tests/.hl-rules.cjs && node tests/zmodem-e2e.mjs && node tests/ssh-session-e2e.mjs && node tests/sysinfo-e2e.mjs",
+    "pretest": "npm run typecheck",
+    "test": "node tests/build-bundles.cjs && node tests/ssh-loopback.mjs && node tests/commands-store.mjs && node tests/settings-store.mjs && node tests/lock-store.mjs && node tests/lock-controller.mjs && node tests/.hl-split-smoke.cjs && node tests/.hl-rules.cjs && node tests/zmodem-e2e.mjs && node tests/ssh-session-e2e.mjs && node tests/sysinfo-e2e.mjs",
+    "predist": "npm test",
     "dist": "electron-vite build && electron-builder --win msi nsis",
     "dist:dir": "electron-vite build && electron-builder --win --dir"
   },
