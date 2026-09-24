@@ -1,5 +1,12 @@
 # OpenTerminal Changelog
 
+## v1.0.18 - 2026-09-24
+
+- **Fixed a serious v1.0.17 regression: the password could not be typed on the lock screen**. v1.0.17 swallowed all keyboard input at the renderer level while locked (meant to block zoom/reload shortcuts), but the default action of a key press is exactly "insert the character into the focused field" — so the lock screen's password box received nothing and the app could not be unlocked.
+- Shortcut blocking now happens entirely in the main process (`before-input-event`) and only for reload / DevTools / zoom chords; normal typing is unaffected.
+- **New lock shortcut Ctrl+L**: press it anywhere inside the app — terminals included — to lock immediately. When no lock password is set the chord is left alone (a shell's Ctrl+L clear-screen keeps working).
+- **If v1.0.17 locked you out**: quit the app completely → delete `%APPDATA%\OpenTerminal\lock.json` → start it again (with the lock data gone the screen will not lock), then upgrade and set a new lock password.
+
 ## v1.0.17 - 2026-09-24
 
 - **New Settings → Lock tab**: set, change or remove a lock password (stored on this machine only, scrypt one-way hash — no plaintext, no account system)
