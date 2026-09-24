@@ -1,0 +1,80 @@
+/* ============================================================
+   Lock overlay (lock/LockScreen.tsx)
+   Opaque on purpose: nothing of the workspace underneath may
+   show through. Colors come from the chrome variables, so the
+   overlay follows the active terminal theme.
+   ============================================================ */
+
+/* Opaque layer shared by the lock screen and the boot layer that App.tsx paints
+   while the lock state is still unknown (first IPC round trip). Keeping one rule
+   means the boot layer cannot drift away from the overlay's stacking level. */
+.lock-screen,
+.lock-screen-boot {
+  position: fixed;
+  inset: 0;
+  /* above the workspace rail (960) and every antd layer: modal 1000,
+     message 1010, notification 1050 */
+  z-index: 4000;
+  background: var(--chrome-bg-deep, #101418);
+  color: var(--chrome-fg, #cccccc);
+}
+
+/* Only the panel-bearing overlay centres anything; the boot layer is empty. */
+.lock-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lock-screen-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 340px;
+  max-width: 80vw;
+  padding: 30px 28px 22px;
+  border: 1px solid var(--chrome-border, #2d2d2d);
+  border-radius: 10px;
+  background: var(--chrome-bg, #181818);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  text-align: center;
+}
+
+.lock-screen-icon {
+  font-size: 32px;
+  line-height: 1;
+  color: var(--tab-accent, #3fb950);
+}
+
+.lock-screen-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.lock-screen-desc {
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 55%, transparent);
+}
+
+.lock-screen-input,
+.lock-screen-button {
+  width: 100%;
+}
+
+/* Reserved height: the message appears and disappears without moving the
+   button, so a failed attempt does not shift the input out from under the
+   pointer. */
+.lock-screen-message {
+  min-height: 18px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #f85149;
+}
+
+.lock-screen-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 38%, transparent);
+}

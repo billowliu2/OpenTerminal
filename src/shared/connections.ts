@@ -67,6 +67,28 @@ export interface SshSecretOverride {
   passphrase?: string
 }
 
+/** The secret kind a connection must prompt for before connecting. */
+export type ConnectPromptKind = 'password' | 'passphrase'
+
+/**
+ * Which secret dialog (if any) a connect attempt for `conn` must show first.
+ *
+ * Single source of truth for Workspace's `handleConnectRequest` and
+ * ConnectFlow's stage selection: both used to derive it independently and the
+ * renderer-only check on ConnectFlow's side ignored `auth`, so a key-auth
+ * bookmark with a stale `askPasswordAtConnect` flag (left over from an edit
+ * that switched auth methods) popped a password dialog.
+ *
+ * Each ask* flag only counts for the auth method it belongs to; `null` means
+ * saved credentials exist and the connection must start immediately (existing
+ * UX — such connections must never route through the secret prompt).
+ */
+export function connectPromptFor(conn: SshConnection): ConnectPromptKind | null {
+  if (conn.auth === 'password' && conn.askPasswordAtConnect) return 'password'
+  if (conn.auth === 'privateKey' && conn.askPassphraseAtConnect) return 'passphrase'
+  return null
+}
+
 export interface SessionOpenOptions {
   kind: 'local' | 'ssh'
   /** ssh only */

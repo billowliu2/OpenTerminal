@@ -25,7 +25,7 @@ import type {
 } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
 
-import type { HostKeyPromptEvent, SshConnection, SshSecretOverride } from '@shared/connections'
+import { connectPromptFor, type HostKeyPromptEvent, type SshConnection, type SshSecretOverride } from '@shared/connections'
 import { t } from '@shared/i18n'
 import { ConnectionSidebar } from '../connections/ConnectionSidebar'
 import type { ConnectionSidebarHandle } from '../connections/ConnectionSidebar'
@@ -660,6 +660,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
    */
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
+      // Tab cycling must not move an invisible workspace while the lock
+      // overlay covers the main window.
+      if (document.documentElement.dataset.locked === 'true') return
       const ctrl = e.ctrlKey
       const code = e.code
       if (!ctrl || (code !== 'PageUp' && code !== 'PageDown')) return
@@ -764,12 +767,14 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   const handleConnectRequest = useCallback(
     (conn: SshConnection): void => {
       if (connectInFlightRef.current > 0) return
-      // Ask-at-connect connections go through the secret prompt first; saved
-      // credentials must connect IMMEDIATELY — routing them through ConnectFlow
-      // would only ever *render* a "connecting" spinner without firing openSession.
-      const needsPassword = conn.auth === 'password' && conn.askPasswordAtConnect
-      const needsPassphrase = conn.auth === 'privateKey' && conn.askPassphraseAtConnect
-      if (needsPassword || needsPassphrase) {
+      // Ask-at-connect connections go through the secret prompt first (the
+      // prompt kind comes from the shared `connectPromptFor`, so a stale ask
+      // flag from a switched auth method can never pop the wrong dialog);
+      // saved credentials must connect IMMEDIATELY — routing them through
+      // ConnectFlow would only ever *render* a "connecting" spinner without
+      // firing openSession.
+      const prompt = connectPromptFor(conn)
+      if (prompt !== null) {
         setRequestedConn(conn)
         return
       }

@@ -2,9 +2,11 @@ import { app, BrowserWindow, globalShortcut, net, nativeImage, protocol, shell }
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
+import { devRendererUrl } from './devEnv'
 import { isTrustedRendererUrl, registerIpc } from './ipc'
 import { killAllPtys, killPtysByOwner } from './pty'
 import { applyStartupSystemSettings, loadSettings } from './settingsStore'
+import { getLockController, initLockController } from './lockController'
 import { initTray, markQuitting, onMainWindowClose, refreshTrayMenu } from './tray'
 import { configureAutoUpdater, registerUpdateIpc } from './updater'
 import { applyWindowChrome } from './windowChrome'
@@ -87,6 +89,11 @@ if (!gotSingleInstanceLock) {
     // OS-level effects (login item, sleep blocker) must apply even if the
     // settings dialog is never opened this run.
     applyStartupSystemSettings(loadSettings())
+    // The lock state has to exist before the window loads, so a lockAtStartup
+    // lock is already in place when the renderer asks for it. It also starts the
+    // idle watcher, which is why it belongs after ready: powerMonitor cannot be
+    // touched before that.
+    initLockController()
     createWindow()
     initTray(showOrCreate)
     // Tray labels are resolved from the dictionary at build time, so the menu has
@@ -97,6 +104,31 @@ if (!gotSingleInstanceLock) {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
   })
+}
+
+/**
+ * Accelerators that must not reach the page while the lock screen is up.
+ *
+ * The overlay is a DOM layer inside the window, so everything the browser
+ * process handles on its own passes straight through it: reloading the renderer
+ * runs Workspace's beforeunload and kills every local/SSH session behind the
+ * overlay, and the zoom / DevTools shortcuts would let the locked screen be
+ * resized or read. These come from Electron's default application menu, whose
+ * keys are matched before any renderer code runs.
+ *
+ * Matching is on `input.key` rather than `input.code`: the key is what the
+ * layout actually produces (Ctrl+Shift+= arrives as '+', Ctrl+Shift+- as '_'),
+ * while the code depends on the physical key.
+ */
+function isLockBlockedShortcut(input: Electron.Input): boolean {
+  const key = input.key.toLowerCase()
+  if (key === 'f5') return true
+  if (!input.control) return false
+  if (key === 'r') return true
+  // Zoom: in, out and reset, in both their plain and Shift-shifted spellings.
+  if (key === '=' || key === '+' || key === '-' || key === '_' || key === '0') return true
+  // DevTools. Shift is required so that plain Ctrl+C (copy) keeps working.
+  return input.shift && (key === 'i' || key === 'j' || key === 'c')
 }
 
 function createWindow(): void {
@@ -128,7 +160,21 @@ function createWindow(): void {
     ...(existsSync(devIcon) ? { icon: nativeImage.createFromPath(devIcon) } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      // Keep the default renderer sandbox (preload only touches the electron
+      // IPC bridge, so it does not need Node access).
+      sandbox: true
+    }
+  })
+
+  // Swallow the menu accelerators that would otherwise act behind the lock
+  // overlay (see isLockBlockedShortcut). A throw in here would break typing
+  // altogether, so the whole guard is defensive.
+  win.webContents.on('before-input-event', (event, input) => {
+    try {
+      if (input.type !== 'keyDown' || !getLockController().isLocked()) return
+      if (isLockBlockedShortcut(input)) event.preventDefault()
+    } catch {
+      /* an input guard must never take the window down with it */
     }
   })
 
@@ -174,7 +220,9 @@ function createWindow(): void {
     if (!isTrustedRendererUrl(url)) event.preventDefault()
   })
 
-  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  // ELECTRON_RENDERER_URL is honored in dev builds only — a packaged build must
+  // always load the bundled renderer file, no matter what the environment says.
+  const devUrl = devRendererUrl()
   if (devUrl) {
     win.loadURL(devUrl)
   } else {

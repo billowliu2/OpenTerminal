@@ -28,6 +28,9 @@ module.exports = {
     isRegistered: () => false
   },
   webContents: {},
+  powerMonitor: {
+    getSystemIdleTime: () => 0
+  },
   powerSaveBlocker: {
     start: () => 1,
     stop: () => {},

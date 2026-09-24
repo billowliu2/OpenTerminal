@@ -26,11 +26,31 @@ const fail = (msg) => {
 }
 
 // ---- 1. Loopback ssh server --------------------------------------------------
-const serverKey = utils.generateKeyPairSync('ed25519')
+// ssh2's ed25519 keygen turns out a malformed key roughly once per few
+// hundred runs — its own parser then rejects it ("Malformed OpenSSH private
+// key"), which is enough to flake a release build's pretest. The Server
+// constructor parses hostKeys eagerly, so generate until one is accepted.
+function newHostKey() {
+  for (let attempt = 0; ; attempt++) {
+    const pair = utils.generateKeyPairSync('ed25519')
+    try {
+      new Server({ hostKeys: [pair.private] }, () => {})
+      return pair
+    } catch (err) {
+      if (attempt >= 9) throw err
+    }
+  }
+}
+const serverKey = newHostKey()
 let serverPort = 0
 let seenWindowChange = { cols: 0, rows: 0 }
 
+// Latest server-side connection, so a test can hang up on the transport under
+// an established session (see the PTY_EXIT guard near the end).
+let serverSideClient = null
+
 const srv = new Server({ hostKeys: [serverKey.private] }, (client) => {
+  serverSideClient = client
   client.on('authentication', (ctx) => {
     if (ctx.method === 'password' && ctx.username === 'test' && ctx.password === 'test') {
       ctx.accept()
@@ -108,7 +128,7 @@ sessionLayer.configureSessionRuntime({
 })
 
 // ---- 3. Drive the pipeline ----------------------------------------------------
-const timer = setTimeout(() => fail('e2e timed out'), 15000)
+const timer = setTimeout(() => fail('e2e timed out'), 25000)
 const openResult = await sessionLayer.openSession({ kind: 'ssh', connectionId: 'conn-1' })
 if (!openResult?.id) fail('openSession did not resolve with an id')
 console.log(`[e2e] session open: ${openResult.id}`)
@@ -148,6 +168,34 @@ console.log('[e2e] kill -> PTY_EXIT ok')
 
 if (!events.some((e) => e.channel === 'touched' && e.payload === 'conn-1')) fail('lastConnectedAt touch not recorded')
 console.log('[e2e] connection touch recorded')
+
+// ---- 4. Transport death under an established session -------------------------
+// pty.ts's teardown is now the ONLY PTY_EXIT broadcaster (ssh.ts dropped its own
+// emit), so this is the guard for both failure modes: a teardown that never
+// fires leaves the renderer's panel stuck on "connecting" forever, and a broken
+// idempotence guard would broadcast the exit twice.
+const open2 = await sessionLayer.openSession({ kind: 'ssh', connectionId: 'conn-1' })
+if (!open2?.id) fail('second openSession did not resolve with an id')
+for (let i = 0; i < 50 && !(await sessionLayer.getSessionReplay(open2.id)).includes('SESSION-E2E-BANNER'); i++) {
+  await wait(100)
+}
+if (!(await sessionLayer.getSessionReplay(open2.id)).includes('SESSION-E2E-BANNER')) {
+  fail('second session never became established')
+}
+console.log('[e2e] second session established')
+
+const exitCount = (id) =>
+  events.filter((e) => e.channel === 'pty:exit' && e.payload?.id === id).length
+if (exitCount(open2.id) !== 0) fail('PTY_EXIT arrived before the transport died')
+
+// The server hangs up. The client stream must land in the teardown path, which
+// owns the single broadcast; the waits below give 'close' a moment to arrive.
+serverSideClient.end()
+for (let i = 0; i < 50 && exitCount(open2.id) === 0; i++) await wait(100)
+if (exitCount(open2.id) !== 1) {
+  fail(`transport death must broadcast PTY_EXIT exactly once, got ${exitCount(open2.id)}`)
+}
+console.log('[e2e] transport death -> PTY_EXIT exactly once')
 
 clearTimeout(timer)
 srv.close()

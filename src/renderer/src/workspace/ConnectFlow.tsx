@@ -1,16 +1,17 @@
 import { useState } from 'react'
 import { Button, Input, Modal } from 'antd'
 import { LoadingOutlined } from '@ant-design/icons'
-import type { SshConnection, SshSecretOverride } from '@shared/connections'
+import { connectPromptFor, type SshConnection, type SshSecretOverride } from '@shared/connections'
 import { t } from '@shared/i18n'
 
 /**
  * Connect-time gateways for one SSH connection attempt.
  *
  * `phase` drives which dialog shows:
- *   - 'secret'     → secret prompt modal (password when `askPasswordAtConnect`,
- *                    passphrase when `askPassphraseAtConnect`). This is the only
- *                    connect-time dialog that can be cancelled, because
+ *   - 'secret'     → secret prompt modal (kind chosen by the shared
+ *                    `connectPromptFor`: password for ask-at-connect password
+ *                    auth, passphrase for ask-at-connect key auth). This is the
+ *                    only connect-time dialog that can be cancelled, because
  *                    openSession cannot be aborted before it resolves.
  *   - 'connecting' → an uncancellable "连接中…" modal while openSession flies.
  *
@@ -34,14 +35,15 @@ export function ConnectFlow({ conn, phase, onConfirmed, onCancel }: ConnectFlowP
   const [password, setPassword] = useState('')
   const [passphrase, setPassphrase] = useState('')
 
+  const prompt = conn != null && phase !== 'connecting' ? connectPromptFor(conn) : null
   const stage: ConnectStage =
     conn == null
       ? 'idle'
       : phase === 'connecting'
         ? 'connecting'
-        : conn.askPasswordAtConnect
+        : prompt === 'password'
           ? 'password'
-          : conn.askPassphraseAtConnect
+          : prompt === 'passphrase'
             ? 'passphrase'
             : 'connecting'
 

@@ -571,6 +571,43 @@
   line-height: 1.6;
 }
 
+/* ---------- lock tab (settings/LockSettingsTab.tsx) ---------- */
+
+.settings-lock-input {
+  width: 220px;
+}
+
+.settings-lock-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 8px 8px 0;
+}
+
+/* Reserved height, so a feedback line appearing does not push the rows below
+   it around. */
+.settings-lock-feedback {
+  min-height: 18px;
+  margin: 6px 8px 0;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.settings-lock-feedback.is-ok {
+  color: #3fb950;
+}
+
+.settings-lock-feedback.is-error {
+  color: #f85149;
+}
+
+.settings-lock-note {
+  margin: 4px 8px 16px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 45%, transparent);
+}
+
 /* ---------- shortcut recorder (press-to-record input) ---------- */
 
 .shortcut-input {

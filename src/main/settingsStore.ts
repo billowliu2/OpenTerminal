@@ -1,13 +1,16 @@
 import { app, ipcMain, powerSaveBlocker } from 'electron'
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { Ipc } from '../shared/ipc'
 import {
   DEFAULT_HIGHLIGHT_RULES,
   DEFAULT_SETTINGS,
   isHighlightCategory,
+  isLockAutoDelay,
+  lockAutoDelayOf,
   type AppSettings,
   type HighlightRule,
+  type LockSettings,
   type SystemSettings,
   type TerminalSettings
 } from '../shared/settings'
@@ -15,6 +18,7 @@ import { DEFAULT_DARK, type TerminalTheme, type ThemeColors } from '../shared/th
 import { DEFAULT_LANGUAGE, isLanguage, setLanguage } from '../shared/i18n'
 import { sanitizeProfiles } from '../shared/highlightProfiles'
 import { broadcast } from './broadcast'
+import { writeJson } from './store'
 import { applyGlobalShortcut } from './globalShortcuts'
 import { applyWindowChrome } from './windowChrome'
 
@@ -267,8 +271,31 @@ function sanitizeThemes(value: unknown, warnings: Warnings): TerminalTheme[] {
   return themes
 }
 
+/**
+ * Sanitize the lock block. Every field is forced to its type, so a partial
+ * patch, a hand-edited file or a config written before the block existed all
+ * land on the defaults; the delay must be one of the offered steps, because an
+ * arbitrary number here would silently change the idle-lock schedule.
+ */
+function sanitizeLock(value: unknown, errors: string[]): LockSettings {
+  const candidate =
+    value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+  if (candidate.autoLockMinutes !== undefined && !isLockAutoDelay(candidate.autoLockMinutes)) {
+    errors.push('lock.autoLockMinutes')
+  }
+  return {
+    enabled: candidate.enabled === true,
+    autoLockMinutes: lockAutoDelayOf(candidate.autoLockMinutes),
+    lockAtStartup: candidate.lockAtStartup === true
+  }
+}
+
 function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
   const errors: string[] = []
+  const lock = sanitizeLock(
+    raw !== null && typeof raw === 'object' ? (raw as { lock?: unknown }).lock : undefined,
+    errors
+  )
   let terminal: TerminalSettings = { ...DEFAULT_SETTINGS.terminal }
   let customThemes: unknown = DEFAULT_SETTINGS.customThemes
   let highlightRules: unknown = DEFAULT_HIGHLIGHT_RULES
@@ -345,7 +372,8 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         new Set(rules.map((rule) => rule.id)),
         (message) => errors.push(message)
       ),
-      system: system as SystemSettings
+      system: system as SystemSettings,
+      lock
     },
     errors
   }
@@ -419,7 +447,8 @@ export function loadSettings(): AppSettings {
       customThemes: [...DEFAULT_SETTINGS.customThemes],
       highlightRules: DEFAULT_HIGHLIGHT_RULES.map((rule) => ({ ...rule })),
       highlightProfiles: [],
-      system: { ...DEFAULT_SYSTEM }
+      system: { ...DEFAULT_SYSTEM },
+      lock: { ...DEFAULT_SETTINGS.lock }
     }
   }
 }
@@ -440,11 +469,7 @@ function migrateDefaultsOnce(): void {
     if (current.terminal.suggestEnabled || current.terminal.historyEnabled) {
       current.terminal.suggestEnabled = false
       current.terminal.historyEnabled = false
-      mkdirSync(app.getPath('userData'), { recursive: true })
-      const path = settingsPath()
-      const tmp = `${path}.tmp`
-      writeFileSync(tmp, JSON.stringify(current, null, 2), 'utf8')
-      renameSync(tmp, path)
+      writeJson(settingsPath(), current)
     }
     writeFileSync(flag, '', 'utf8')
   } catch {
@@ -464,11 +489,9 @@ export function mutateSettings(mutate: (settings: AppSettings) => AppSettings): 
     applySystemSettings(merged.system)
     applyWindowChrome(merged)
 
-    mkdirSync(app.getPath('userData'), { recursive: true })
-    const path = settingsPath()
-    const tmp = `${path}.tmp`
-    writeFileSync(tmp, JSON.stringify(merged, null, 2), 'utf8')
-    renameSync(tmp, path)
+    // writeJson gives the same atomic write as every other store, including
+    // short EPERM/EBUSY retries when Windows holds the destination open.
+    writeJson(settingsPath(), merged)
 
     broadcast(Ipc.SETTINGS_CHANGED, merged)
     return merged
@@ -492,7 +515,8 @@ export function saveSettings(next: Partial<AppSettings>): Promise<AppSettings> {
     ...current,
     ...next,
     terminal: { ...current.terminal, ...next.terminal },
-    system: { ...current.system, ...next.system }
+    system: { ...current.system, ...next.system },
+    lock: { ...current.lock, ...next.lock }
   }))
 }
 

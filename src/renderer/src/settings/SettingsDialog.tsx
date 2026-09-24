@@ -7,6 +7,7 @@ import { useSettingsStore } from './store'
 import { CursorSettingsTab, FontSettingsTab, RenderSettingsTab, SystemSettingsTab } from './SettingsTabs'
 import { ThemeSettingsTab } from './ThemeSettingsTab'
 import { HighlightTab } from './HighlightTab'
+import { LockSettingsTab } from './LockSettingsTab'
 import { AboutTab } from './AboutTab'
 import { ThemeEditor } from '../theme/editor/ThemeEditor'
 import './settings.css'
@@ -91,6 +92,7 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
       )
     },
     { key: 'system', label: t('settings.tabs.system'), children: <SystemSettingsTab /> },
+    { key: 'lock', label: t('settings.tabs.lock'), children: <LockSettingsTab /> },
     { key: 'about', label: t('settings.tabs.about'), children: <AboutTab /> }
   ]
 

@@ -15,7 +15,6 @@
 
 import type { SshConnection, SshSecretOverride } from '../shared/connections'
 import { t } from '../shared/i18n'
-import { Ipc } from '../shared/ipc'
 import { randomUUID } from 'crypto'
 import { readFileSync } from 'fs'
 import { fingerprintOf, type HostKeyCheckResult } from './knownHosts'
@@ -112,18 +111,31 @@ export async function connectSsh(
   // Called by ssh2 during kex; return undefined => async verdict via verify().
   const hostVerifier = (hostKey: Buffer, verify: (permitted: boolean) => void): void => {
     let fingerprint: string
-    let status: 'new' | 'changed' | 'match'
+    let status: HostKeyCheckResult['status']
     try {
       fingerprint = fingerprintOf(hostKey)
       status = deps.knownHosts.check(conn.host, conn.port, hostKey).status
     } catch (err) {
       console.error(`[ssh] knownHosts.check threw: ${(err as Error).message}`)
       fingerprint = fingerprintOf(hostKey)
-      status = 'new'
+      // A throwing store is as untrustworthy as an unreadable one: falling back
+      // to 'new' would let the subsequent accept() rewrite the whole store.
+      status = 'unreadable'
     }
 
     if (status === 'match') {
       verify(true)
+      return
+    }
+
+    if (status === 'unreadable') {
+      // known_hosts exists but cannot be read (corrupt JSON, access error...).
+      // Accepting would persist the new key into a table we failed to load and
+      // destroy every pinned fingerprint, so fail closed instead of prompting:
+      // no accept offer, the user repairs or deletes the file and retries.
+      verifierErr = t('main.ssh.knownHostsUnreadable')
+      console.error(`[ssh] ${verifierErr}`)
+      verify(false)
       return
     }
 
@@ -168,13 +180,11 @@ export async function connectSsh(
       }
       // Session already established: surface as a session exit and clean up.
       // Record the failure code on the handle so the stream's later 'close'
-      // (pty.ts) reports the same exit code instead of a bogus 0.
+      // (pty.ts teardown) reports the same exit code instead of a bogus 0 —
+      // the broadcast itself must come only from pty.ts's idempotent teardown;
+      // emitting it here as well would fire PTY_EXIT twice (destroy() closes
+      // the stream, and the stream 'close' handler broadcasts on its own).
       if (sessionHandle) sessionHandle.exitCode = 1
-      try {
-        deps.broadcast(Ipc.PTY_EXIT, { id: sessionId, exitCode: 1 })
-      } catch {
-        // never crash the event loop
-      }
       try {
         handshake.destroy()
       } catch {
@@ -228,11 +238,14 @@ export async function connectSsh(
     // Password auth. A stored password is offered only when the bookmark is
     // configured for password auth: connectionsStore keeps password_enc when a
     // bookmark is switched to key/agent auth, and silently falling back to it
-    // would authenticate a weaker method than the user chose. An explicitly
-    // typed connect-time password (secretOverride) is always honoured.
+    // would authenticate a weaker method than the user chose. The same gate
+    // applies to a typed connect-time password (secretOverride): it belongs to
+    // the password flow and must never upgrade a key/agent bookmark into
+    // password auth (a stale ask flag used to route one here via ConnectFlow).
     const password =
-      secretOverride?.password ??
-      (conn.auth === 'password' ? deps.connections.getSecret(conn, 'password') : undefined)
+      conn.auth === 'password'
+        ? (secretOverride?.password ?? deps.connections.getSecret(conn, 'password'))
+        : undefined
     if (password !== undefined) cfg.password = password
 
     // Private key auth (keyPath takes precedence over stored keyContent)
@@ -246,6 +259,10 @@ export async function connectSsh(
             : undefined
       if (privateKey !== undefined) {
         cfg.privateKey = privateKey
+        // A typed connect-time passphrase (secretOverride) is honoured only
+        // inside this private-key branch — the gate above keeps the password
+        // override out of key auth and this branch keeps the passphrase out of
+        // password auth.
         const passphrase = secretOverride?.passphrase ?? deps.connections.getSecret(conn, 'passphrase')
         if (passphrase !== undefined) cfg.passphrase = passphrase
       }

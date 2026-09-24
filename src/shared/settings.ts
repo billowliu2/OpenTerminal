@@ -125,6 +125,41 @@ export function highlightModeOf(value: unknown): HighlightMode {
   return value === 'basic' || value === 'off' ? value : 'all'
 }
 
+/**
+ * The delays offered for the idle auto-lock, in minutes. A closed set rather
+ * than a free number: `0` means "never", and the settings UI, the sanitizer and
+ * the idle watcher all read this one list so they cannot disagree.
+ */
+export type LockAutoDelay = 0 | 1 | 5 | 15 | 30 | 60
+
+export const LOCK_AUTO_DELAYS: LockAutoDelay[] = [0, 1, 5, 15, 30, 60]
+
+/**
+ * Read a stored auto-lock delay, tolerating a hand-edited settings.json: only a
+ * whitelisted value survives, anything else falls back to 0 (never).
+ */
+export function lockAutoDelayOf(value: unknown): LockAutoDelay {
+  return LOCK_AUTO_DELAYS.includes(value as LockAutoDelay) ? (value as LockAutoDelay) : 0
+}
+
+export function isLockAutoDelay(value: unknown): value is LockAutoDelay {
+  return LOCK_AUTO_DELAYS.includes(value as LockAutoDelay)
+}
+
+/**
+ * Screen-lock preferences. The password itself is never stored here — the
+ * verifier lives in `<userData>/lock.json` (src/main/lockStore.ts), so settings
+ * can be copied around, synced or logged without leaking it.
+ */
+export interface LockSettings {
+  /** master switch: without it nothing ever locks, idle watcher included */
+  enabled: boolean
+  /** minutes of system idle before the screen locks; 0 = never */
+  autoLockMinutes: LockAutoDelay
+  /** start each run locked (asks for the password before the app is usable) */
+  lockAtStartup: boolean
+}
+
 export interface SystemSettings {
   /** register the app to launch at OS login */
   launchAtLogin: boolean
@@ -171,6 +206,8 @@ export interface AppSettings {
   /** named rule subsets for per-host highlighting (see terminal.highlightPerHost) */
   highlightProfiles: HighlightProfile[]
   system: SystemSettings
+  /** screen lock; the password verifier lives outside settings (lock.json) */
+  lock: LockSettings
 }
 
 const RULE = (
@@ -429,5 +466,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
   highlightProfiles: [],
-  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true, restoreSession: true, shellIntegration: false, language: 'zh-CN' }
+  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true, restoreSession: true, shellIntegration: false, language: 'zh-CN' },
+  // Off until the user sets a password and turns it on: an app that locks
+  // itself out of the box would be a support ticket, not a feature.
+  lock: { enabled: false, autoLockMinutes: 0, lockAtStartup: false }
 }

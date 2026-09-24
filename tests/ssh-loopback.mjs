@@ -25,7 +25,22 @@ const fail = (msg) => {
 }
 
 // ---- 1. Boot the loopback server -------------------------------------------
-const serverKey = utils.generateKeyPairSync('ed25519')
+// ssh2's ed25519 keygen turns out a malformed key roughly once per few
+// hundred runs — its own parser then rejects it ("Malformed OpenSSH private
+// key"), which is enough to flake a release build's pretest. The Server
+// constructor parses hostKeys eagerly, so generate until one is accepted.
+function newHostKey() {
+  for (let attempt = 0; ; attempt++) {
+    const pair = utils.generateKeyPairSync('ed25519')
+    try {
+      new Server({ hostKeys: [pair.private] }, () => {})
+      return pair
+    } catch (err) {
+      if (attempt >= 9) throw err
+    }
+  }
+}
+const serverKey = newHostKey()
 let serverPort = 0
 let seenWindowChange = { cols: 0, rows: 0 }
 

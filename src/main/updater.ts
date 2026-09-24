@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater'
 import { Ipc, type ReleaseNote, type UpdateState } from '../shared/ipc'
 import { t } from '../shared/i18n'
 import { broadcast } from './broadcast'
+import { devUpdateFeedUrl } from './devEnv'
 import { loadSettings } from './settingsStore'
 import { markQuitting } from './tray'
 
@@ -32,11 +33,15 @@ function useFeed(feed: 'gitea' | 'github'): void {
   activeFeed = feed
   if (feed === 'gitea') {
     // Domestic feed: always direct — a system proxy only breaks it.
+    // OT_UPDATE_URL overrides the feed in dev builds only; OT_UPDATE_TOKEN is
+    // read from the environment in every build, which is only safe because the
+    // packaged URL is the hardcoded GITEA_FEED — making it configurable again
+    // would turn the token into a credential sent to whatever host it names.
     void autoUpdater.netSession.setProxy({ mode: 'direct' })
     const token = process.env.OT_UPDATE_TOKEN
     autoUpdater.setFeedURL({
       provider: 'generic',
-      url: process.env.OT_UPDATE_URL || GITEA_FEED,
+      url: devUpdateFeedUrl() ?? GITEA_FEED,
       ...(token ? { requestHeaders: { Authorization: `token ${token}` } } : {})
     })
   } else {

@@ -17,6 +17,7 @@ const main: Record<string, string> = {
 
   'main.ssh.connectTimeout': '接続がタイムアウトしました ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'ホスト鍵のフィンガープリントを保存できませんでした: {detail}',
+  'main.ssh.knownHostsUnreadable': '既知ホストファイル (ssh_known_hosts.json) が存在しますが読み取れないため、保存済みフィンガープリントを保護するために接続を拒否しました。ファイルを修復または削除してから再試行してください。',
   'main.ssh.hostKeyRejected': 'ユーザーがホスト鍵を拒否しました',
   'main.ssh.connectFailed': '接続に失敗しました {host}:{port}: {detail}',
   'main.ssh.shellOpenFailed': 'SSH シェルを開けません ({host}:{port}): {detail}',

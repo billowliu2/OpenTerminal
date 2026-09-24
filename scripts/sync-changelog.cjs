@@ -51,13 +51,27 @@ const sync = ({ notes, changelog, header, required }) => {
     return
   }
 
-  const section = `## v${pkgVersion} - ${new Date().toISOString().slice(0, 10)}\n\n${body}\n`
+  // The header pattern must match the file's own newlines: a checkout with
+  // core.autocrlf=true leaves these files CRLF, and an `\n`-only pattern then
+  // matches nothing — the write below becomes a silent no-op that still logs
+  // success (exactly what bit the v1.0.17 sync). The inserted section follows
+  // the file's dominant ending so it does not create mixed line endings.
+  const nl = existing.includes('\r\n') ? '\r\n' : '\n'
+  const section =
+    `## v${pkgVersion} - ${new Date().toISOString().slice(0, 10)}${nl}${nl}` +
+    `${body.split('\n').join(nl)}${nl}`
   // Function replacement, not a string: a notes body containing `$&`, `$1`, `` $` ``
   // or `$'` would otherwise be expanded by String.replace and corrupt the merge.
   const updated = existing
-    ? existing.replace(new RegExp(`^(${header}\\n\\n)`), (_m, head) => `${head}${section}\n`)
-    : `${header}\n\n${section}`
+    ? existing.replace(new RegExp(`^(${header}\\r?\\n\\r?\\n)`), (_m, head) => `${head}${section}${nl}`)
+    : `${header}${nl}${nl}${section}`
   fs.writeFileSync(changelogPath, updated, 'utf8')
+  // Belt and braces: the header replace is the only thing that places the
+  // section, so prove it landed instead of trusting the pattern.
+  if (!fs.readFileSync(changelogPath, 'utf8').includes(`## v${pkgVersion} `)) {
+    console.error(`${changelog}: header pattern did not match — section was NOT inserted`)
+    process.exit(1)
+  }
   console.log(`${changelog}: added v${pkgVersion} (${body.split('\n').length} lines)`)
 }
 

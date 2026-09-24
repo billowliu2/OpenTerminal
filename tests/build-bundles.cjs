@@ -19,7 +19,15 @@ const BUNDLES = [
   // ESM (`.mjs`): tests/sftp-*.mjs load it with `await import()`.
   { entry: 'src/main/sftp.ts', out: 'tests/.sftp-svc.mjs', format: 'esm', external: ['ssh2'] },
   { entry: 'src/main/commands.ts', out: 'tests/.commands-store.cjs' },
+  // Known-hosts store: TOFU / changed / unreadable fail-closed behavior.
+  { entry: 'src/main/knownHosts.ts', out: 'tests/.known-hosts.cjs' },
   { entry: 'src/main/settingsStore.ts', out: 'tests/.settings-store.cjs' },
+  // Lock-password store: scrypt verifier, round trip, damaged-file handling.
+  { entry: 'src/main/lockStore.ts', out: 'tests/.lock-store.cjs' },
+  // Lock controller: cooldown ladder, serialized attempts, persisted flags.
+  // Pulls in settingsStore + broadcast, which is why the electron stub needs
+  // powerMonitor as well.
+  { entry: 'src/main/lockController.ts', out: 'tests/.lock-controller.cjs' },
   // zmodem.js stays bundled (NOT external) — the test drives a second in-process
   // Sentry from the same library.
   { entry: 'src/main/zmodem.ts', out: 'tests/.zmodem-e2e.cjs', external: ['ssh2'] },

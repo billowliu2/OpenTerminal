@@ -28,7 +28,22 @@ const fail = (msg) => {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // ---- 1. Loopback ssh server with canned /proc exec -----------------------------
-const serverKey = utils.generateKeyPairSync('ed25519')
+// ssh2's ed25519 keygen turns out a malformed key roughly once per few
+// hundred runs — its own parser then rejects it ("Malformed OpenSSH private
+// key"), which is enough to flake a release build's pretest. The Server
+// constructor parses hostKeys eagerly, so generate until one is accepted.
+function newHostKey() {
+  for (let attempt = 0; ; attempt++) {
+    const pair = utils.generateKeyPairSync('ed25519')
+    try {
+      new Server({ hostKeys: [pair.private] }, () => {})
+      return pair
+    } catch (err) {
+      if (attempt >= 9) throw err
+    }
+  }
+}
+const serverKey = newHostKey()
 let serverPort = 0
 
 // Two successive outputs with rising cpu ticks and rx/tx bytes so rates compute.
@@ -197,6 +212,40 @@ await wait(400)
 const after = samples(openResult.id).length
 if (after !== before) fail(`stopPolling did not halt: got ${after - before} new samples`)
 console.log('[sysinfo] stopPolling halts the sample stream')
+
+// ---- 5. Reference counting: split panels share one sessionId ----------------------
+// Two panels start on the same session; the poll must survive one stop and
+// only halt on the last release. Counts grow at ~5 samples/s (200ms interval),
+// so the waits below must show growth while a reference is held.
+sessionLayer.startPolling(openResult.id, 200)
+sessionLayer.startPolling(openResult.id, 200)
+const refCounted = samples(openResult.id).length
+await wait(600)
+if (samples(openResult.id).length <= refCounted) fail('shared poll (refs=2) stopped sampling')
+sessionLayer.stopPolling(openResult.id) // first panel unmounts
+const oneRef = samples(openResult.id).length
+await wait(600)
+if (samples(openResult.id).length <= oneRef) fail('poll stopped while a sibling panel still held a reference')
+console.log('[sysinfo] shared poll survives one sibling stop')
+sessionLayer.stopPolling(openResult.id) // last panel unmounts
+const zeroRefs = samples(openResult.id).length
+await wait(600)
+if (samples(openResult.id).length !== zeroRefs) fail('poll must stop only once the last reference is released')
+console.log('[sysinfo] last release stops the poll')
+// Restart after a full release must work on fresh state (no stale refs/timer).
+sessionLayer.startPolling(openResult.id, 200)
+await wait(600)
+if (samples(openResult.id).length <= zeroRefs) fail('poll did not restart cleanly after a full release')
+sessionLayer.stopPolling(openResult.id)
+console.log('[sysinfo] restart after full release works')
+// A killed session must force-stop regardless of outstanding references.
+sessionLayer.startPolling(openResult.id, 200)
+sessionLayer.startPolling(openResult.id, 200)
+sessionLayer.forceStopPolling(openResult.id)
+const forced = samples(openResult.id).length
+await wait(600)
+if (samples(openResult.id).length !== forced) fail('forceStopPolling must halt even with outstanding references')
+console.log('[sysinfo] forceStopPolling overrides outstanding references')
 
 clearTimeout(timer)
 srv.close()

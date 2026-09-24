@@ -17,6 +17,7 @@ const main: Record<string, string> = {
 
   'main.ssh.connectTimeout': 'Connection timed out ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'Failed to save the host fingerprint: {detail}',
+  'main.ssh.knownHostsUnreadable': 'The known-hosts file (ssh_known_hosts.json) exists but could not be read. The connection was refused to protect the pinned fingerprints. Repair or delete the file and try again.',
   'main.ssh.hostKeyRejected': 'The user rejected the host key',
   'main.ssh.connectFailed': 'Connection failed {host}:{port}: {detail}',
   'main.ssh.shellOpenFailed': 'Could not open the SSH shell ({host}:{port}): {detail}',

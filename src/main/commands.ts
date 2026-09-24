@@ -20,9 +20,9 @@
 
 import { app, shell } from 'electron'
 import { randomUUID } from 'crypto'
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, statSync } from 'fs'
 import { appendFile } from 'fs/promises'
-import { join } from 'path'
+import { basename, dirname, join, resolve, sep } from 'path'
 import type { CommandItem, SessionLogMeta } from '../shared/commands'
 import { DEFAULT_SETTINGS } from '../shared/settings'
 import { loadSettings } from './settingsStore'
@@ -236,12 +236,78 @@ export class CommandsStore {
           typeof (x as SessionLogMeta).file === 'string'
         ) {
           const meta = x as SessionLogMeta
+          // index.json is data, not trust: a tampered or hand-edited `file`
+          // must never turn logWrite into an arbitrary-path append.
+          if (!this.isLoggableFile(meta.file)) continue
           this.metasByFile.set(meta.file, meta)
           if (meta.endedAt === undefined) this.activeBySession.set(meta.sessionId, meta)
         }
       }
     } catch {
       // index missing / corrupt -> rebuild on next write
+    }
+  }
+
+  /**
+   * True when `file` resolves to a regular file inside the logs directory.
+   *
+   * Applied to every entry hydrated from index.json before it can ever reach
+   * logWrite. `..` segments collapse via resolve(); containment is compared
+   * case-insensitively on Windows so drive-letter or name-case spelling cannot
+   * sneak a path past it. Symlinks are followed (realpathSync): an entry that
+   * resolves outside the logs dir is dropped, and a path that exists but is
+   * not a regular file (a directory, a device) is dropped too. A path that is
+   * simply not on disk yet stays eligible — appendFile creates it lazily, and
+   * the directory it would land in is still resolved.
+   */
+  private isLoggableFile(file: string): boolean {
+    if (file.length === 0) return false
+    const dirReal = this.logsDirReal()
+    let target: string
+    let exists = true
+    try {
+      target = realpathSync(file)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') return false
+      // Not on disk yet: appendFile would create it, so the directory it would
+      // land in is what decides containment. Judging the literal path alone
+      // would let a symlinked subdirectory point the append outside the dir.
+      target = this.pendingPathReal(file)
+      exists = false
+    }
+    if (exists) {
+      try {
+        if (!statSync(target).isFile()) return false
+      } catch {
+        // Vanished between realpath and stat: appends would recreate it, and
+        // the containment check below already passed for this path.
+      }
+    }
+    const norm = (p: string): string => (process.platform === 'win32' ? p.toLowerCase() : p)
+    const dirN = norm(dirReal)
+    return norm(target).startsWith(dirN + sep)
+  }
+
+  /** Real path of the logs dir; falls back to resolve() when it does not exist yet. */
+  private logsDirReal(): string {
+    try {
+      return realpathSync(this.logsDir)
+    } catch {
+      return resolve(this.logsDir)
+    }
+  }
+
+  /**
+   * Where a log file that is not on disk yet would actually be written: its
+   * parent resolved through any symlinks, the leaf kept as written (it does not
+   * exist, so it has nothing to resolve). Falls back to the literal resolve()
+   * when the parent is missing as well — the containment check then decides.
+   */
+  private pendingPathReal(file: string): string {
+    try {
+      return join(realpathSync(dirname(file)), basename(file))
+    } catch {
+      return resolve(file)
     }
   }
 

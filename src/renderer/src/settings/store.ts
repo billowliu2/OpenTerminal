@@ -1,4 +1,4 @@
-import type { AppSettings, SystemSettings, TerminalSettings } from '@shared/settings'
+import type { AppSettings, LockSettings, SystemSettings, TerminalSettings } from '@shared/settings'
 import { DEFAULT_SETTINGS } from '@shared/settings'
 import type { TerminalTheme } from '@shared/theme'
 import { getThemeById } from '@shared/theme'
@@ -19,6 +19,8 @@ export interface SettingsState {
   setHighlightProfiles: (profiles: AppSettings['highlightProfiles']) => Promise<void>
   /** shallow-merge into settings.system and persist */
   updateSystem: (partial: Partial<SystemSettings>) => Promise<void>
+  /** shallow-merge into settings.lock and persist */
+  updateLock: (partial: Partial<LockSettings>) => Promise<void>
 }
 
 /** unsubscriber for the cross-window SETTINGS_CHANGED listener; held module-level so hydrate() is idempotent */
@@ -68,6 +70,8 @@ async function persist(
     if (terminal) patch.terminal = terminal as TerminalSettings
     const system = diffGroup(prev.system, written.system)
     if (system) patch.system = system as SystemSettings
+    const lock = diffGroup(prev.lock, written.lock)
+    if (lock) patch.lock = lock as LockSettings
     await window.api.saveSettings(patch)
   } catch (err) {
     console.error(`[settings] ${label} failed, rolling back`, err)
@@ -131,6 +135,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const prev = get().settings
     const next: AppSettings = { ...prev, system: { ...prev.system, ...partial } }
     await persist(get, set, next, prev, 'updateSystem')
+  },
+
+  updateLock: async (partial) => {
+    const prev = get().settings
+    const next: AppSettings = { ...prev, lock: { ...prev.lock, ...partial } }
+    await persist(get, set, next, prev, 'updateLock')
   }
 }))
 

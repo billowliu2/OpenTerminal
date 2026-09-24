@@ -3,6 +3,7 @@ import { Ipc } from '../shared/ipc'
 import type { AppSettings } from '../shared/settings'
 import type { AppApi } from '../shared/api'
 import type { LayoutMeta, PtyCreateOptions, PtyDataEvent, PtyExitEvent, ReleaseNote, SessionSnapshot, UpdateState, ZmodemOfferEvent, ZmodemResponse, ZmodemDoneEvent } from '../shared/ipc'
+import type { LockOperationResult, LockPasswordInput, LockSettingsState } from '../shared/ipc'
 import type {
   HostKeyAction,
   HostKeyPromptEvent,
@@ -111,6 +112,18 @@ const api: AppApi = {
     const listener = (_: unknown, s: AppSettings): void => cb(s)
     ipcRenderer.on(Ipc.SETTINGS_CHANGED, listener)
     return () => ipcRenderer.removeListener(Ipc.SETTINGS_CHANGED, listener)
+  },
+
+  getLockState: () => ipcRenderer.invoke(Ipc.LOCK_STATE_GET),
+  setLockPassword: (input: LockPasswordInput) => ipcRenderer.invoke(Ipc.LOCK_SET_PASSWORD, input),
+  clearLockPassword: (input: { currentPassword?: string }) =>
+    ipcRenderer.invoke(Ipc.LOCK_CLEAR_PASSWORD, input),
+  unlockLock: (input: { password?: string }) => ipcRenderer.invoke(Ipc.LOCK_UNLOCK, input),
+  lockNow: () => ipcRenderer.invoke(Ipc.LOCK_NOW),
+  onLockStateChanged: (cb: (state: LockSettingsState) => void) => {
+    const listener = (_: unknown, state: LockSettingsState): void => cb(state)
+    ipcRenderer.on(Ipc.LOCK_STATE_CHANGED, listener)
+    return () => ipcRenderer.removeListener(Ipc.LOCK_STATE_CHANGED, listener)
   },
 
   listFonts: () => ipcRenderer.invoke(Ipc.FONTS_LIST),

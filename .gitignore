@@ -24,6 +24,9 @@ research/
 .sftp-dl-*
 
 tests/.commands-store.cjs
+tests/.known-hosts.cjs
+tests/.lock-store.cjs
+tests/.lock-controller.cjs
 tests/.settings-store.cjs
 tests/.session-e2e.cjs
 tests/.hl-split-smoke.cjs

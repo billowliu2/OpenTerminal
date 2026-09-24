@@ -110,8 +110,59 @@ export const Ipc = {
   /** normalize a cwd reported by the shell (OSC 7 / OSC 9;9) */
   CWD_REPORT: 'session:cwdReport',
   /** open a local directory in the OS file manager (terminal toolbar) */
-  CWD_OPEN: 'session:cwdOpen'
+  CWD_OPEN: 'session:cwdOpen',
+
+  // ---- lock screen (main-window overlay; the main process owns the state) ----
+  /** renderer pulls the current lock state without changing it */
+  LOCK_STATE_GET: 'lock:stateGet',
+  /** set or replace the password; an existing one must be verified first */
+  LOCK_SET_PASSWORD: 'lock:setPassword',
+  /** remove the password; the existing one must be verified first */
+  LOCK_CLEAR_PASSWORD: 'lock:clearPassword',
+  LOCK_UNLOCK: 'lock:unlock',
+  LOCK_NOW: 'lock:now',
+  /** main -> renderer broadcast: LockSettingsState */
+  LOCK_STATE_CHANGED: 'lock:state'
 } as const
+
+/**
+ * The lock state the renderer sees. Deliberately free of salt, hash and
+ * password: the stored verifier never leaves the main process.
+ */
+export interface LockSettingsState {
+  /** a password is set, so the lock can engage at all */
+  configured: boolean
+  enabled: boolean
+  autoLockMinutes: number
+  lockAtStartup: boolean
+  locked: boolean
+  /** remaining lockout in ms; absent while no cooldown is running */
+  cooldownMs?: number
+}
+
+/** Passwords travel one way only: in. Neither field is ever echoed back. */
+export interface LockPasswordInput {
+  /** required when a password is already set (replace / clear) */
+  currentPassword?: string
+  /** required when setting or replacing */
+  newPassword?: string
+}
+
+export type LockOperationError =
+  /** the offered new password is unusable (empty, too short, too long) */
+  | 'invalid-password'
+  /** the offered current password does not match */
+  | 'wrong-password'
+  /** too many failed attempts: retry after state.cooldownMs */
+  | 'cooldown'
+  /** the verifier could not be written to disk */
+  | 'save-failed'
+
+export interface LockOperationResult {
+  ok: boolean
+  state: LockSettingsState
+  error?: LockOperationError
+}
 
 export interface PtyCreateOptions {
   cwd?: string

@@ -17,6 +17,7 @@ const main: Record<string, string> = {
 
   'main.ssh.connectTimeout': '连接超时 ({host}:{port})',
   'main.ssh.saveFingerprintFailed': '保存主机指纹失败: {detail}',
+  'main.ssh.knownHostsUnreadable': '已知主机文件 (ssh_known_hosts.json) 存在但无法读取，为避免覆盖已保存的指纹，本次连接被拒绝。请修复或删除该文件后重试。',
   'main.ssh.hostKeyRejected': '用户拒绝了主机指纹',
   'main.ssh.connectFailed': '连接失败 {host}:{port}: {detail}',
   'main.ssh.shellOpenFailed': '无法打开 SSH shell ({host}:{port}): {detail}',

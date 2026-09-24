@@ -8,9 +8,11 @@ import { pathToFileURL } from 'url'
 import { Ipc, type AppInfo, type LayoutMeta, type PtyCreateOptions } from '../shared/ipc'
 import { t } from '../shared/i18n'
 import type { HostKeyAction, SessionOpenOptions, SshConnection, SshConnectionInput } from '../shared/connections'
+import { devRendererUrl } from './devEnv'
 import { getLayout, listLayouts, saveLayout, deleteLayout } from './layouts'
 import { startPolling, stopPolling } from './sysinfo'
 import { registerSettingsIpc } from './settingsStore'
+import { registerLockIpc } from './lockController'
 import { registerSessionStateIpc } from './sessionState'
 import { normalizeReportedCwd, resolveCwd } from './cwd'
 import { ConnectionsStore, defaultConnectionsPath } from './connectionsStore'
@@ -41,15 +43,17 @@ const RENDERER_FILE = join(__dirname, '../renderer/index.html')
 
 /**
  * True only for a document the app itself loaded: the bundled renderer file, or
- * in dev anything served by the vite dev server. Used both to refuse a
- * navigation away from the app page and to refuse IPC from a frame that is not
- * it — a window that navigated elsewhere would still hold this preload bridge,
- * which is the whole main-process API (`createPty` included).
+ * in dev anything served by the vite dev server (ELECTRON_RENDERER_URL is read
+ * in dev builds only — a packaged build always trusts the production file URL,
+ * never a remote origin). Used both to refuse a navigation away from the app
+ * page and to refuse IPC from a frame that is not it — a window that navigated
+ * elsewhere would still hold this preload bridge, which is the whole
+ * main-process API (`createPty` included).
  */
 export function isTrustedRendererUrl(raw: string): boolean {
-  const devUrl = process.env['ELECTRON_RENDERER_URL']
   try {
     const target = new URL(raw)
+    const devUrl = devRendererUrl()
     if (devUrl) return target.origin === new URL(devUrl).origin
     return target.protocol === 'file:' && target.pathname === pathToFileURL(RENDERER_FILE).pathname
   } catch {
@@ -240,6 +244,8 @@ export function registerIpc(): void {
 
   registerSettingsIpc()
   registerSessionStateIpc()
+  // ---- lock screen (main owns the state; the renderer only draws the overlay) ----
+  registerLockIpc()
 
   // Resolve a cd-style argument against the current cwd (platform-aware; only
   // the main process has node's `path`).

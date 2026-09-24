@@ -17,6 +17,7 @@ const main: Record<string, string> = {
 
   'main.ssh.connectTimeout': '連線逾時 ({host}:{port})',
   'main.ssh.saveFingerprintFailed': '儲存主機指紋失敗: {detail}',
+  'main.ssh.knownHostsUnreadable': '已知主機檔案 (ssh_known_hosts.json) 存在但無法讀取，為避免覆寫已儲存的指紋，本次連線被拒絕。請修復或刪除該檔案後重試。',
   'main.ssh.hostKeyRejected': '使用者拒絕了主機指紋',
   'main.ssh.connectFailed': '連線失敗 {host}:{port}: {detail}',
   'main.ssh.shellOpenFailed': '無法開啟 SSH shell ({host}:{port}): {detail}',

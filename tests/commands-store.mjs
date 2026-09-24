@@ -10,8 +10,8 @@
  *        --alias:@shared=./src/shared
  * Run:   node tests/commands-store.mjs   (must exit 0)
  */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { basename, join, resolve, sep } from 'path'
 import { tmpdir } from 'os'
 import { createRequire } from 'module'
 const require_ = createRequire(import.meta.url)
@@ -39,7 +39,13 @@ let commandsMod
 try {
   commandsMod = require_('./.commands-store.cjs')
 } catch {
-  fail('bundle not found — run: npx esbuild src/main/commands.ts --bundle --platform=node --format=cjs --outfile=tests/.commands-store.cjs --alias:electron=./tests/electron-stub.cjs --alias:@shared=./src/shared')
+  fail('bundle not found — run: node tests/build-bundles.cjs (or the esbuild line in the header)')
+}
+let knownHostsMod
+try {
+  knownHostsMod = require_('./.known-hosts.cjs')
+} catch {
+  fail('bundle not found — run: node tests/build-bundles.cjs (builds tests/.known-hosts.cjs)')
 }
 
 // ---- 2. Store over the temp userData; capture openDir target -------------------
@@ -227,8 +233,105 @@ const expected =
   'partial-tail'
 ok(readFileSync(startB.file, 'utf8') === expected, 'burst writes + stop tail land in order')
 
-// The store wrote into a temp userData dir; drop it so repeated runs do not
-// litter %TEMP%.
+// ---- 7. index.json path containment (hydrateIndex) -----------------------------
+// index.json is data, not trust: a tampered `file` value must never turn
+// logWrite into an arbitrary-path append. Only entries that resolve inside
+// logsDir and point at a regular file may hydrate.
+const logsDir = join(userData, 'logs')
+mkdirSync(join(logsDir, 'subdir'), { recursive: true })
+const escapeFile = join(userData, 'escaped.log')
+const fwdSlashEntry = `${userData.split(sep).join('/')}/logs/${basename(start.file)}`
+const driveCaseEntry =
+  process.platform === 'win32'
+    ? start.file.replace(/^[A-Z]:/, (m) => m.toLowerCase())
+    : start.file
+writeFileSync(
+  join(logsDir, 'index.json'),
+  JSON.stringify([
+    { sessionId: 'escape-abs', file: escapeFile, startedAt: 1 },            // outside logsDir
+    { sessionId: 'escape-dotdot', file: join(logsDir, '..', 'escaped2.log'), startedAt: 2 },
+    { sessionId: 'escape-dir', file: join(logsDir, 'subdir'), startedAt: 3 }, // not a regular file
+    { sessionId: 'ok-legit', file: start.file, startedAt: 4, endedAt: 5 },   // real hydrated log
+    { sessionId: 'ok-fwdslash', file: fwdSlashEntry, startedAt: 6, endedAt: 7 }, // same file, '/' separators
+    { sessionId: 'ok-drivecase', file: driveCaseEntry, startedAt: 8, endedAt: 9 } // same file, 'C:' recased
+  ]),
+  'utf8'
+)
+const store3 = new commandsMod.CommandsStore(userData)
+let hydrated = store3.listSessionLogs()
+const ids = hydrated.map((m) => m.sessionId).sort()
+ok(!ids.includes('escape-abs'), 'absolute path outside logsDir is dropped')
+ok(!ids.includes('escape-dotdot'), '`..` escape out of logsDir is dropped')
+ok(!ids.includes('escape-dir'), 'entry pointing at a directory is dropped')
+ok(ids.includes('ok-legit') && ids.includes('ok-fwdslash'), 'legit entry survives, also spelled with / separators')
+if (process.platform === 'win32') {
+  ok(ids.includes('ok-drivecase'), 'drive-letter case does not break containment')
+}
+// The dropped entries must not come back either: a later index persist only
+// ever writes the contained subset.
+store3.logStart('persist-1')
+const persisted = JSON.parse(readFileSync(join(logsDir, 'index.json'), 'utf8'))
+ok(
+  !persisted.some((m) => resolve(m.file) === resolve(escapeFile)) &&
+    !persisted.some((m) => resolve(m.file) === resolve(join(userData, 'escaped2.log'))),
+  're-persisted index keeps out-of-logsDir entries out'
+)
+ok(
+  !existsSync(escapeFile) && !existsSync(join(userData, 'escaped2.log')),
+  'no log file was created outside logsDir'
+)
+
+// ---- 8. KnownHostsStore: TOFU, change detect, unreadable fail-closed -----------
+const khDir = mkdtempSync(join(tmpdir(), 'm5-kh-'))
+const khFile = join(khDir, 'ssh_known_hosts.json')
+const kh = new knownHostsMod.KnownHostsStore(khFile)
+const keyA = Buffer.from('host-key-a')
+const keyB = Buffer.from('host-key-b')
+const fpA = knownHostsMod.fingerprintOf(keyA)
+const fpB = knownHostsMod.fingerprintOf(keyB)
+
+ok(kh.check('h1', 22, keyA).status === 'new', 'knownHosts: missing file is TOFU new')
+kh.accept('h1', 22, keyA, fpA)
+ok(kh.check('h1', 22, keyA).status === 'match', 'knownHosts: accepted key matches')
+const changed = kh.check('h1', 22, keyB)
+ok(changed.status === 'changed' && changed.stored.fingerprint === fpA, 'knownHosts: other key reports changed + stored fingerprint')
+
+// Truncated JSON: the file exists but cannot be trusted.
+writeFileSync(khFile, '{"version":1,"entries":[{"id":"x"', 'utf8')
+ok(kh.check('h1', 22, keyB).status === 'unreadable', 'knownHosts: corrupt store checks as unreadable, never new')
+let threw = false
+try {
+  kh.accept('h1', 22, keyB, fpB)
+} catch {
+  threw = true
+}
+ok(threw, 'knownHosts: accept refuses to overwrite an unreadable store')
+
+// Valid JSON but not the store shape counts as unreadable too.
+writeFileSync(khFile, '{"nope":true}', 'utf8')
+ok(kh.check('h1', 22, keyA).status === 'unreadable', 'knownHosts: shapeless JSON checks as unreadable')
+
+// A directory at the store path (EISDIR) is unreadable, not "no pins yet".
+writeFileSync(
+  khFile,
+  JSON.stringify({ version: 1, entries: [{ id: 'x', host: 'h1', port: 22, keyBase64: keyA.toString('base64'), fingerprint: fpA, addedAt: 1 }] })
+)
+rmSync(khFile)
+mkdirSync(khFile)
+ok(kh.check('h1', 22, keyA).status === 'unreadable', 'knownHosts: a directory at the store path is unreadable, not new')
+rmSync(khFile, { recursive: true, force: true })
+
+// Restore the good store: a transient unreadable episode lost nothing.
+writeFileSync(
+  khFile,
+  JSON.stringify({ version: 1, entries: [{ id: 'x', host: 'h1', port: 22, keyBase64: keyA.toString('base64'), fingerprint: fpA, addedAt: 1 }] })
+)
+ok(kh.check('h1', 22, keyA).status === 'match', 'knownHosts: pins survive an unreadable episode')
+kh.accept('h1', 22, keyB, fpB)
+ok(kh.check('h1', 22, keyB).status === 'match', 'knownHosts: accept works again once the store is readable')
+rmSync(khDir, { recursive: true, force: true })
+
+// All stores wrote into temp dirs; drop them so repeated runs do not litter.
 rmSync(userData, { recursive: true, force: true })
 
 console.log('\n[commands] ALL CHECKS PASSED')

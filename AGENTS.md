@@ -7,8 +7,9 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 开发：`npm run dev`（主进程改动不热重建，需重启）
 - dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
-- 测试：`npm test`（先 `node tests/build-bundles.cjs` 重建 esbuild bundle，再依次跑可离线运行的 7 个测试；真实服务器测试需 JD_* 凭据，不在此列）
-- 打包：`npm run dist`，产物在 `release/`（msi + exe + latest.yml + blockmap）
+- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 10 个测试：ssh-loopback、commands-store、settings-store、lock-store、lock-controller、hl-split-smoke、hl-rules、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 10 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次），产物在 `release/`（msi + exe + latest.yml + blockmap）
+  - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 
 ## 仓库与远程
@@ -51,6 +52,19 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 - `TerminalView.scheduleFit`：fit 后**去抖 100ms** 再把 cols/rows 发给 PTY，并跳过与上次相同的尺寸。每次 ResizeObserver 都戳 PTY 会让全屏 TUI（Claude Code 等）在最大化/还原的中间尺寸上反复重绘，留下重复帧
 - 拖动窗口期间 xterm 网格立即更新，PTY 尺寸在停止后 100ms 生效
+
+## 锁屏
+
+- 只使用**主窗口内的不透明遮罩**（`src/renderer/src/lock/LockScreen.tsx` + `lock.css` 的 `.lock-screen`，z-index 4000），**不创建第二个 Electron 窗口**。锁定时 `App.tsx` 把 `.app-root` 设为 `inert` 并**保持挂载**——卸载会杀掉遮罩后面的本地/SSH 会话与传输列表；antd portal（Modal/Dropdown/Tooltip）挂在 `document.body` 上、不在 `#root` 内，锁定时**要把 body 下 `#root` 以外的子节点也设为 `inert`**，否则键盘 Tab 仍能走进遮罩后面的浮层
+- 密码 verifier 在 `<userData>/lock.json`（`src/main/lockStore.ts` 的 `LockStore`）：scrypt(N=16384,r=8,p=1) + 每次写入重新生成的 16 字节 salt + `timingSafeEqual`，**不存明文**；缺 `version: 1`、salt/hash 尺寸不符一律当「未配置」（宁失效也不崩启动路径），但 `version` 不认识会**每进程 warn 一次**——将来改格式不许静默失锁
+- 锁状态由主进程独占（`src/main/lockController.ts`）：`LockSettingsState` 只有 configured/enabled/autoLockMinutes/lockAtStartup/locked/cooldownMs，**salt/hash/密码永不出主进程**，渲染层从不自行判定锁定
+- 锁标志落盘在 `<userData>/lock-state.json`（`LockStateStore`），**locked/failures/cooldownUntil 每次变化立即写**，所以托盘退出、任务管理器强杀、崩溃后重启仍然是锁的——`lockAtStartup` 只是额外一层。没有 verifier 时启动会删掉该文件；从磁盘恢复的 `cooldownUntil` 夹紧到 `now+30s`，防系统时间回拨导致永久锁死
+- 冷却阶梯 1s→2s→5s→10s→30s，失败计数与冷却同样落盘；`setPassword`/`clearPassword`/`unlock` 走内部串行队列（`serialize`），否则并发调用会同时通过闸门绕过冷却
+- 闲置锁屏：`powerMonitor.getSystemIdleTime()`，15s 轮询；读不到（无会话/工作站已锁）一律当「不闲置」。`settings.lock.autoLockMinutes` 是白名单 `{0,1,5,15,30,60}`（`src/shared/settings.ts` 的 `LOCK_AUTO_DELAYS`），0 = 从不
+- **清除密码会一并把 `settings.lock.enabled`/`lockAtStartup` 置 false**（`LockControllerOptions.clearLockPreferences`，默认走 `mutateSettings`）：设置页文案承诺「清除后锁屏会一并关闭」，留着会让用户下次设密码时被静默重新武装
+- 锁屏期间主进程在 `win.webContents.on('before-input-event')` 里吞掉 F5/Ctrl+R、Ctrl+±0（含 Shift 拼写）、Ctrl+Shift+I/J/C：遮罩是 DOM 层，拦不住浏览器进程处理的 Electron 默认菜单加速键，而重载会触发 `beforeunload` 把遮罩后面的会话全杀掉。渲染层另有一道 `document.documentElement.dataset.locked` 守卫（字体快捷键、`Ctrl+PgUp/PgDn`）
+- 启动时**不要**用 `locked: true` 作渲染层初值再直接画锁屏：`App.tsx` 用 `null` 表示「主进程还没答复」，此时只画 `.lock-screen-boot` 纯色层，否则每次启动都会给没设密码的用户闪一帧锁屏。`getLockState()` 失败时要落到「locked 且未配置」的状态，让输入框可达（主进程对无 verifier 的解锁请求直接放行）
+- 相关测试：`node tests/lock-store.mjs`（verifier + 状态存储）、`node tests/lock-controller.mjs`（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）
 
 ## 关键词高亮
 

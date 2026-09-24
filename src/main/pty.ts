@@ -8,7 +8,7 @@ import type { SessionOpenOptions, HostKeyPromptEvent, SshConnection } from '../s
 import { broadcast } from './broadcast'
 import { connectSsh, type SshSessionHandle } from './ssh'
 import type { HostKeyCheckResult } from './knownHosts'
-import { configureSysinfo, registerSysinfoClient, stopPolling } from './sysinfo'
+import { configureSysinfo, registerSysinfoClient, forceStopPolling } from './sysinfo'
 import { registerSftpClientProvider, closeSftp } from './sftp'
 import { attachZmodem, detachZmodem, feedZmodem, isZmodemActive } from './zmodem'
 import { pickAdapter } from './shellIntegration'
@@ -17,7 +17,7 @@ import { statSync } from 'fs'
 
 // Re-export so the session-layer loopback bundle (tests/*-e2e.mjs) can drive the
 // M3 polling engine without importing src/main/sysinfo.ts separately.
-export { startPolling, stopPolling } from './sysinfo'
+export { startPolling, stopPolling, forceStopPolling } from './sysinfo'
 
 /**
  * M5 command-store / log-service hooks (injected once by ipc.ts). Mirrors the
@@ -308,16 +308,40 @@ export async function openSession(opts: SessionOpenOptions, owner?: number): Pro
     if (typeof code === 'number') handle.exitCode = code
   })
 
-  handle.stream.on('close', () => {
+  // One teardown for both terminal events. ssh2 emits 'close' after an 'error'
+  // (and killSession closes the stream directly), so the path must be
+  // idempotent: the flag guarantees PTY_EXIT is broadcast exactly once and the
+  // polling / SFTP / ZMODEM / log cleanups run at most once per session.
+  let sshClosed = false
+  const teardownSshStream = (exitCode: number): void => {
+    if (sshClosed) return
+    sshClosed = true
     try {
-      stopPolling(handle.id)
+      // Session is gone: no shared poll may survive any remaining panel refs.
+      forceStopPolling(handle.id)
       closeSftp(handle.id)
       detachZmodem(handle.id)
       safeStopLog(handle.id)
       sessions.delete(handle.id)
       replayBuffers.delete(handle.id)
       sshDecoders.delete(handle.id)
-      deps.broadcast(Ipc.PTY_EXIT, { id: handle.id, exitCode: handle.exitCode })
+      deps.broadcast(Ipc.PTY_EXIT, { id: handle.id, exitCode })
+    } catch {
+      // never crash the event loop
+    }
+  }
+
+  handle.stream.on('close', () => {
+    teardownSshStream(handle.exitCode)
+  })
+
+  handle.stream.on('error', (err: Error) => {
+    // 'close' follows an 'error', but rely on the idempotent teardown instead
+    // of waiting for it: a dead stream must release its session slot at once.
+    try {
+      console.warn(`[pty] ssh stream error (${handle.id}): ${err.message}`)
+      if (handle.exitCode === 0) handle.exitCode = 1
+      teardownSshStream(handle.exitCode)
     } catch {
       // never crash the event loop
     }
@@ -353,7 +377,9 @@ export function resizePty(id: string, cols: number, rows: number): void {
 }
 
 function killSession(id: string): void {
-  stopPolling(id)
+  // Forced: the session is being destroyed, so the shared poll must stop even
+  // if split panels still hold references.
+  forceStopPolling(id)
   closeSftp(id)
   detachZmodem(id)
   safeStopLog(id)
@@ -398,7 +424,7 @@ export function killPtysByOwner(owner: number): void {
 
 export function killAllPtys(): void {
   for (const id of sessions.keys()) {
-    stopPolling(id)
+    forceStopPolling(id)
     closeSftp(id)
     detachZmodem(id)
     safeStopLog(id)

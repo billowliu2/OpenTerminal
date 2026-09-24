@@ -75,16 +75,29 @@ interface PollState {
   prevAt: number
   metaSent: boolean
   timer: NodeJS.Timeout
+  /**
+   * Live renderer subscriptions on this poll. Two MonitorPanels can share one
+   * sessionId (split view); each start/stop pair adjusts the count and only a
+   * count of zero (or a forced stop) tears the poll down.
+   */
+  refs: number
 }
 
 const polls = new Map<string, PollState>()
 
 /**
- * Start polling a session. Calling again for the same id stops the previous
- * poll first (re-entrancy safe).
+ * Start polling a session on behalf of one renderer subscriber.
+ *
+ * The first call creates the poll; further calls for an already-polling id
+ * only bump the reference count (the existing interval keeps running) so a
+ * second panel joining a split view cannot restart or reset the shared poll.
  */
 export function startPolling(id: string, intervalMs = 3000): void {
-  stopPolling(id)
+  const existing = polls.get(id)
+  if (existing) {
+    existing.refs += 1
+    return
+  }
   const state: PollState = {
     id,
     intervalMs,
@@ -94,13 +107,34 @@ export function startPolling(id: string, intervalMs = 3000): void {
     lastSample: undefined,
     prevAt: 0,
     metaSent: false,
+    refs: 1,
     timer: setTimeout(() => pollOnce(id, state), 0)
   }
   polls.set(id, state)
 }
 
-/** Stop polling a session (no-op when not polling). Also run on session close. */
+/**
+ * Drop one renderer subscription. The poll itself stops only when the last
+ * reference is gone — any other panel sharing the sessionId keeps it alive.
+ * No-op when nothing is polling (e.g. after a forced stop).
+ */
 export function stopPolling(id: string): void {
+  const state = polls.get(id)
+  if (!state) return
+  state.refs -= 1
+  if (state.refs <= 0) haltPolling(id)
+}
+
+/**
+ * Stop unconditionally, discarding the reference count. For session
+ * close/kill: after the underlying ssh client is gone nothing must keep
+ * polling, regardless of how many panels still hold references.
+ */
+export function forceStopPolling(id: string): void {
+  haltPolling(id)
+}
+
+function haltPolling(id: string): void {
   const state = polls.get(id)
   if (!state) return
   state.stopped = true
@@ -199,7 +233,10 @@ function handleError(id: string, state: PollState, message: string): void {
 
   if (state.consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
     console.warn(`[sysinfo] session ${id} failed ${state.consecutiveFails} polls, stopping`)
-    stopPolling(id)
+    // Engine-side decision: halt the poll outright (not a refcount decrement —
+    // that would leave sibling panels pointing at a dead loop with no timer).
+    // A later renderer stop is then a no-op and a fresh start can re-create it.
+    forceStopPolling(id)
     return
   }
   armNext(id, state)

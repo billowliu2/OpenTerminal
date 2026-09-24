@@ -10,6 +10,7 @@ import type {
 } from './ipc'
 import type { AppSettings } from './settings'
 import type { ReleaseNote, UpdateState } from './ipc'
+import type { LockOperationResult, LockPasswordInput, LockSettingsState } from './ipc'
 import type {
   HostKeyAction,
   HostKeyPromptEvent,
@@ -99,6 +100,17 @@ export interface AppApi {
   getSettings(): Promise<AppSettings>
   saveSettings(next: Partial<AppSettings>): Promise<AppSettings>
   onSettingsChanged(cb: (s: AppSettings) => void): () => void
+
+  // ---- lock screen (main-window overlay; main owns the lock state) ----
+  getLockState(): Promise<LockSettingsState>
+  /** set or replace the password; verifies currentPassword when one exists */
+  setLockPassword(input: LockPasswordInput): Promise<LockOperationResult>
+  /** remove the password; verifies currentPassword when one exists */
+  clearLockPassword(input: { currentPassword?: string }): Promise<LockOperationResult>
+  /** answer the lock screen; resets the failure cooldown on success */
+  unlockLock(input: { password?: string }): Promise<LockOperationResult>
+  lockNow(): Promise<LockSettingsState>
+  onLockStateChanged(cb: (state: LockSettingsState) => void): () => void
 
   // ---- fonts ----
   listFonts(): Promise<string[]>
