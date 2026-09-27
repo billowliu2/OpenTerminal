@@ -31,6 +31,8 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
   const [name, setName] = useState('')
   const [command, setCommand] = useState('')
   const [note, setNote] = useState('')
+  /** Save failure surfaced inside the dialog instead of an unhandled rejection. */
+  const [saveError, setSaveError] = useState('')
   /** M6.1: current workspace group — the command panel's 发送目标 belongs to it. */
   const workspaceMode = useWorkspaceModeStore((s) => s.mode)
 
@@ -68,20 +70,28 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
     setName('')
     setCommand('')
     setNote('')
+    setSaveError('')
     setAddOpen(true)
   }, [])
 
   const handleSave = useCallback(async (): Promise<void> => {
     const trimmed = command.trim()
     if (!trimmed) return
-    await window.api.saveLibraryItem({
-      id: window.crypto.randomUUID(),
-      name: name.trim() || undefined,
-      command: trimmed,
-      note: note.trim() || undefined,
-      createdAt: Date.now(),
-      lastUsedAt: Date.now()
-    })
+    try {
+      await window.api.saveLibraryItem({
+        id: window.crypto.randomUUID(),
+        name: name.trim() || undefined,
+        command: trimmed,
+        note: note.trim() || undefined,
+        createdAt: Date.now(),
+        lastUsedAt: Date.now()
+      })
+    } catch (err) {
+      // Keep the dialog open with the typed values; a silent no-op would look
+      // like the save button doing nothing.
+      setSaveError((err as Error)?.message || t('common.saveFailed'))
+      return
+    }
     setAddOpen(false)
     refresh()
   }, [name, command, note, refresh])
@@ -182,6 +192,7 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
         className="commands-modal"
       >
         <div className="commands-form">
+          {saveError && <div className="commands-save-error">{saveError}</div>}
           <label className="commands-field">
             <span className="commands-field-label">{t('panels.commands.name')}</span>
             <input

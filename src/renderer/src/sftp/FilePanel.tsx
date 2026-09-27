@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpOutlined,
   CopyOutlined,
@@ -332,19 +332,32 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
   /** the entry the context menu is operating on (selected when right-clicked) */
   const menuTarget = menuEntry ?? selected
 
+  /** Monotonic token: only the most recently issued listing may paint state. */
+  const refreshSeqRef = useRef(0)
+  /** Mirrors `dir` for callbacks created before a navigation (upload finish). */
+  const dirRef = useRef(dir)
+
   const refresh = useCallback(
     async (target: string): Promise<void> => {
+      const seq = ++refreshSeqRef.current
       setLoading(true)
       setError('')
       try {
         const list = await window.api.listRemote(sessionId, target)
+        // A slower earlier listing (breadcrumb click racing a double-click) must
+        // never overwrite a newer one; only the latest request may paint.
+        if (seq !== refreshSeqRef.current) return
+        dirRef.current = target
         setEntries(list)
         setDir(target)
         setSelected(null)
       } catch (err) {
+        if (seq !== refreshSeqRef.current) return
         setError((err as Error).message)
       } finally {
-        setLoading(false)
+        // The spinner belongs to the latest request; a stale one completing
+        // first must not hide it while the latest is still in flight.
+        if (seq === refreshSeqRef.current) setLoading(false)
       }
     },
     [sessionId]
@@ -377,7 +390,9 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
       if (settled) return
       settled = true
       off()
-      void refresh(dir)
+      // `dir` here is the directory the upload was started from; if the user
+      // has navigated away since, refreshing it would yank the panel back.
+      if (dirRef.current === dir) void refresh(dir)
     }
     const off = window.api.onTransferProgress((e: TransferProgressEvent) => {
       if (e.state !== 'done' && e.state !== 'error' && e.state !== 'cancelled') return
@@ -604,8 +619,10 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
         }
       }
     }
+    // `entries` is read by doUpload's overwrite check — a stale snapshot could
+    // skip the "file exists" confirmation that protects main's truncating 'w'.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuTarget, dir, refresh, language])
+  }, [menuTarget, dir, entries, refresh, language])
 
   return (
     <div className="sftp-panel">

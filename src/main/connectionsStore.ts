@@ -20,6 +20,41 @@ import { writeJson } from './store'
 const ENC_SUFFIX = '_enc'
 const PLAIN_PREFIX = 'plain:'
 const SECRET_KEYS = ['password', 'keyContent', 'passphrase'] as const
+const AUTH_METHODS: ReadonlySet<string> = new Set(['password', 'privateKey', 'agent'])
+
+/**
+ * Runtime coercion for renderer-supplied connection fields. saveConnection
+ * copies input values verbatim, and they flow straight into ssh2's
+ * ConnectConfig (port, keepalive) — a malformed save or a renderer regression
+ * must not persist `port: "22"` or a NaN-bound keepalive. Repair over drop,
+ * like every other store: strings stay strings, numbers are range-checked,
+ * unknown auth falls back to password, optional fields collapse to undefined.
+ */
+function coerceConnectionInput(input: SshConnectionInput): SshConnectionInput {
+  const out = { ...input } as Record<string, unknown>
+  out.name = typeof input.name === 'string' ? input.name : ''
+  out.group = typeof input.group === 'string' && input.group !== '' ? input.group : undefined
+  out.host = typeof input.host === 'string' ? input.host.trim() : ''
+  out.username = typeof input.username === 'string' ? input.username : ''
+  const port = Number(input.port)
+  out.port = Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 22
+  out.auth = AUTH_METHODS.has(input.auth as string) ? input.auth : 'password'
+  out.askPasswordAtConnect = input.askPasswordAtConnect === true
+  out.askPassphraseAtConnect = input.askPassphraseAtConnect === true
+  out.keyPath =
+    typeof input.keyPath === 'string' && input.keyPath !== '' ? input.keyPath : undefined
+  const keepalive = Number(input.keepaliveIntervalSec)
+  out.keepaliveIntervalSec =
+    Number.isFinite(keepalive) && keepalive >= 0 ? Math.round(keepalive) : 0
+  out.highlightProfileId =
+    typeof input.highlightProfileId === 'string' && input.highlightProfileId !== ''
+      ? input.highlightProfileId
+      : undefined
+  for (const key of SECRET_KEYS) {
+    if (out[key] !== undefined && typeof out[key] !== 'string') out[key] = undefined
+  }
+  return out as unknown as SshConnectionInput
+}
 
 /** Internal persisted record: public fields + encrypted secret fields. */
 interface StoredConnection {
@@ -150,7 +185,8 @@ export class ConnectionsStore {
     return stored ? decrypt(stored[encField] as string | undefined) : undefined
   }
 
-  saveConnection(input: SshConnectionInput): SshConnection {
+  saveConnection(rawInput: SshConnectionInput): SshConnection {
+    const input = coerceConnectionInput(rawInput)
     const list = this.load()
     let stored: StoredConnection | undefined
 

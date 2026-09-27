@@ -1,5 +1,5 @@
 import { app, ipcMain, powerSaveBlocker } from 'electron'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { Ipc } from '../shared/ipc'
 import {
@@ -435,13 +435,36 @@ function reportWarnings(warnings: string[]): void {
   }
 }
 
+/**
+ * A file that exists but cannot be parsed must never be silently destroyed:
+ * loadSettings falls back to defaults, and the next mutation (any settings save,
+ * even the tray persisting its close action) would rewrite settings.json from
+ * those defaults — taking the user's custom themes and highlight rules with it.
+ * Keep a one-time copy the user can recover from before that can happen.
+ */
+function backupUnparseableSettings(err: unknown): void {
+  try {
+    const file = settingsPath()
+    if (!existsSync(file)) return
+    const bak = `${file}.bak`
+    if (existsSync(bak)) return // keep the first backup; later loads must not clobber it
+    copyFileSync(file, bak)
+    reportWarnings([
+      `settings.json unparseable (${err instanceof Error ? err.message : String(err)}) — original kept at settings.json.bak`
+    ])
+  } catch {
+    // best effort: the backup must never break settings loading
+  }
+}
+
 export function loadSettings(): AppSettings {
   try {
     const raw: unknown = JSON.parse(readFileSync(settingsPath(), 'utf8'))
     const { settings, errors } = deepMerge(raw)
     reportWarnings(errors)
     return settings
-  } catch {
+  } catch (err) {
+    backupUnparseableSettings(err)
     return {
       terminal: { ...DEFAULT_SETTINGS.terminal },
       customThemes: [...DEFAULT_SETTINGS.customThemes],

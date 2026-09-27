@@ -33,10 +33,15 @@ const sync = ({ notes, changelog, header, required }) => {
 
   const body = fs
     .readFileSync(notesPath, 'utf8')
-    // Drop the notes' own title / `## vX` heading: the section heading is built
-    // here so every changelog stays uniform (`## vX.Y.Z - date`).
-    .replace(/^#.*\n/gm, '')
-    .replace(new RegExp(`^## v${pkgVersion}.*\\n`), '')
+    // Normalize newlines first: a CRLF notes file would otherwise keep its `\r`
+    // in every line, and the join below re-adds the changelog's ending on top —
+    // every line of the merged section rendering as `\r\r\n` (doubled blanks).
+    .replace(/\r\n/g, '\n')
+    // Drop only the notes' own title and the `## v<pkgVersion>` heading: the
+    // section heading is built here so every changelog stays uniform
+    // (`## vX.Y.Z - date`). Stripping every `#`-line (the old behaviour) also
+    // removed `###` subheadings, merging 新功能/修复 groups into one flat list.
+    .replace(new RegExp(`^# .*\\n|^## v${pkgVersion}.*\\n`, 'gm'), '')
     .replace(/^\s+/, '')
     .trimEnd()
 

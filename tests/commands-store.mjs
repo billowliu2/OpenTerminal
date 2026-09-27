@@ -144,10 +144,13 @@ writeSettings({ historyLimit: 50, historyEnabled: true })
 store.recordCommand('recorded-again')
 ok(store.listHistory()[0].command === 'recorded-again', 'historyEnabled=true resumes recording')
 
-// Default (keys absent from settings.json) records, matching a fresh install.
-writeSettings({})
-store.recordCommand('default-on')
-ok(store.listHistory()[0].command === 'default-on', 'absent switch defaults to recording')
+// Default (key absent from settings.json): the shipped default is recording OFF
+// (DEFAULT_SETTINGS.terminal.historyEnabled = false, gate is `=== true`), and a
+// fresh install has no key at all. The writeSettings helper always injects
+// `historyEnabled: true`, so the absence case writes the file directly.
+writeFileSync(join(userData, 'settings.json'), JSON.stringify({ terminal: {}, system: {} }), 'utf8')
+store.recordCommand('default-off')
+ok(!store.listHistory().some((h) => h.command === 'default-off'), 'absent switch defaults to NOT recording (shipped default)')
 store.clearHistory()
 
 // ---- 4. Library CRUD + ordering ------------------------------------------------

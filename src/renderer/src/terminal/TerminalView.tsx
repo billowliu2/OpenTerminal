@@ -39,16 +39,24 @@ function toFontWeight(n: number): 'normal' | 'bold' | number {
 
 /**
  * Paste-risk heuristic, split by shape rather than by raw length:
+ *   - a paste ending in a newline always confirms — the trailing \r is the
+ *     shell's run keystroke, so it executes before the user can review it;
  *   - two or more lines always confirm — a stray newline executes a command
  *     the user never reviewed;
- *   - a single line pastes straight through, unless it is unusually long
- *     (those are pasted scripts rather than something typed by hand).
+ *   - a single line without a trailing newline pastes straight through, unless
+ *     it is unusually long (those are pasted scripts rather than something
+ *     typed by hand).
  */
 const SINGLE_LINE_CONFIRM_LENGTH = 1000
 function needsPasteConfirm(text: string): boolean {
-  const normalized = text.replace(/\r\n?/g, '\n').replace(/\n$/, '')
-  if (normalized.includes('\n')) return true
-  return normalized.length > SINGLE_LINE_CONFIRM_LENGTH
+  const normalized = text.replace(/\r\n?/g, '\n')
+  // Decided on the raw shape: stripping the trailing newline first would let
+  // the most common copy shape (`curl … | sh\n`, one line + newline from a
+  // doc) straight through to immediate execution.
+  if (normalized.endsWith('\n')) return true
+  const trimmed = normalized.replace(/\n$/, '')
+  if (trimmed.includes('\n')) return true
+  return trimmed.length > SINGLE_LINE_CONFIRM_LENGTH
 }
 
 /**

@@ -138,6 +138,14 @@
   gap: 12px;
 }
 
+/* IPC/store failure during save: shown inside the dialog (in the app's danger
+   colour) so a failed save is visible instead of a silent no-op. */
+.commands-save-error {
+  color: #f85149;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .commands-field {
   display: flex;
   flex-direction: column;

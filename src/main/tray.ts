@@ -87,6 +87,9 @@ export function initTray(showOrCreate: () => void): void {
 }
 
 function hideToTray(win: BrowserWindow): void {
+  // A quit started while the close dialog was pending destroys the window
+  // before its resolution runs; touching a destroyed window throws.
+  if (win.isDestroyed()) return
   win.hide()
   if (process.platform === 'win32' && tray && !balloonShown) {
     balloonShown = true
@@ -126,6 +129,11 @@ export async function onMainWindowClose(win: BrowserWindow, e: Electron.Event, s
     checkboxChecked: false,
     noLink: true
   })
+  // The dialog resolves when the window is destroyed underneath it (tray exit
+  // or OS shutdown called app.quit() while it was open): the quit is already
+  // underway, so neither branch may run — and must not persist a choice the
+  // user never made.
+  if (win.isDestroyed()) return
   if (response === 0) {
     if (checkboxChecked) persistCloseAction('tray')
     hideToTray(win)

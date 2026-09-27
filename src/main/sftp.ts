@@ -65,6 +65,14 @@ const sftpCache = new Map<string, SFTPWrapper>()
  */
 class SessionGoneError extends Error {}
 
+/**
+ * Our own "operation failed for a non-transport reason" error (server-side
+ * failure summary, user cancellation). isTransportError rejects these outright:
+ * their messages are translated and can embed remote paths/output, so text
+ * matching would make the retry decision locale- and filename-dependent.
+ */
+class OperationError extends Error {}
+
 async function sftpOf(sessionId: string): Promise<SFTPWrapper> {
   const cached = sftpCache.get(sessionId)
   if (cached) return cached
@@ -100,9 +108,16 @@ function evictSftp(sessionId: string): void {
  * already exists) mean the CHANNEL IS ALIVE — retrying them would just open
  * another subsystem channel, which strict sshd (MaxSessions 2) punishes by
  * dropping the whole connection. Only transport-level death retries.
+ *
+ * Classification is class-based for our own errors (SessionGoneError /
+ * OperationError) and matches only the ssh2 library's own message strings for
+ * the rest: ssh2 is English-only and never translated, so the decision cannot
+ * drift with the UI locale (our translated messages arrive as OperationError
+ * and are rejected before any text is inspected).
  */
 function isTransportError(err: unknown): boolean {
   if (err instanceof SessionGoneError) return true
+  if (err instanceof OperationError) return false
   const msg = (err as Error | undefined)?.message ?? ''
   return /not connected|ECONNRESET|EPIPE|timed out|disconnected|channel|read past end|no response/i.test(msg)
 }
@@ -211,7 +226,7 @@ export function deleteRemote(sessionId: string, paths: string[]): Promise<void> 
       }
     }
     if (failures.length > 0) {
-      throw new Error(t('main.sftp.deleteFailed', { detail: failures.join('; ') }))
+      throw new OperationError(t('main.sftp.deleteFailed', { detail: failures.join('; ') }))
     }
   })
 }
@@ -329,7 +344,7 @@ export function uploadRemote(
               let pos = 0
               let lastEmit = 0
               for (;;) {
-                if (transfer.cancelled) throw new Error(t('main.sftp.cancelled'))
+                if (transfer.cancelled) throw new OperationError(t('main.sftp.cancelled'))
                 if (firstError) throw firstError
                 while (inflight.size >= UPLOAD_WINDOW) {
                   await Promise.race(inflight)
@@ -420,7 +435,7 @@ export function downloadRemote(
               let lastEmit = 0
               const buf = Buffer.alloc(CHUNK)
               for (;;) {
-                if (transfer.cancelled) throw new Error(t('main.sftp.cancelled'))
+                if (transfer.cancelled) throw new OperationError(t('main.sftp.cancelled'))
                 const { bytesRead } = await p<{ bytesRead: number; buffer: Buffer }>(cb =>
                   sftp.read(handle, buf, 0, CHUNK, pos, cb)
                 )

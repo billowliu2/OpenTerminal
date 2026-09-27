@@ -342,6 +342,11 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
         } catch {
           // never crash the event loop
         }
+        // Clear any previous offer timer first: a re-detect while an earlier
+        // offer is still pending overwrites engine.offerTimer, and the orphaned
+        // timer would fire at its original deadline and abort a legitimate
+        // pending offer ahead of its own timeout.
+        if (engine.offerTimer) clearTimeout(engine.offerTimer)
         engine.offerTimer = setTimeout(() => {
           if (engine.detection && !engine.confirmed) {
             abortWithoutSession(engine, t('main.zmodem.offerTimedOut'))

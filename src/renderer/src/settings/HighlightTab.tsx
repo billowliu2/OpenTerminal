@@ -233,7 +233,7 @@ export function HighlightTab(): React.JSX.Element {
               ...(color.bg ? { background: color.bg, borderRadius: 3, padding: '0 4px' } : {})
             }}
           >
-            Highlight
+            {t('settings.highlight.sampleText')}
           </span>
         )
     },

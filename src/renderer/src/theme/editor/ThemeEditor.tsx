@@ -30,23 +30,24 @@ const headerKeys = (): FieldSpec[] => [
   { key: 'selectionBackground', label: t('settings.color.selection') }
 ]
 
-const ANSI_KEYS: FieldSpec[] = [
-  { key: 'black', label: 'Black' },
-  { key: 'red', label: 'Red' },
-  { key: 'green', label: 'Green' },
-  { key: 'yellow', label: 'Yellow' },
-  { key: 'blue', label: 'Blue' },
-  { key: 'magenta', label: 'Magenta' },
-  { key: 'cyan', label: 'Cyan' },
-  { key: 'white', label: 'White' },
-  { key: 'brightBlack', label: 'Bright Black' },
-  { key: 'brightRed', label: 'Bright Red' },
-  { key: 'brightGreen', label: 'Bright Green' },
-  { key: 'brightYellow', label: 'Bright Yellow' },
-  { key: 'brightBlue', label: 'Bright Blue' },
-  { key: 'brightMagenta', label: 'Bright Magenta' },
-  { key: 'brightCyan', label: 'Bright Cyan' },
-  { key: 'brightWhite', label: 'Bright White' }
+/** Resolved per call (like headerKeys) so a language switch re-translates. */
+const ansiKeys = (): FieldSpec[] => [
+  { key: 'black', label: t('settings.color.ansi.black') },
+  { key: 'red', label: t('settings.color.ansi.red') },
+  { key: 'green', label: t('settings.color.ansi.green') },
+  { key: 'yellow', label: t('settings.color.ansi.yellow') },
+  { key: 'blue', label: t('settings.color.ansi.blue') },
+  { key: 'magenta', label: t('settings.color.ansi.magenta') },
+  { key: 'cyan', label: t('settings.color.ansi.cyan') },
+  { key: 'white', label: t('settings.color.ansi.white') },
+  { key: 'brightBlack', label: t('settings.color.ansi.brightBlack') },
+  { key: 'brightRed', label: t('settings.color.ansi.brightRed') },
+  { key: 'brightGreen', label: t('settings.color.ansi.brightGreen') },
+  { key: 'brightYellow', label: t('settings.color.ansi.brightYellow') },
+  { key: 'brightBlue', label: t('settings.color.ansi.brightBlue') },
+  { key: 'brightMagenta', label: t('settings.color.ansi.brightMagenta') },
+  { key: 'brightCyan', label: t('settings.color.ansi.brightCyan') },
+  { key: 'brightWhite', label: t('settings.color.ansi.brightWhite') }
 ]
 
 /** The native colour input only accepts #rrggbb: clamp every seeded value so a
@@ -164,7 +165,7 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
             <ColorField key={spec.key} spec={spec} value={colors[spec.key]} onChange={setColor} />
           ))}
           <div className="theme-editor-divider" />
-          {ANSI_KEYS.map((spec) => (
+          {ansiKeys().map((spec) => (
             <ColorField key={spec.key} spec={spec} value={colors[spec.key]} onChange={setColor} />
           ))}
         </div>

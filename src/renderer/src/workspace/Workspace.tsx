@@ -490,8 +490,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const cleanups = [
         api.onDidRemovePanel((panel: IDockviewPanel) => {
           // Closing a pane keeps its directory as the seed for the next one.
-          const closing = getSessionCwd(sessionIdOf(panel))
-          if (closing) lastLocalCwdRef.current = closing
+          // SSH panes are excluded: their tracked cwd is a *remote* path (OSC 7
+          // from the remote shell), and seeding a new local terminal with it
+          // would silently break "start where I left off".
+          if ((panel.params as TerminalParams | undefined)?.sessionKind !== 'ssh') {
+            const closing = getSessionCwd(sessionIdOf(panel))
+            if (closing) lastLocalCwdRef.current = closing
+          }
           releaseSession(panel)
           recomputeLocalPanels()
           recountAll()

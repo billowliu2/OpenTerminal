@@ -289,7 +289,7 @@ function Row({
       <div className="connections-row-main">
         <div className="connections-row-name">
           <span className="connections-row-label">{conn.name}</span>
-          <Tooltip title={conn.host === conn.host ? t('ssh.sidebar.dblClickConnect', { host: conn.host }) : undefined}>
+          <Tooltip title={t('ssh.sidebar.dblClickConnect', { host: conn.host })}>
             <AuthTags auth={conn.auth} />
           </Tooltip>
         </div>

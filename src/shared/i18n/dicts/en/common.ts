@@ -4,6 +4,7 @@ const common: Record<string, string> = {
   'common.cancel': 'Cancel',
   'common.close': 'Close',
   'common.save': 'Save',
+  'common.saveFailed': 'Save failed, please try again',
   'common.delete': 'Delete',
   'common.edit': 'Edit',
   'common.add': 'Add',

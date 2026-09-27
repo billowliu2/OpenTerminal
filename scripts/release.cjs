@@ -124,7 +124,12 @@ async function gitea() {
     }
   }
   const listed = await fetch(`${base}/releases/${rel.id}/assets`, { headers: auth })
-  const attached = new Set(listed.ok ? (await listed.json()).map((a) => a.name) : [])
+  // A failed listing must not read as "nothing attached": that would re-POST
+  // every already-uploaded installer and abort the run on the duplicate-name
+  // rejection, before the channel update could run. Fail loudly instead — a
+  // re-run then resumes correctly.
+  if (!listed.ok) throw new Error(`Gitea asset listing failed: HTTP ${listed.status}`)
+  const attached = new Set((await listed.json()).map((a) => a.name))
   for (const f of files) {
     const name = path.basename(f)
     if (attached.has(name)) { console.log(`  asset ${name}: already attached, skipped`); continue }
@@ -237,20 +242,41 @@ async function giteaChannel() {
 
 async function github() {
   console.log('=== GitHub release ===')
-  const resp = await fetch('https://api.github.com/repos/billowliu2/OpenTerminal/releases', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.GH_TOKEN}`,
-      'Content-Type': 'application/json',
-      'User-Agent': 'OpenTerminal',
-      Accept: 'application/vnd.github+json'
-    },
-    body: JSON.stringify({ tag_name: `v${V}`, name: `OpenTerminal v${V}`, body: notes, draft: false, prerelease: false }),
-    ...(proxyAgent ? { dispatcher: proxyAgent } : {})
-  })
-  if (!resp.ok) { throw new Error(`GitHub release create failed: ${resp.status} ${(await resp.text()).slice(0, 300)}`) }
-  const rel = await resp.json()
-  console.log('release created, id =', rel.id)
+  const api = 'https://api.github.com/repos/billowliu2/OpenTerminal'
+  const ghHeaders = {
+    Authorization: `Bearer ${env.GH_TOKEN}`,
+    'Content-Type': 'application/json',
+    'User-Agent': 'OpenTerminal',
+    Accept: 'application/vnd.github+json'
+  }
+  const gh = (url, init) =>
+    fetch(url, { ...init, headers: ghHeaders, ...(proxyAgent ? { dispatcher: proxyAgent } : {}) })
+  // Idempotent like gitea(): a re-run after a partial publish must reuse the
+  // release it created last time instead of dying on 422 already_exists and
+  // leaving GitHub permanently half-uploaded until someone deletes it by hand.
+  const byTag = (): Promise<Response> => gh(`${api}/releases/tags/v${V}`)
+  let resp = await byTag()
+  let rel
+  if (resp.ok) {
+    rel = await resp.json()
+    console.log('release already exists, reusing id =', rel.id)
+  } else {
+    resp = await gh(`${api}/releases`, {
+      method: 'POST',
+      body: JSON.stringify({ tag_name: `v${V}`, name: `OpenTerminal v${V}`, body: notes, draft: false, prerelease: false })
+    })
+    if (resp.ok) {
+      rel = await resp.json()
+      console.log('release created, id =', rel.id)
+    } else {
+      const detail = (await resp.text()).slice(0, 300)
+      // 422 already_exists = the tag carries a release from an earlier partial run.
+      const again = resp.status === 422 ? await byTag() : undefined
+      if (!again || !again.ok) throw new Error(`GitHub release create failed: ${resp.status} ${detail}`)
+      rel = await again.json()
+      console.log('release already exists, reusing id =', rel.id)
+    }
+  }
   const up = `https://uploads.github.com/repos/billowliu2/OpenTerminal/releases/${rel.id}/assets`
   for (const f of [...files, path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), path.join(R, 'latest.yml')]) {
     await upload(up, f, env.GH_TOKEN, 'Bearer', true)

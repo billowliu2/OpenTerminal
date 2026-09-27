@@ -229,6 +229,7 @@ export class CommandsStore {
       if (!existsSync(this.indexFile)) return
       const raw: unknown = JSON.parse(readFileSync(this.indexFile, 'utf8'))
       if (!Array.isArray(raw)) return
+      let closed = false
       for (const x of raw) {
         if (
           x &&
@@ -239,10 +240,19 @@ export class CommandsStore {
           // index.json is data, not trust: a tampered or hand-edited `file`
           // must never turn logWrite into an arbitrary-path append.
           if (!this.isLoggableFile(meta.file)) continue
+          // A log still "in progress" here was interrupted by a crash or a
+          // force-kill: its session id belonged to the previous run, so no
+          // logStop will ever match it and its sanitizer is gone (logWrite
+          // would be a permanent no-op). Close it instead of reviving it as
+          // an active entry nothing can ever end.
+          if (meta.endedAt === undefined) {
+            meta.endedAt = Date.now()
+            closed = true
+          }
           this.metasByFile.set(meta.file, meta)
-          if (meta.endedAt === undefined) this.activeBySession.set(meta.sessionId, meta)
         }
       }
+      if (closed) this.persistIndex()
     } catch {
       // index missing / corrupt -> rebuild on next write
     }
