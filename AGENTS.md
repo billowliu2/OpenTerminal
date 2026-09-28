@@ -28,18 +28,18 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 1. `package.json` 版本号 +1，写 `RELEASE_NOTES.md`（仓库根，已 gitignore；可选 `.zh-TW/.en/.ja` 译文，缺译文回退简体）
 2. `node scripts/sync-changelog.cjs` 把发布说明并入 `CHANGELOG*.md` —— **必须在 `npm run dist` 之前**：更新日志以 `?raw` 打进安装包（「关于」页离线读），`release.cjs` 也校验 `CHANGELOG.md` 已含该版本号
 3. `npm run dist` 构建
-4. `node scripts/release.cjs <版本号> --skip-github`，例如 `node scripts/release.cjs 1.0.14 --skip-github`
-   - **只发国内**（2026-09-15 起的产品决定）：Gitea release（msi + exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`：exe.blockmap → exe → release-notes.md → **latest.yml 最后**）
+4. `node scripts/release.cjs <版本号>`，例如 `node scripts/release.cjs 1.0.14`（**不带 skip 参数**，Gitea 与 GitHub 一起发）
+   - Gitea：release（msi + exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`：exe.blockmap → exe → release-notes.md → **latest.yml 最后**）
+   - GitHub：release 资产再次随版本同步发布（exe + exe.blockmap + latest.yml），electron-updater 标准 GitHub provider 直接吃 release 资产
    - 通道不再先删旧版：新版本文件全部传完、latest.yml 生效后才清掉上一版 exe/blockmap，中途失败不会把通道打空；同一版本可重复运行（release 复用、已传资产跳过）
    - 只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub）
-   - 国内通道全程直连，**不需要设代理**；代理只在显式补发 GitHub 时才用（`HTTPS_PROXY=http://127.0.0.1:7897`，脚本只把它用于 GitHub 请求）
-   - GitHub 那一步的状态：`README` 与更新机制里仍保留 GitHub 作为更新回退源，但**release 资产不再随版本发布同步**；若某天需要补，跑一次 `node scripts/release.cjs <版本号> --skip-gitea` 即可
+   - 国内通道全程直连，**不需要设代理**；GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub 请求）
 5. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
-6. `git tag v<版本号>` 并推送两个远程（代码/tag 的镜像保持同步，仅 release 资产不发 GitHub）
+6. `git tag v<版本号>` 并推送两个远程（代码/tag 与 release 资产的镜像保持同步）
 
 ## 更新机制
 
-- 检查更新：先 Gitea 更新通道（强制直连，不走系统代理），失败回退 GitHub（走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
+- 检查更新：**GitHub 优先**（走系统代理；前置 20 秒连通性探测 `probeGithub`——探测失败/超时直接兜底 Gitea，不给 electron-updater 挂起的机会），失败回退国内 Gitea 通用包通道（强制直连，不走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
 - 更新日志：Gitea 仓库是私有的（匿名 API 404），改为从更新通道的 `release-notes.md` 读取（直连 session `openterminal-update-direct`），再回退 Gitea/GitHub releases API
 - electron-updater 不支持 MSI 自动更新，自动更新只走 NSIS exe
 

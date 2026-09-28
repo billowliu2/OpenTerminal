@@ -8,9 +8,11 @@ import { loadSettings } from './settingsStore'
 import { markQuitting } from './tray'
 
 /**
- * Update feeds: domestic Gitea generic package is tried first (fast in
- * China); GitHub releases is the fallback. Both feeds carry the NSIS .exe —
- * electron-updater does NOT support MSI auto-updates, MSI is manual only.
+ * Update feeds: GitHub releases is tried first (system proxy, gated by a
+ * 20s connectivity probe so proxy-less users don't hang); the domestic
+ * Gitea generic package is the fallback (forced direct). Both feeds carry
+ * the NSIS .exe — electron-updater does NOT support MSI auto-updates, MSI
+ * is manual only.
  */
 const GITEA_FEED =
   'https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/'
@@ -19,6 +21,9 @@ const GITEA_RELEASES_API =
 const GITHUB_REPO = { owner: 'billowliu2', repo: 'OpenTerminal' }
 const GITHUB_RELEASES_API =
   'https://api.github.com/repos/billowliu2/OpenTerminal/releases?per_page=10'
+const GITHUB_PROBE_URL =
+  'https://api.github.com/repos/billowliu2/OpenTerminal/releases/latest'
+const GITHUB_PROBE_TIMEOUT_MS = 20_000
 
 let state: UpdateState = { status: 'idle', currentVersion: app.getVersion() }
 let activeFeed: 'gitea' | 'github' = 'gitea'
@@ -70,23 +75,38 @@ function wireEvents(): void {
   )
 }
 
-/** Check the active feed; on failure switch Gitea → GitHub and retry once. */
+/**
+ * Check updates: GitHub releases first (system proxy, gated by a
+ * connectivity probe), domestic Gitea generic package as fallback.
+ *
+ * The feed is decided BEFORE touching the updater: checkForUpdates has no
+ * timeout, and racing it while mid-flight risks two concurrent checks
+ * polluting state.
+ */
 async function checkWithFallback(): Promise<void> {
-  // The feed choice is per attempt: a transient Gitea failure must not pin
-  // every later check to GitHub (and its system proxy) for the whole session.
+  // The feed choice is per attempt: a transient GitHub failure must not pin
+  // every later check to Gitea (and its forced direct connection) — or vice
+  // versa — for the whole session.
+  let githubErr: string | undefined
+  if (await probeGithub()) {
+    useFeed('github')
+    try {
+      await autoUpdater.checkForUpdates()
+      return
+    } catch (err) {
+      console.warn('[updater] github feed failed, falling back to gitea:', err)
+      githubErr = err instanceof Error ? err.message : String(err)
+    }
+  } else {
+    console.warn('[updater] github probe failed or timed out, using gitea feed directly')
+  }
   useFeed('gitea')
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {
-    console.warn('[updater] gitea feed failed, falling back to github:', err)
+    if (githubErr === undefined) throw err
     const giteaErr = err instanceof Error ? err.message : String(err)
-    useFeed('github')
-    try {
-      await autoUpdater.checkForUpdates()
-    } catch (err2) {
-      const ghErr = err2 instanceof Error ? err2.message : String(err2)
-      throw new Error(t('main.updater.feedFailed', { gitea: giteaErr, github: ghErr }))
-    }
+    throw new Error(t('main.updater.feedFailed', { gitea: giteaErr, github: githubErr }))
   }
 }
 
@@ -119,6 +139,25 @@ async function directFetch(url: string): Promise<Response> {
   const s = session.fromPartition('openterminal-update-direct', { cache: false })
   await s.setProxy({ mode: 'direct' })
   return s.fetch(url, { headers: { 'User-Agent': 'OpenTerminal' } })
+}
+
+/**
+ * Connectivity probe for the GitHub feed: dedicated session in the same
+ * proxy mode as the feed (system), hard timeout so proxy-less users fall
+ * back to Gitea instead of hanging on a dead proxy/DNS.
+ */
+async function probeGithub(): Promise<boolean> {
+  try {
+    const s = session.fromPartition('openterminal-github-probe', { cache: false })
+    await s.setProxy({ mode: 'system' })
+    const resp = await s.fetch(GITHUB_PROBE_URL, {
+      headers: { 'User-Agent': 'OpenTerminal' },
+      signal: AbortSignal.timeout(GITHUB_PROBE_TIMEOUT_MS)
+    })
+    return resp.ok
+  } catch {
+    return false
+  }
 }
 
 /**
