@@ -14,14 +14,18 @@ export interface CompiledRule {
   id: string
   /** compiled with the 'g' flag (plus 'i' for case-insensitive rules) */
   regex: RegExp
-  /** hex fg, e.g. "#3fb950" — converted to rgb only at wrap time */
+  /** hex fg, e.g. "#3fb950" — kept for introspection; `open` is precomputed from it */
   fg: string
-  /** optional hex bg */
+  /** optional hex bg (not re-validated; a malformed value folds to white, as before) */
   bg?: string
   /** optional value bands, ascending by `min` — see HighlightRule.bands */
-  bands?: { min: number; fg: string }[]
+  bands?: { min: number; fg: string; open: string }[]
   /** copied from the source rule for stable priority ordering */
   priority: number
+  /** precomputed truecolor fg fragment, e.g. "38;2;63;185;80" */
+  fgSgr: string
+  /** full SGR open sequence `\x1b[38;2;…(;48;2;…)?m` incl. optional bg, built once here */
+  open: string
 }
 
 /** Per-rule counters, only filled when a stats sink is passed in (see `StatsSink`). */
@@ -39,11 +43,26 @@ export interface RuleStat {
 export type StatsSink = Map<string, RuleStat>
 
 type Token = { kind: 'seq' | 'text'; value: string }
-type Span = { start: number; end: number; fg: string; bg?: string }
+/** A claimed span carries its precomputed SGR open sequence, never a hex colour. */
+type Span = { start: number; end: number; open: string }
 
-/** ANSI escape tokens: CSI, OSC, two-char (ESC ( / ) ..), and ESC = / > . */
+/**
+ * ANSI escape tokens:
+ *  - CSI            `ESC [ … final`
+ *  - OSC            `ESC ] … (BEL | ST)`
+ *  - DCS/APC/PM/SOS `ESC P|X|^|_ … (BEL | ST)` — tmux, sixel, kitty graphics.
+ *    The `[^\x1b]*` body means an unterminated one stops at the next ESC
+ *    instead of swallowing the rest of the buffer (it then stays a text run,
+ *    which applyHighlights passes through raw).
+ *  - two-char charset `ESC ( x` / `ESC ) x`, keypad modes `ESC =` / `ESC >`
+ *  - single-char Fe escapes: `ESC` + one 0x30–0x7E byte (DECSC `\x1b7`,
+ *    DECRC `\x1b8`, NEL `\x1bE`, RI `\x1bM`, RIS `\x1bc`, orphan ST `\x1b\`, …).
+ *    Last in the alternation, and the initiators of the longer forms
+ *    (`[ ] ( ) P X ^ _ = >`) are excluded from the class so it can never steal
+ *    the leading bytes of a longer sequence.
+ */
 const ESCAPE_RE =
-  /(\x1b\[[0-9;:?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[=>])/g
+  /(\x1b\[[0-9;:?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[=>]|\x1b[0-9:;<?@A-OQ-WYZ\\`a-z{|}~])/g
 
 /** Matches a single rule may inject per chunk (bomb guard). */
 const MAX_PER_RULE = 300
@@ -67,6 +86,12 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } {
   if (!/^[0-9a-fA-F]{6}$/.test(h)) return { r: 255, g: 255, b: 255 }
   const n = parseInt(h, 16)
   return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+}
+
+/** "r;g;b" decimal SGR fragment for one hex colour (white fallback via hexToRgb). */
+function rgbFragment(hex: string): string {
+  const { r, g, b } = hexToRgb(hex)
+  return `${r};${g};${b}`
 }
 
 /** Split a chunk into escape-sequence tokens and plain-text runs. */
@@ -110,63 +135,94 @@ export function compileRules(rules: HighlightRule[]): CompiledRule[] {
     const fg = typeof rule.color?.fg === 'string' ? rule.color.fg : ''
     if (!/^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(fg)) continue
     const bg = typeof rule.color?.bg === 'string' ? rule.color.bg : undefined
-    out.push({ id: rule.id, regex, fg, bg, bands: compileBands(rule.bands), priority: rule.priority })
+    // bg stays unvalidated on purpose (as before): a malformed hex folds to
+    // white inside hexToRgb, byte-identical to the old wrap-time conversion.
+    const bgPart = bg ? `;48;2;${rgbFragment(bg)}` : ''
+    const fgSgr = rgbFragment(fg)
+    out.push({
+      id: rule.id,
+      regex,
+      fg,
+      bg,
+      bands: compileBands(rule.bands, bgPart),
+      priority: rule.priority,
+      fgSgr,
+      open: `\x1b[38;2;${fgSgr}${bgPart}m`
+    })
   }
   out.sort((a, b) => a.priority - b.priority)
   return out
 }
 
 /** Keep only well-formed value bands, ascending — the engine walks them in order. */
-function compileBands(bands: HighlightRule['bands']): CompiledRule['bands'] {
+function compileBands(bands: HighlightRule['bands'], bgPart: string): CompiledRule['bands'] {
   if (!Array.isArray(bands)) return undefined
-  const kept: { min: number; fg: string }[] = []
+  const kept: NonNullable<CompiledRule['bands']> = []
   for (const band of bands) {
     if (!band || !Number.isFinite(band.min)) continue
     if (typeof band.fg !== 'string' || !/^#[0-9a-fA-F]{3}$|^#[0-9a-fA-F]{6}$/.test(band.fg)) continue
-    kept.push({ min: band.min, fg: band.fg })
+    kept.push({ min: band.min, fg: band.fg, open: `\x1b[38;2;${rgbFragment(band.fg)}${bgPart}m` })
   }
   if (kept.length === 0) return undefined
   kept.sort((a, b) => a.min - b.min)
   return kept
 }
 
-/** Wrap one plain-text span with truecolor SGR. */
-function wrap(text: string, fgHex: string, bgHex?: string): string {
-  const f = hexToRgb(fgHex)
-  let s = `\x1b[38;2;${f.r};${f.g};${f.b}`
-  if (bgHex) {
-    const b = hexToRgb(bgHex)
-    s += `;48;2;${b.r};${b.g};${b.b}`
-  }
-  return `${s}m${text}\x1b[0m`
-}
-
-/** True when [s,e) overlaps any claimed span. */
-function overlaps(claimed: Span[], s: number, e: number): boolean {
-  for (const c of claimed) {
-    if (s < c.end && e > c.start) return true
-  }
-  return false
+/** Wrap one plain-text span with its precomputed SGR open sequence. */
+function wrap(text: string, open: string): string {
+  return `${open}${text}\x1b[0m`
 }
 
 /**
- * Colour for one match: with value bands the match's first number picks the
- * band (last `min` that is <= the value wins); everything else keeps the rule's
- * own foreground.
+ * Try to claim [s,e) for a span. Claimed spans are pairwise disjoint and kept
+ * sorted by start (ends ascend with starts), which turns the old linear scan
+ * over every claimed span (O(spans²) on match-dense runs) into:
+ *  - an O(1) append when the candidate lands past every claim — the common
+ *    case, since rule scans sweep a run left to right; otherwise
+ *  - one binary search: the only possible clash is with the nearest span left
+ *    of the insertion point.
+ * The span colour is only computed on accept. Returns true when claimed.
  */
-function bandColor(rule: CompiledRule, matched: string): string {
+function claim(claimed: Span[], s: number, e: number, rule: CompiledRule, matched: string): boolean {
+  const n = claimed.length
+  if (n === 0 || claimed[n - 1].end <= s) {
+    claimed.push({ start: s, end: e, open: bandOpen(rule, matched) })
+    return true
+  }
+  let lo = 0
+  let hi = n
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (claimed[mid].start < e) lo = mid + 1
+    else hi = mid
+  }
+  if (lo > 0 && claimed[lo - 1].end > s) return false
+  claimed.splice(lo, 0, { start: s, end: e, open: bandOpen(rule, matched) })
+  return true
+}
+
+/** First-number finder for band selection; no /g, so the shared literal is stateless. */
+const BAND_NUMBER_RE = /-?\d+(?:\.\d+)?/
+
+/**
+ * SGR open sequence for one match: with value bands the match's first number
+ * picks the band (last `min` that is <= the value wins); everything else keeps
+ * the rule's own precomputed open sequence. Pure table lookup — no colour math
+ * on the hot path.
+ */
+function bandOpen(rule: CompiledRule, matched: string): string {
   const bands = rule.bands
-  if (!bands || bands.length === 0) return rule.fg
-  const number = /-?\d+(?:\.\d+)?/.exec(matched)
-  if (number === null) return rule.fg
+  if (!bands || bands.length === 0) return rule.open
+  const number = BAND_NUMBER_RE.exec(matched)
+  if (number === null) return rule.open
   const value = Number(number[0])
-  if (!Number.isFinite(value)) return rule.fg
-  let fg = rule.fg
+  if (!Number.isFinite(value)) return rule.open
+  let open = rule.open
   for (const band of bands) {
     if (value < band.min) break
-    fg = band.fg
+    open = band.open
   }
-  return fg
+  return open
 }
 
 /** True when `text` holds a newline-free segment longer than MAX_LINE_LEN. */
@@ -189,10 +245,17 @@ function hasLongLine(text: string): boolean {
 /** Millisecond clock for the optional stats sink; `performance` when present. */
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
-function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?: StatsSink): string {
-  if (text.length === 0) return ''
-  if (hasLongLine(text)) return text
+function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?: StatsSink, spent?: { n: number }): string {
+  if (text.length === 0) {
+    if (spent !== undefined) spent.n = 0
+    return ''
+  }
+  if (hasLongLine(text)) {
+    if (spent !== undefined) spent.n = 0
+    return text
+  }
   const claimed: Span[] = []
+  let totalMade = 0
   for (let ri = 0; ri < rules.length; ri++) {
     const rule = rules[ri]
     if (budgets[ri] <= 0) continue
@@ -208,9 +271,9 @@ function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?
         rule.regex.lastIndex++
         continue
       }
-      if (!overlaps(claimed, start, end)) {
-        claimed.push({ start, end, fg: bandColor(rule, m[0]), bg: rule.bg })
+      if (claim(claimed, start, end, rule, m[0])) {
         made++
+        totalMade++
         budgets[ri]--
         if (budgets[ri] <= 0) break
       }
@@ -223,13 +286,14 @@ function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?
       stats.set(rule.id, stat)
     }
   }
+  if (spent !== undefined) spent.n = totalMade
   if (claimed.length === 0) return text
-  claimed.sort((a, b) => a.start - b.start)
+  // `claim` keeps the spans sorted by start — no final sort needed here.
   let out = ''
   let pos = 0
   for (const c of claimed) {
     if (c.start > pos) out += text.slice(pos, c.start)
-    out += wrap(text.slice(c.start, c.end), c.fg, c.bg)
+    out += wrap(text.slice(c.start, c.end), c.open)
     pos = c.end
   }
   if (pos < text.length) out += text.slice(pos)
@@ -249,6 +313,9 @@ export function applyHighlights(chunk: string, rules: CompiledRule[], stats?: St
   let budgets = rules.map(() => MAX_PER_RULE)
   let usedBudget = false
   let out = ''
+  // applyRun reports how many matches it claimed, replacing the old two
+  // budgets.reduce() passes per text token.
+  const spent = { n: 0 }
   for (const token of tokenize(chunk)) {
     if (token.kind === 'seq') {
       out += token.value
@@ -260,10 +327,9 @@ export function applyHighlights(chunk: string, rules: CompiledRule[], stats?: St
       out += token.value
       continue
     }
-    const before = budgets.reduce((a, b) => a + b, 0)
-    out += applyRun(token.value, rules, budgets, stats)
-    const after = budgets.reduce((a, b) => a + b, 0)
-    if (after < before) usedBudget = true
+    spent.n = 0
+    out += applyRun(token.value, rules, budgets, stats, spent)
+    if (spent.n > 0) usedBudget = true
   }
   return usedBudget ? out : chunk
 }
@@ -308,15 +374,30 @@ export function previewSpans(text: string, rules: CompiledRule[]): PreviewSpan[]
   return spans
 }
 
-/** True when `seg` is a dangling, unfinished escape fragment (must not be emitted). */function isIncompleteEscape(seg: string): boolean {
+/**
+ * True when `seg` is a dangling, unfinished escape fragment (must not be
+ * emitted before its terminator arrives).
+ */
+function isIncompleteEscape(seg: string): boolean {
   // `seg` is expected to start at (or be) a lone ESC.
-  // A lone ESC — the leading half of any CSI/OSC/two-char/ST sequence.
+  // A lone ESC — the leading half of any CSI/OSC/DCS/two-char/ST/Fe sequence.
   if (seg === '\x1b') return true
   // Unfinished CSI: ESC [ plus parameter bytes but no final byte in 0x40..0x7E.
   if (/^\x1b\[[0-9;:?]*$/.test(seg)) return true
-  // Unfinished OSC: ESC ] ... with no BEL (\x07) or ST (\x1b\ ) terminator.
-  // (A trailing half-ST is covered by the lone-ESC case above.)
-  if (seg.startsWith('\x1b]') && !seg.includes('\x07') && !seg.includes('\x1b\\')) return true
+  // Unfinished OSC / DCS / APC / PM / SOS: opened but no BEL (\x07) or ST
+  // (\x1b\) terminator yet, so the fragment could still grow into any of them.
+  // (A trailing half-ST — the ESC of `\x1b\` with the `\` still to come — is
+  // covered by the lone-ESC case above, since findIncompleteIndex slices from
+  // the *last* ESC.)
+  // NB: `[]` would be an *empty* class in JS regex, so `]` is kept in a
+  // startsWith instead of a merged character class.
+  if (
+    (seg.startsWith('\x1b]') || /^\x1b[PX^_]/.test(seg)) &&
+    !seg.includes('\x07') &&
+    !seg.includes('\x1b\\')
+  ) {
+    return true
+  }
   return false
 }
 
@@ -356,6 +437,8 @@ export class HighlightStream {
   private rules: CompiledRule[]
   private stats?: StatsSink
   private buffer = ''
+  /** Whether `buffer` holds any ESC — lets push skip the O(buffer) escape scans on escape-free floods. */
+  private bufferHasEsc = false
 
   constructor(rules: CompiledRule[]) {
     this.rules = rules
@@ -378,6 +461,20 @@ export class HighlightStream {
 
   /** Join held bytes with `chunk`, return content safe to hand to xterm. */
   push(chunk: string): string {
+    // Fast path: neither the held text nor the new chunk contains a single ESC,
+    // so findIncompleteIndex/lastEscapeEnd would both come back -1. Skip their
+    // O(buffer) rescans — they made escape-free floods (cat of a large text
+    // file) quadratic in the held buffer — and go straight to the trailing-text
+    // hold. Decision-identical to the full path below.
+    if (!this.bufferHasEsc && !chunk.includes('\x1b')) {
+      this.buffer += chunk
+      if (this.buffer.length > MAX_CHUNK) {
+        const raw = this.buffer
+        this.buffer = ''
+        return applyHighlights(raw, this.rules, this.stats)
+      }
+      return ''
+    }
     this.buffer += chunk
 
     // (a) trailing incomplete escape -> hold it, emit the closed prefix.
@@ -389,9 +486,11 @@ export class HighlightStream {
         // Give up waiting on a pathologically long unterminated sequence: emit
         // the fragment raw (applyHighlights skips raw \x1b in text runs).
         this.buffer = ''
+        this.bufferHasEsc = false
         return applyHighlights(head, this.rules, this.stats) + tail
       }
       this.buffer = tail
+      this.bufferHasEsc = true // the held tail starts at the dangling ESC
       return applyHighlights(head, this.rules, this.stats)
     }
 
@@ -404,12 +503,16 @@ export class HighlightStream {
       if (this.buffer.length > MAX_CHUNK) {
         const raw = this.buffer
         this.buffer = ''
+        this.bufferHasEsc = false
         return applyHighlights(raw, this.rules, this.stats)
       }
+      // The buffer (or the chunk that just joined it) brought the ESC in.
+      this.bufferHasEsc = true
       return ''
     }
     const head = this.buffer.slice(0, lastEnd)
     this.buffer = this.buffer.slice(lastEnd)
+    this.bufferHasEsc = this.buffer.includes('\x1b')
     return applyHighlights(head, this.rules, this.stats)
   }
 
@@ -417,6 +520,7 @@ export class HighlightStream {
   flush(): string {
     const b = this.buffer
     this.buffer = ''
+    this.bufferHasEsc = false
     return applyHighlights(b, this.rules, this.stats)
   }
 }

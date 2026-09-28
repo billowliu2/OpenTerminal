@@ -12,7 +12,7 @@
  *     --outfile=tests/.hl-rules.cjs --alias:@shared=./src/shared
  *   node tests/hl-rules.mjs
  */
-import { compileRules, applyHighlights } from '../src/renderer/src/terminal/highlightEngine.ts'
+import { compileRules, applyHighlights, __testHooks as hooks } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { previewSpans } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { DEFAULT_HIGHLIGHT_RULES } from '../src/shared/settings.ts'
 import { exportHighlightRules, mergeRules, parseHighlightRules } from '../src/shared/highlightIO.ts'
@@ -737,6 +737,53 @@ console.log('[profiles]')
     excludedByProfile(presets, profiles[0]).length === presets.length - 2,
     'excludedByProfile reports what a profile leaves out'
   )
+}
+
+// ---- 19. escape sequences pass through untouched ---------------------------
+console.log('[escape sequences]')
+{
+  // DCS / APC / PM / SOS bodies and single-char Fe escapes must keep their
+  // bytes raw — never wrapped in SGR — while text around them stays highlighted.
+  const families = [
+    ['DCS (ST)', '\x1bP0;1;0q#0;2;0;0;0~..\x1b\\'],
+    ['DCS (BEL)', '\x1bP1;2|9/9\x07'],
+    ['APC (kitty graphics)', '\x1b_Gf=32,s=10,v=10,m=1\x1b\\'],
+    ['PM', '\x1b^weather\x1b\\'],
+    ['SOS', '\x1bXsos-frame\x1b\\']
+  ]
+  // one coloured span, exactly as the engine emits it (ESC-free span text)
+  const SPAN_RE = /\x1b\[38;2;\d+;\d+;\d+(?:;48;2;\d+;\d+;\d+)?m[^\x1b]*\x1b\[0m/g
+  for (const [name, seq] of families) {
+    const out = applyHighlights(`DONE ${seq} ERROR`, rules)
+    ok(out.includes(`${sgr(OK_GREEN)}DONE\x1b[0m`), `${name}: text before it keeps its highlight`)
+    ok(out.includes(`${sgr(BAD_RED)}ERROR\x1b[0m`), `${name}: text after it keeps its highlight`)
+    ok(
+      out.replace(SPAN_RE, '').includes(seq),
+      `${name}: sequence bytes pass through raw, never wrapped in SGR`
+    )
+  }
+
+  const fe = applyHighlights('\x1b7DONE\x1b8 1', rules)
+  ok(fe.includes(`${sgr(OK_GREEN)}DONE\x1b[0m`), 'text between DECSC/DECRC keeps its highlight')
+  ok(fe.includes('\x1b7') && fe.includes('\x1b8'), 'DECSC/DECRC bytes pass through byte-for-byte')
+
+  // backstop: a text run holding a residual (unterminated) ESC passes through
+  // raw byte-for-byte — never partially highlighted, never corrupted
+  const raw = 'DONE \x1bP0;1;0qcut ERROR'
+  ok(applyHighlights(raw, rules) === raw, 'an unterminated DCS keeps its run byte-for-byte raw')
+
+  // the stream treats a cut DCS/APC/PM/SOS tail as incomplete, like OSC
+  ok(hooks.isIncompleteEscape('\x1b') === true, 'a lone trailing ESC stays incomplete')
+  ok(hooks.isIncompleteEscape('\x1bP0;1;0qcut') === true, 'a cut DCS tail counts as incomplete')
+  ok(hooks.isIncompleteEscape('\x1b_Gf=32') === true, 'a cut APC tail counts as incomplete')
+  ok(
+    hooks.isIncompleteEscape('\x1b^w') === true && hooks.isIncompleteEscape('\x1bXs') === true,
+    'cut PM/SOS tails count as incomplete'
+  )
+  ok(hooks.isIncompleteEscape('\x1bP0;1;0qx\x1b\\') === false, 'a terminated DCS is complete')
+  ok(hooks.isIncompleteEscape('\x1b7') === false, 'a complete two-byte Fe escape is complete')
+  ok(hooks.findIncompleteIndex('DONE \x1bP0;1;0qcut') === 5, 'the stream holds from the DCS initiator')
+  ok(hooks.findIncompleteIndex('DONE \x1b7') === -1, 'a trailing DECSC is not held as incomplete')
 }
 
 console.log(failed === 0 ? '\n[hl-rules] ALL CHECKS PASSED' : `\n[hl-rules] ${failed} CHECK(S) FAILED`)
