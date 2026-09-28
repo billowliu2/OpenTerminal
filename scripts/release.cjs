@@ -254,7 +254,7 @@ async function github() {
   // Idempotent like gitea(): a re-run after a partial publish must reuse the
   // release it created last time instead of dying on 422 already_exists and
   // leaving GitHub permanently half-uploaded until someone deletes it by hand.
-  const byTag = (): Promise<Response> => gh(`${api}/releases/tags/v${V}`)
+  const byTag = () => gh(`${api}/releases/tags/v${V}`)
   let resp = await byTag()
   let rel
   if (resp.ok) {
