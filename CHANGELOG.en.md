@@ -1,5 +1,22 @@
 # OpenTerminal Changelog
 
+## v1.0.19 - 2026-09-28
+
+### Update mechanism change
+- **GitHub is now the primary update source**: update checks go to GitHub releases first (following the system proxy), gated by a 20-second connectivity probe — without a proxy, or when GitHub is unreachable, the app does not hang but falls back to the domestic update channel (forced direct connection).
+- **GitHub releases carry the installer assets again** (exe + blockmap + latest.yml), in step with the domestic channel.
+
+### Terminal highlighting: performance and compatibility
+- **Faster engine**: colour sequences are precomputed at compile time (no per-span hex parsing); span claiming moved from a linear scan to sorted insertion (binary search); escape-free text floods (e.g. cat of a large file) skip redundant rescans. Measured on 200KB payloads: ~19–56% faster on match-dense output, ~54% faster on plain streamed text, with output byte-identical to the previous version.
+- **Broader escape-sequence coverage**: DCS/APC/PM/SOS (tmux passthrough, sixel, kitty graphics protocol) and DEC single-character sequences (save/restore cursor, etc.) are now recognised, so normal text on the same line no longer loses its highlighting in those scenarios.
+
+### Highlight settings page fixes
+- The "group by category" view now actually clusters by category (it was previously flattened back to priority order).
+- New "basic rule" switch in the rule editor: your own rules can join the set that stays active in "basic only" mode.
+- The profile editor lists the rules a partial selection leaves out.
+- "Replace current rules" imports now ask for confirmation, and the dialog defaults back to "append" each time it opens.
+- Assorted small fixes: rapid toggles could lose a change, value-band rows were not kept sorted by threshold, the colour field lingered after clearing a background, and more.
+
 ## v1.0.18 - 2026-09-24
 
 - **Fixed a serious v1.0.17 regression: the password could not be typed on the lock screen**. v1.0.17 swallowed all keyboard input at the renderer level while locked (meant to block zoom/reload shortcuts), but the default action of a key press is exactly "insert the character into the focused field" — so the lock screen's password box received nothing and the app could not be unlocked.
