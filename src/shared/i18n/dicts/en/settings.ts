@@ -200,6 +200,9 @@ const settings: Record<string, string> = {
   'settings.highlight.importMode': 'Mode',
   'settings.highlight.importReplace': 'Replace current rules',
   'settings.highlight.importAppend': 'Append to current rules',
+  'settings.highlight.importReplaceTitle': 'Replace current rules?',
+  'settings.highlight.importReplaceDesc':
+    'Importing overwrites every current rule with this file. This cannot be undone.',
   'settings.highlight.importOk': 'Import',
   'settings.highlight.importEmpty': 'No usable rules found',
   'settings.highlight.importBadJson': 'Not valid JSON',
@@ -214,6 +217,8 @@ const settings: Record<string, string> = {
   'settings.highlight.modeOff': 'Off',
   'settings.highlight.modeDesc':
     'Basic only: keeps just the key rules (errors, success, warnings, dangerous commands, secrets) — cheaper and quieter. Off: no colour injection at all (rules and colours are kept).',
+  'settings.highlight.basic': 'Basic rule',
+  'settings.highlight.basicHint': 'keep this rule active when the highlight mode is "Basic only"',
   'settings.highlight.category': 'Category',
   'settings.highlight.groupByCategory': 'Group by category',
   'settings.highlight.category.safety': 'Safety',
@@ -245,6 +250,7 @@ const settings: Record<string, string> = {
   'settings.highlight.profileNamePlaceholder': 'e.g. production (errors only)',
   'settings.highlight.profileRules': 'Included rules',
   'settings.highlight.profileRulesHint': 'Unchecked rules stay off on that host',
+  'settings.highlight.profileExcluded': 'Excluded {n}: {list}',
   'settings.highlight.profileEmpty': 'No rule sets yet',
   'settings.highlight.profileDeleteTitle': 'Delete rule set',
   'settings.highlight.actions': 'Actions',

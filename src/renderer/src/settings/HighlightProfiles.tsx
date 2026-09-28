@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Checkbox, Input, Modal, Popconfirm, Switch, Table, Tooltip } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { t } from '@shared/i18n'
+import { excludedByProfile } from '@shared/highlightProfiles'
 import type { HighlightProfile } from '@shared/settings'
 import { ruleLabel } from './ruleLabel'
 import { useSettingsStore } from './store'
@@ -39,17 +40,31 @@ export function HighlightProfiles(): React.JSX.Element {
     if (name.trim() === '') return
     setSaving(true)
     try {
-      const next = editing
-        ? profiles.map((profile) =>
-            profile.id === editing.id ? { ...profile, name: name.trim(), ruleIds } : profile
+      // read at call time: the render-scoped array goes stale inside a React
+      // batch, and two writes in one batch would silently drop the first
+      const current = useSettingsStore.getState().settings.highlightProfiles
+      const target = editingId !== null && editingId !== '' ? current.find((profile) => profile.id === editingId) : undefined
+      const next = target
+        ? current.map((profile) =>
+            profile.id === target.id ? { ...profile, name: name.trim(), ruleIds } : profile
           )
-        : [...profiles, { id: crypto.randomUUID(), name: name.trim(), ruleIds }]
+        : [...current, { id: crypto.randomUUID(), name: name.trim(), ruleIds }]
       await setHighlightProfiles(next)
       setEditingId(null)
     } finally {
       setSaving(false)
     }
   }
+
+  /**
+   * What the current selection leaves out, shown under the checkboxes so the
+   * user sees which rules a host bound to this profile will NOT run. An empty
+   * selection means "all rules", so nothing is excluded by definition.
+   */
+  const excluded =
+    ruleIds.length > 0 && ruleIds.length < rules.length
+      ? excludedByProfile(rules, { id: editingId ?? '', name, ruleIds })
+      : []
 
   const columns: ColumnsType<HighlightProfile> = [
     {
@@ -84,7 +99,11 @@ export function HighlightProfiles(): React.JSX.Element {
             okText={t('common.delete')}
             cancelText={t('common.cancel')}
             okButtonProps={{ danger: true }}
-            onConfirm={() => void setHighlightProfiles(profiles.filter((p) => p.id !== record.id))}
+            onConfirm={() =>
+              void setHighlightProfiles(
+                useSettingsStore.getState().settings.highlightProfiles.filter((p) => p.id !== record.id)
+              )
+            }
           >
             <Button size="small" danger>
               {t('common.delete')}
@@ -154,6 +173,14 @@ export function HighlightProfiles(): React.JSX.Element {
                 onChange={(values) => setRuleIds(values as string[])}
                 options={rules.map((rule) => ({ value: rule.id, label: ruleLabel(rule) }))}
               />
+              {excluded.length > 0 && (
+                <span className="hl-editor-hint">
+                  {t('settings.highlight.profileExcluded', {
+                    n: excluded.length,
+                    list: excluded.map((rule) => ruleLabel(rule)).join('; ')
+                  })}
+                </span>
+              )}
             </div>
           </div>
         </div>

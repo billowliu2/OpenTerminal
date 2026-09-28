@@ -386,7 +386,11 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     const timer = window.setInterval(() => publishHighlightStats(new Map(sink)), 1000)
     return () => window.clearInterval(timer)
   }, [settings.terminal.highlightStats])
-  streamRef.current?.setRules(compiledRules)
+  // Push the latest compiled rules into the stream from an effect — assigning
+  // during render would be a side effect in the render body.
+  useEffect(() => {
+    streamRef.current?.setRules(compiledRules)
+  }, [compiledRules])
 
   // M5: load completion candidates once per session (history + library cached).
   const ensureCompletionCache = useCallback((): void => {

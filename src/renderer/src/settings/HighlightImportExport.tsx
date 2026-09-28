@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Input, Modal, Radio, Space } from 'antd'
+import { Alert, Button, Input, Modal, Popconfirm, Radio, Space } from 'antd'
 import { t } from '@shared/i18n'
 import { exportHighlightRules, mergeRules, parseHighlightRules } from '@shared/highlightIO'
 import type { ImportError } from '@shared/highlightIO'
@@ -40,6 +40,7 @@ export function HighlightImportExport({
     setDraft('')
     setResult(null)
     setCopied(false)
+    setMode('append')
   }, [open])
 
   const handleCopy = async (): Promise<void> => {
@@ -83,7 +84,9 @@ export function HighlightImportExport({
       setResult({ warnings: parsed.warnings, count: 0 })
       return
     }
-    await setHighlightRules(mergeRules(highlightRules, parsed.rules, mode))
+    // read at call time: the render-scoped array goes stale inside a React batch
+    const current = useSettingsStore.getState().settings.highlightRules
+    await setHighlightRules(mergeRules(current, parsed.rules, mode))
     setResult({ warnings: parsed.warnings, count: parsed.rules.length })
   }
 
@@ -145,14 +148,30 @@ export function HighlightImportExport({
               <Radio.Button value="append">{t('settings.highlight.importAppend')}</Radio.Button>
               <Radio.Button value="replace">{t('settings.highlight.importReplace')}</Radio.Button>
             </Radio.Group>
-            <Button
-              size="small"
-              type="primary"
-              disabled={draft.trim() === ''}
-              onClick={() => void handleImport()}
-            >
-              {t('settings.highlight.importOk')}
-            </Button>
+            {mode === 'replace' ? (
+              // replace wipes the whole set, so it gets the same guard as deletes
+              <Popconfirm
+                title={t('settings.highlight.importReplaceTitle')}
+                description={t('settings.highlight.importReplaceDesc')}
+                okText={t('settings.highlight.importOk')}
+                cancelText={t('common.cancel')}
+                okButtonProps={{ danger: true }}
+                onConfirm={() => void handleImport()}
+              >
+                <Button size="small" type="primary" disabled={draft.trim() === ''}>
+                  {t('settings.highlight.importOk')}
+                </Button>
+              </Popconfirm>
+            ) : (
+              <Button
+                size="small"
+                type="primary"
+                disabled={draft.trim() === ''}
+                onClick={() => void handleImport()}
+              >
+                {t('settings.highlight.importOk')}
+              </Button>
+            )}
           </Space>
           {result && (
             <Alert

@@ -196,6 +196,9 @@ const settings: Record<string, string> = {
   'settings.highlight.importMode': '取り込み方法',
   'settings.highlight.importReplace': '現在のルールを置き換える',
   'settings.highlight.importAppend': '現在のルールに追加する',
+  'settings.highlight.importReplaceTitle': '現在のルールを置き換えますか？',
+  'settings.highlight.importReplaceDesc':
+    'インポートすると現在のすべてのルールがこのファイルの内容で上書きされます。元に戻せません。',
   'settings.highlight.importOk': 'インポート',
   'settings.highlight.importEmpty': '有効なルールが見つかりません',
   'settings.highlight.importBadJson': '有効な JSON ではありません',
@@ -210,6 +213,8 @@ const settings: Record<string, string> = {
   'settings.highlight.modeOff': 'オフ',
   'settings.highlight.modeDesc':
     '基本のみ：エラー／成功／警告／危険なコマンド／シークレットなど重要なルールだけを適用（軽量・低ノイズ）。オフ：色をまったく注入しません（ルールと色は保持）。',
+  'settings.highlight.basic': '基本ルール',
+  'settings.highlight.basicHint': 'オンにすると、ハイライトが「基本のみ」モードのときもこのルールが適用されます',
   'settings.highlight.category': '分類',
   'settings.highlight.groupByCategory': '分類でグループ化',
   'settings.highlight.category.safety': '安全',
@@ -240,6 +245,7 @@ const settings: Record<string, string> = {
   'settings.highlight.profileNamePlaceholder': '例：本番機（エラーのみ）',
   'settings.highlight.profileRules': '含めるルール',
   'settings.highlight.profileRulesHint': 'チェックを外したルールはそのホストでは効きません',
+  'settings.highlight.profileExcluded': '{n} 件を除外：{list}',
   'settings.highlight.profileEmpty': 'ルールセットがまだありません',
   'settings.highlight.profileDeleteTitle': 'ルールセットを削除',
   'settings.highlight.actions': '操作',

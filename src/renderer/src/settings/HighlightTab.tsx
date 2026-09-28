@@ -35,8 +35,6 @@ import {
 import { applyThemeColors } from '../theme/highlightColors'
 import './highlight.css'
 
-const ORDERED_SORT: 'ascend' = 'ascend'
-
 /** preset color swatches for the highlighting editor. */
 const PRESET_COLORS = ['#3fb950', '#f85149', '#e3b341', '#58a6ff', '#d2a8ff', '#79c0ff', '#bc8cff', '#f2cc60']
 
@@ -92,6 +90,7 @@ interface RuleDraft {
   caseInsensitive: boolean
   note?: string
   enabled: boolean
+  basic: boolean
 }
 
 interface EditorState {
@@ -115,6 +114,8 @@ export function HighlightTab(): React.JSX.Element {
     const rows = [...highlightRules].sort((a, b) => a.priority - b.priority)
     // Grouped view: cluster by category, keeping priority order inside a group
     // (Array.prototype.sort is stable, so the priority sort above survives).
+    // The table must not carry a defaultSortOrder — antd would re-sort the
+    // dataSource globally and undo this clustering.
     return groupByCategory ? rows.sort((a, b) => categoryRank(a) - categoryRank(b)) : rows
   }, [highlightRules, groupByCategory])
 
@@ -123,7 +124,10 @@ export function HighlightTab(): React.JSX.Element {
   const closeEditor = (): void => setEditor((prev) => (prev.open ? { ...prev, open: false } : prev))
 
   const replaceRule = async (updated: HighlightRule): Promise<void> => {
-    const next = highlightRules.map((r) => (r.id === updated.id ? updated : r))
+    // read at call time: the render-scoped array goes stale inside a React
+    // batch, and two writes in one batch would silently drop the first
+    const current = useSettingsStore.getState().settings.highlightRules
+    const next = current.map((r) => (r.id === updated.id ? updated : r))
     await setHighlightRules(next)
   }
 
@@ -132,7 +136,8 @@ export function HighlightTab(): React.JSX.Element {
   }
 
   const handleDelete = async (id: string): Promise<void> => {
-    await setHighlightRules(highlightRules.filter((r) => r.id !== id))
+    const current = useSettingsStore.getState().settings.highlightRules
+    await setHighlightRules(current.filter((r) => r.id !== id))
   }
 
   const handleReset = async (): Promise<void> => {
@@ -206,7 +211,6 @@ export function HighlightTab(): React.JSX.Element {
       width: 76,
       align: 'center',
       sorter: (a, b) => a.priority - b.priority,
-      defaultSortOrder: ORDERED_SORT,
       render: (priority: number) => <span className="hl-cell-priority">{priority}</span>
     },
     {
@@ -217,8 +221,8 @@ export function HighlightTab(): React.JSX.Element {
       render: (color: HighlightRule['color'], record) =>
         record.bands && record.bands.length > 0 ? (
           <div className="hl-band-preview">
-            {record.bands.map((band) => (
-              <Tooltip key={band.min} title={`≥ ${band.min}`}>
+            {record.bands.map((band, index) => (
+              <Tooltip key={index} title={`≥ ${band.min}`}>
                 <span className="hl-preview-text" style={{ color: band.fg }}>
                   ≥{band.min}
                 </span>
@@ -423,7 +427,8 @@ function HighlightEditor({
     bg: undefined,
     caseInsensitive: false,
     note: undefined,
-    enabled: true
+    enabled: true,
+    basic: false
   })
   const [saving, setSaving] = useState(false)
   const [showBg, setShowBg] = useState(false)
@@ -485,9 +490,10 @@ function HighlightEditor({
     const note = editing ? editing.note : undefined
     const enabled = editing ? editing.enabled : true
     const caseInsensitive = editing ? editing.caseInsensitive === true : false
+    const basic = editing ? editing.basic === true : false
     const bands = editing?.bands
     const category = editing?.category
-    setDraft({ pattern, priority, fg, bg, bands, category, caseInsensitive, note, enabled })
+    setDraft({ pattern, priority, fg, bg, bands, category, caseInsensitive, note, enabled, basic })
     setShowBg(bg != null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -507,7 +513,12 @@ function HighlightEditor({
   const updateBand = (index: number, partial: Partial<{ min: number; fg: string }>): void => {
     const bands = draft.bands
     if (!bands) return
-    patch({ bands: bands.map((band, i) => (i === index ? { ...band, ...partial } : band)) })
+    const next = bands.map((band, i) => (i === index ? { ...band, ...partial } : band))
+    // the engine applies bands in ascending min order (compileBands sorts), so
+    // keep the editor rows in that same order — a stable sort keeps equal mins
+    // in their entry order
+    next.sort((a, b) => a.min - b.min)
+    patch({ bands: next })
   }
 
   const removeBand = (index: number): void => {
@@ -535,6 +546,7 @@ function HighlightEditor({
           bands,
           category: draft.category,
           caseInsensitive,
+          ...(draft.basic ? { basic: true as const } : {}),
           note: draft.note?.trim() ? draft.note.trim() : undefined
         }
         await setHighlightRules([...highlightRules, rule])
@@ -548,6 +560,9 @@ function HighlightEditor({
           bands,
           category: draft.category,
           caseInsensitive,
+          // explicit override (not a conditional spread): unchecking must clear
+          // a basic flag the edited rule may already carry
+          basic: draft.basic ? true : undefined,
           note: draft.note?.trim() ? draft.note.trim() : undefined
         }
         await setHighlightRules(highlightRules.map((r) => (r.id === rule.id ? rule : r)))
@@ -646,7 +661,13 @@ function HighlightEditor({
                     value={draft.bg ?? PRESET_COLORS[0]}
                     onChange={(v) => patch({ bg: v })}
                   />
-                  <Button size="small" onClick={() => patch({ bg: undefined })}>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      patch({ bg: undefined })
+                      setShowBg(false)
+                    }}
+                  >
                     {t('settings.highlight.clearBg')}
                   </Button>
                 </>
@@ -740,6 +761,12 @@ function HighlightEditor({
               label: t(`settings.highlight.category.${category}`)
             }))}
           />
+        </div>
+
+        <div className="hl-editor-row">
+          <span className="hl-editor-label">{t('settings.highlight.basic')}</span>
+          <Switch checked={draft.basic} onChange={(c) => patch({ basic: c })} />
+          <span className="hl-editor-hint">{t('settings.highlight.basicHint')}</span>
         </div>
 
         <div className="hl-editor-row">
