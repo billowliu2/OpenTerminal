@@ -278,8 +278,26 @@ async function github() {
     }
   }
   const up = `https://uploads.github.com/repos/billowliu2/OpenTerminal/releases/${rel.id}/assets`
+  // Skip assets a previous partial run already uploaded — the upload POST
+  // 422s on duplicates, so without this a retry could never get past them.
+  const assetsResp = await gh(`${api}/releases/${rel.id}/assets?per_page=100`)
+  const existing = new Set(assetsResp.ok ? (await assetsResp.json()).map((a) => a.name) : [])
   for (const f of [...files, path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), path.join(R, 'latest.yml')]) {
-    await upload(up, f, env.GH_TOKEN, 'Bearer', true)
+    if (existing.has(path.basename(f))) {
+      console.log(`  skip ${path.basename(f)} (already uploaded)`)
+      continue
+    }
+    // Large uploads through a proxy flake; retry transient network errors.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await upload(up, f, env.GH_TOKEN, 'Bearer', true)
+        break
+      } catch (e) {
+        if (attempt >= 3) throw e
+        console.log(`  upload ${path.basename(f)} failed (${e.message}), retrying in 5s…`)
+        await new Promise((r) => setTimeout(r, 5000))
+      }
+    }
   }
 }
 
