@@ -7,8 +7,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 开发：`npm run dev`（主进程改动不热重建，需重启）
 - dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
-- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 10 个测试：ssh-loopback、commands-store、settings-store、lock-store、lock-controller、hl-split-smoke、hl-rules、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 10 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次），产物在 `release/`（msi + exe + latest.yml + blockmap）
+- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 11 个测试：ssh-loopback、commands-store、settings-store、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 11 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次），产物在 `release/`（msi + exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 
@@ -62,10 +62,10 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 冷却阶梯 1s→2s→5s→10s→30s，失败计数与冷却同样落盘；`setPassword`/`clearPassword`/`unlock` 走内部串行队列（`serialize`），否则并发调用会同时通过闸门绕过冷却
 - 闲置锁屏：`powerMonitor.getSystemIdleTime()`，15s 轮询；读不到（无会话/工作站已锁）一律当「不闲置」。`settings.lock.autoLockMinutes` 是白名单 `{0,1,5,15,30,60}`（`src/shared/settings.ts` 的 `LOCK_AUTO_DELAYS`），0 = 从不
 - **清除密码会一并把 `settings.lock.enabled`/`lockAtStartup` 置 false**（`LockControllerOptions.clearLockPreferences`，默认走 `mutateSettings`）：设置页文案承诺「清除后锁屏会一并关闭」，留着会让用户下次设密码时被静默重新武装
-- 锁屏期间主进程在 `win.webContents.on('before-input-event')` 里吞掉 F5/Ctrl+R、Ctrl+±0（含 Shift 拼写）、Ctrl+Shift+I/J/C：遮罩是 DOM 层，拦不住浏览器进程处理的 Electron 默认菜单加速键，而重载会触发 `beforeunload` 把遮罩后面的会话全杀掉。渲染层的 `document.documentElement.dataset.locked` 守卫（字体快捷键、`Ctrl+PgUp/PgDn`）**只允许 `return` 跳过自身逻辑，绝不能 `preventDefault`**——keydown 的默认动作就是「往聚焦输入框插字符」，窗口级 preventDefault 会把锁屏密码框的全部输入杀掉（v1.0.17 就是这么坏的，v1.0.18 修复）
-- **Ctrl+L = 立即锁屏**（同一 `before-input-event` 里捕获，终端里也生效——这正是它的意义）：仅在锁定真的生效时才 `preventDefault`，未设置密码的应用保留 Ctrl+L 给 shell 的清屏；已锁定时不再拦截
+- 锁屏期间主进程在 `win.webContents.on('before-input-event')` 里吞掉 F5/Ctrl+R、Ctrl+±0（含 Shift 拼写）、Ctrl+Shift+I/J/C：遮罩是 DOM 层，拦不住浏览器进程处理的 Electron 默认菜单加速键，而重载会触发 `beforeunload` 把遮罩后面的会话全杀掉。**键盘判定抽在纯函数模块 `src/main/lockShortcuts.ts`（`isLockBlockedShortcut`/`isPanicLockChord`，无 Electron 依赖，表驱动测试 `tests/lock-shortcuts.mjs`）**——v1.0.17 的回归就是死在闭包里没法测。键盘之外还有鼠标路径：默认菜单按 Alt 就能唤出，菜单项点击不走 before-input-event，所以**锁定期间 `src/main/lockMenu.ts` 把整个应用菜单置 null（解锁时按 Electron 默认模板重建）**；菜单摘除挂在 `LockController` 的默认 publish 上，启动恢复锁定不经过 publish，由 `index.ts` 在 `initLockController()` 后按 `isLocked()` 直接补一次。渲染层的 `document.documentElement.dataset.locked` 守卫（字体快捷键、`Ctrl+PgUp/PgDn`）**只允许 `return` 跳过自身逻辑，绝不能 `preventDefault`**——keydown 的默认动作就是「往聚焦输入框插字符」，窗口级 preventDefault 会把锁屏密码框的全部输入杀掉（v1.0.17 就是这么坏的，v1.0.18 修复）
+- **Ctrl+L = 立即锁屏**（同一 `before-input-event` 里捕获，终端里也生效——这正是它的意义）：仅在锁定真的生效时才 `preventDefault`，未设置密码的应用保留 Ctrl+L 给 shell 的清屏；已锁定时不再拦截。长按的自动重复要跳过（`input.isAutoRepeat`），否则未配置密码时每次重复都同步读 lock.json + settings.json。**Ctrl+L 是保留键**：全局唤起快捷键的录制器（`SettingsTabs.tsx` 的 `RESERVED_EXACT_ACCELERATORS`）拒绝它——globalShortcut 在 OS 层拦截，绑上去会让锁屏快捷键静默失效。窗口藏进托盘后 Ctrl+L 无效（before-input-event 只对聚焦窗口触发），这是刻意的取舍：全局注册会从所有应用手里抢走这个组合键
 - 启动时**不要**用 `locked: true` 作渲染层初值再直接画锁屏：`App.tsx` 用 `null` 表示「主进程还没答复」，此时只画 `.lock-screen-boot` 纯色层，否则每次启动都会给没设密码的用户闪一帧锁屏。`getLockState()` 失败时要落到「locked 且未配置」的状态，让输入框可达（主进程对无 verifier 的解锁请求直接放行）
-- 相关测试：`node tests/lock-store.mjs`（verifier + 状态存储）、`node tests/lock-controller.mjs`（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）
+- 相关测试：`node tests/lock-store.mjs`（verifier + 状态存储）、`node tests/lock-controller.mjs`（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）、`node tests/lock-shortcuts.mjs`（键盘分类器表驱动用例）
 
 ## 关键词高亮
 

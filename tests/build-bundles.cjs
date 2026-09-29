@@ -28,6 +28,8 @@ const BUNDLES = [
   // Pulls in settingsStore + broadcast, which is why the electron stub needs
   // powerMonitor as well.
   { entry: 'src/main/lockController.ts', out: 'tests/.lock-controller.cjs' },
+  // Lock keyboard classifier: pure, so the bundle needs no electron surface.
+  { entry: 'src/main/lockShortcuts.ts', out: 'tests/.lock-shortcuts.cjs' },
   // zmodem.js stays bundled (NOT external) — the test drives a second in-process
   // Sentry from the same library.
   { entry: 'src/main/zmodem.ts', out: 'tests/.zmodem-e2e.cjs', external: ['ssh2'] },

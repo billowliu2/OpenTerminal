@@ -68,6 +68,23 @@ export function LockScreen({ state, onStateChange }: LockScreenProps): React.JSX
     return () => window.clearInterval(id)
   }, [cooldownUntil])
 
+  // The countdown is renderer-driven, and Chromium may suspend or coalesce
+  // timers while the window is hidden, minimized or occluded — a suspended
+  // interval would leave the input disabled (and the "retry in N s" text
+  // frozen) long past the real deadline. Re-sync the clock the moment the
+  // page becomes visible or focused again, so recovery is immediate.
+  useEffect(() => {
+    const sync = (): void => setNow(Date.now())
+    document.addEventListener('visibilitychange', sync)
+    window.addEventListener('focus', sync)
+    window.addEventListener('pageshow', sync)
+    return () => {
+      document.removeEventListener('visibilitychange', sync)
+      window.removeEventListener('focus', sync)
+      window.removeEventListener('pageshow', sync)
+    }
+  }, [])
+
   const remainingMs = Math.max(0, cooldownUntil - now)
   const cooling = remainingMs > 0
 

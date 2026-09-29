@@ -500,8 +500,17 @@ function acceleratorFromEvent(e: React.KeyboardEvent<HTMLInputElement>): string 
  */
 const RESERVED_CONTROL_KEYS = new Set(['=', '-', '0', 'PageUp', 'PageDown'])
 
+/**
+ * Whole chords the app owns outright, matched exactly (modifier set included).
+ * Ctrl+L is the panic lock, captured in main's before-input-event: a global
+ * registration intercepts the key at the OS level even while this window is
+ * focused, so binding it here would silently disable the lock shortcut.
+ */
+const RESERVED_EXACT_ACCELERATORS = new Set(['Control+L'])
+
 /** true when `accel` (e.g. "Control+Shift+=") collides with an in-app shortcut */
 function isReservedAccelerator(accel: string): boolean {
+  if (RESERVED_EXACT_ACCELERATORS.has(accel)) return true
   const parts = accel.split('+')
   return parts.includes('Control') && RESERVED_CONTROL_KEYS.has(parts[parts.length - 1])
 }

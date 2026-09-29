@@ -29,6 +29,7 @@ import {
   isValidPassword
 } from './lockStore'
 import { loadSettings, mutateSettings } from './settingsStore'
+import { applyMenuLockState } from './lockMenu'
 
 /**
  * Backoff after each failed verification: the nth failure refuses further
@@ -90,7 +91,14 @@ export class LockController {
       options.stateStore ?? new LockStateStore(defaultLockStatePath(app.getPath('userData')))
     this.getLockSettings = options.getLockSettings ?? ((): LockSettings => loadSettings().lock)
     this.publish =
-      options.publish ?? ((state): void => broadcast(Ipc.LOCK_STATE_CHANGED, state))
+      options.publish ??
+      ((state): void => {
+        // The menu teardown rides every published transition; the startup lock
+        // engages without publishing, so index.ts applies it once from the
+        // restored flag directly.
+        applyMenuLockState(state.locked)
+        broadcast(Ipc.LOCK_STATE_CHANGED, state)
+      })
     this.now = options.now ?? ((): number => Date.now())
     this.idleSeconds = options.idleSeconds ?? ((): number => powerMonitor.getSystemIdleTime())
     this.clearLockPreferences =

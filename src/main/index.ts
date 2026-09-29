@@ -7,6 +7,8 @@ import { isTrustedRendererUrl, registerIpc } from './ipc'
 import { killAllPtys, killPtysByOwner } from './pty'
 import { applyStartupSystemSettings, loadSettings } from './settingsStore'
 import { getLockController, initLockController } from './lockController'
+import { applyMenuLockState } from './lockMenu'
+import { isLockBlockedShortcut, isPanicLockChord } from './lockShortcuts'
 import { initTray, markQuitting, onMainWindowClose, refreshTrayMenu } from './tray'
 import { configureAutoUpdater, registerUpdateIpc } from './updater'
 import { applyWindowChrome } from './windowChrome'
@@ -92,8 +94,10 @@ if (!gotSingleInstanceLock) {
     // The lock state has to exist before the window loads, so a lockAtStartup
     // lock is already in place when the renderer asks for it. It also starts the
     // idle watcher, which is why it belongs after ready: powerMonitor cannot be
-    // touched before that.
-    initLockController()
+    // touched before that. A restored startup lock engages before any publish,
+    // so the menu teardown is applied here from the flag itself.
+    const lock = initLockController()
+    applyMenuLockState(lock.isLocked())
     createWindow()
     initTray(showOrCreate)
     // Tray labels are resolved from the dictionary at build time, so the menu has
@@ -104,31 +108,6 @@ if (!gotSingleInstanceLock) {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
     })
   })
-}
-
-/**
- * Accelerators that must not reach the page while the lock screen is up.
- *
- * The overlay is a DOM layer inside the window, so everything the browser
- * process handles on its own passes straight through it: reloading the renderer
- * runs Workspace's beforeunload and kills every local/SSH session behind the
- * overlay, and the zoom / DevTools shortcuts would let the locked screen be
- * resized or read. These come from Electron's default application menu, whose
- * keys are matched before any renderer code runs.
- *
- * Matching is on `input.key` rather than `input.code`: the key is what the
- * layout actually produces (Ctrl+Shift+= arrives as '+', Ctrl+Shift+- as '_'),
- * while the code depends on the physical key.
- */
-function isLockBlockedShortcut(input: Electron.Input): boolean {
-  const key = input.key.toLowerCase()
-  if (key === 'f5') return true
-  if (!input.control) return false
-  if (key === 'r') return true
-  // Zoom: in, out and reset, in both their plain and Shift-shifted spellings.
-  if (key === '=' || key === '+' || key === '-' || key === '_' || key === '0') return true
-  // DevTools. Shift is required so that plain Ctrl+C (copy) keeps working.
-  return input.shift && (key === 'i' || key === 'j' || key === 'c')
 }
 
 function createWindow(): void {
@@ -169,7 +148,9 @@ function createWindow(): void {
   // Ctrl+L is the panic lock: it must work from anywhere in the app, terminals
   // included, so it is captured here ahead of the page. It only takes the chord
   // away when a lock actually engages — an unconfigured app keeps Ctrl+L for
-  // the shell's clear-screen.
+  // the shell's clear-screen. Auto-repeats are skipped: the first keydown
+  // decides, and on an unconfigured app each repeat would otherwise re-read
+  // lock.json + settings.json from disk (~30 keydown/s while held).
   // Swallow the menu accelerators that would otherwise act behind the lock
   // overlay (see isLockBlockedShortcut). A throw in here would break typing
   // altogether, so the whole guard is defensive.
@@ -177,15 +158,8 @@ function createWindow(): void {
     try {
       if (input.type !== 'keyDown') return
       const lock = getLockController()
-      if (
-        !lock.isLocked() &&
-        input.control &&
-        !input.shift &&
-        !input.alt &&
-        !input.meta &&
-        input.key.toLowerCase() === 'l'
-      ) {
-        if (lock.lockNow().locked) event.preventDefault()
+      if (!lock.isLocked() && isPanicLockChord(input)) {
+        if (!input.isAutoRepeat && lock.lockNow().locked) event.preventDefault()
         return
       }
       if (!lock.isLocked()) return
