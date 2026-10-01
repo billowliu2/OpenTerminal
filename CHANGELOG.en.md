@@ -1,5 +1,16 @@
 # OpenTerminal Changelog
 
+## v1.0.20 - 2026-10-01
+
+### Input Method Fixes
+- **Fixed the Chinese IME candidate window not following the cursor**: typing Chinese in the terminal (especially in fast-repainting TUI apps such as Kimi Code or Claude Code) previously made the candidate window drift far away from the caret; it now appears right next to it. The bundled terminal component was upgraded to a version containing the upstream IME fixes.
+
+### Lock Screen Hardening
+- **The application menu is removed while locked**: the Alt-revealed menu exposes Reload / DevTools / Zoom items that mouse clicks could use to bypass keyboard interception, so the whole menu is detached during lock and rebuilt on unlock.
+- The Ctrl+L instant-lock key classification was extracted into a dedicated module with 29 table-driven test cases to prevent regressions.
+- The global show/hide shortcut recorder now reserves Ctrl+L, so a global registration can no longer silently disable the panic lock at the OS level.
+- Fixed: after system suspend or window focus loss, the lock screen cooldown countdown could outlive its real deadline, keeping the password input disabled for longer than necessary.
+
 ## v1.0.19 - 2026-09-28
 
 ### Update mechanism change
