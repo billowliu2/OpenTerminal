@@ -47,3 +47,6 @@ RELEASE_NOTES*.md
 
 tmp-test/
 tmp-test*
+
+# agent session scratch (SDD plans/reports/smoke artifacts)
+.superpowers/

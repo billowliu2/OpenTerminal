@@ -8,7 +8,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
 - 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 11 个测试：ssh-loopback、commands-store、settings-store、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 11 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次），产物在 `release/`（msi + exe + latest.yml + blockmap）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 11 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 

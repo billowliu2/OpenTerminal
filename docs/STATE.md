@@ -4,7 +4,7 @@
 
 ## 当前版本与仓库
 
-- v1.0.13，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
+- v1.0.19，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
 - 开源协议：MIT（LICENSE）
 - 更新通道 = `https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/`（公网可读，含 latest.yml/exe/blockmap）
 - 技术栈：Electron + electron-vite + React 19 + TS strict + antd 6（全局深色）+ zustand + dockview-react 8 + @xterm/xterm 6 + @lydell/node-pty + ssh2 + zmodem.js + electron-updater + electron-builder
@@ -48,7 +48,7 @@
 
 ## 发布流程（下一版本照抄）
 
-1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）
+1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）。`predist` 末尾会 `npm install --package-lock-only` 自动同步锁文件根版本号，**release 提交要包含 package-lock.json**（否则根版本会漂移，v1.0.15–1.0.19 曾漂了 5 个版本）
 2. `node scripts/release.cjs <版本号> --skip-github`：脚本自己建 Gitea release（msi/exe 资产）→ 传更新通道 `exe.blockmap → exe → release-notes.md → latest.yml`（**latest.yml 最后**）；不再先删旧版，latest.yml 生效后才清掉上一版 exe/blockmap
 3. 通道传坏了只补通道：`node scripts/release.cjs <版本号> --channel-only`（同一版本可重复运行：release 复用、已传资产跳过）
 4. 校验：无 token `curl .../generic/openterminal-update/stable/latest.yml` 应 200 且 version 正确
@@ -88,6 +88,7 @@ node tests/sysinfo-e2e.mjs
 8. **electron-updater 不支持 MSI 自动更新** → 更新通道走 NSIS exe；MSI 仅分发
 9. **命令库测试时间戳竞态**：saveLibraryItem 连续保存同一毫秒 createdAt 相同排序不稳 → 测试保存间 wait(2)
 10. **JD 服务器测试凭据已过期**；凭据一律环境变量且不落盘
+11. **`@xterm/xterm` 精确锁定 `6.1.0-beta.304`（不带 ^）**：修中文 IME 候选窗不跟随光标（上游 xtermjs/xterm.js#5759 compositionstart 时同步 textarea 位置 + #5747 composition-view 限宽），stable 6.0.0 未带这两个修复；待 6.1.0 stable 发布后改回 `^` 语义化范围
 
 ## 编排约定
 
@@ -98,5 +99,6 @@ node tests/sysinfo-e2e.mjs
 ## 待办（按优先级）
 
 1. ~~应用图标~~（已完成：build/icon.png，程序生成的原创图标）
-2. 用户实测项：Ctrl+PgUp/PgDn 真实键盘（合成键盘无法验证修饰键）、真实服务器 rz/sz 一轮、全局唤起快捷键
+2. 用户实测项：Ctrl+PgUp/PgDn 真实键盘（合成键盘无法验证修饰键）、真实服务器 rz/sz 一轮、全局唤起快捷键、中文 IME 候选窗跟随光标（每次发版前手测一遍，CI 无法覆盖）
+3. `@xterm/xterm` 6.1.0 stable 发布后把精确锁定的 `6.1.0-beta.304` 改回 `^` 范围并回归验证 IME（背景见已踩坑 11）
 3. 小项：autoWrap=false 固定列宽、OSC 标题跟随、内置 OFL 字体打包、WebGL 终端数上限降级、最近命令历史出现两条命令拼接的记录（广播键入时行捕获合并，低优先级修）
