@@ -6,6 +6,7 @@
 // Credentials from .env (repo root, gitignored): GIT_TOKEN, GH_TOKEN.
 // If HTTPS_PROXY / HTTP_PROXY (env or .env) is set, traffic goes through it
 // (needed for api.github.com / uploads.github.com in some networks).
+const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -19,21 +20,36 @@ const SKIP_GH = process.argv.includes('--skip-github')
 const SKIP_GITEA = process.argv.includes('--skip-gitea')
 const CHANNEL_ONLY = process.argv.includes('--channel-only')
 
+/** Strip one pair of matching quotes. A .env quotes its values for the shell
+    that would source it, so the quotes are syntax, not part of the token. */
+function unquote(value) {
+  const q = value[0]
+  return (q === '"' || q === "'") && value.length > 1 && value.endsWith(q) ? value.slice(1, -1) : value
+}
 const env = Object.fromEntries(
   fs.readFileSync(path.join(ROOT, '.env'), 'utf8').split('\n')
     // Trim before the comment check: an indented `# comment = x` is a comment,
     // not an env entry.
     .map((l) => l.trim())
     .filter((l) => l.includes('=') && !l.startsWith('#'))
-    .map((l) => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()] })
+    .map((l) => {
+      // `export KEY=v` is a common way to write an env file: the prefix is
+      // shell syntax, not part of the key.
+      const body = l.startsWith('export ') ? l.slice('export '.length).trim() : l
+      const i = body.indexOf('=')
+      return [body.slice(0, i).trim(), unquote(body.slice(i + 1).trim())]
+    })
 )
 const notes = fs.readFileSync(path.join(ROOT, 'RELEASE_NOTES.md'), 'utf8')
 const R = path.join(ROOT, 'release')
-const files = [
-  path.join(R, `OpenTerminal-${V}-setup.msi`),
-  path.join(R, `OpenTerminal-${V}-setup.exe`)
-]
-for (const f of files) {
+const msi = path.join(R, `OpenTerminal-${V}-setup.msi`)
+const exe = path.join(R, `OpenTerminal-${V}-setup.exe`)
+const files = [msi, exe]
+// --channel-only republishes the update channel, which carries the NSIS exe and
+// its blockmap (electron-updater cannot consume an MSI) — the msi is a release
+// asset only, so demanding it here would block the repair path this mode exists
+// for. The channel's own file list is validated in giteaChannel().
+for (const f of CHANNEL_ONLY ? [exe] : files) {
   if (!fs.existsSync(f)) { console.error('missing build artifact:', f); process.exit(1) }
 }
 // Guard rails: the artifacts must belong to the version being published —
@@ -137,6 +153,34 @@ async function gitea() {
   }
 }
 
+const CHANNEL_BASE = 'https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable'
+
+/** Numeric compare of two x.y.z versions: negative, zero or positive. */
+function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number)
+  const pb = String(b).split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0)
+    if (d) return d
+  }
+  return 0
+}
+
+/** Refuse to publish a version older than the one the channel already serves.
+    The guard rails above only compare the *local* artifacts with V, so
+    publishing from an old branch passes all three of them, overwrites
+    latest.yml with an older version — and pruneChannel() then deletes the newer
+    binaries from the live channel, silently rolling every installed client
+    back. Runs before anything is uploaded. */
+async function assertNoDowngrade() {
+  const live = await channelVersion(CHANNEL_BASE)
+  if (!live) return
+  if (compareVersions(live, V) > 0) {
+    throw new Error(`refusing to publish v${V}: the update channel already serves v${live} — an older version would overwrite latest.yml and delete the newer binaries. Publish from the newer branch, or bump the version.`)
+  }
+  console.log(`channel currently serves v${live}`)
+}
+
 /** Version the update channel serves right now (read from its latest.yml), or
     undefined when the channel is empty/unreachable. */
 async function channelVersion(base) {
@@ -178,9 +222,30 @@ async function pruneChannel(base, previous) {
   }
 }
 
+/** sha512 of a local file, base64 — the encoding latest.yml records. */
+function fileSha512(file) {
+  return crypto.createHash('sha512').update(fs.readFileSync(file)).digest('base64')
+}
+
+/** sha512 (base64) that release/latest.yml declares for a channel payload, or
+    undefined when the yml is unreadable or does not describe that file (the
+    blockmap, for one, is not listed). */
+function declaredSha512(name) {
+  try {
+    let url
+    for (const line of fs.readFileSync(ymlPath, 'utf8').split('\n')) {
+      const entry = line.match(/^\s*-\s*url:\s*(\S+)/)
+      if (entry) { url = entry[1]; continue }
+      const sha = line.match(/^\s*sha512:\s*(\S+)/)
+      if (sha && url && (url === name || decodeURIComponent(url) === name)) return sha[1]
+    }
+  } catch { /* unreadable yml: the caller falls back to the size check */ }
+  return undefined
+}
+
 async function giteaChannel() {
   console.log('=== Gitea update channel ===')
-  const base = 'https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable'
+  const base = CHANNEL_BASE
   const channelFiles = [
     [path.join(R, 'latest.yml'), 'latest.yml'],
     [path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), `OpenTerminal-${V}-setup.exe.blockmap`],
@@ -217,8 +282,23 @@ async function giteaChannel() {
     if (!resp.ok && (resp.status === 409 || resp.status === 422)) {
       if (/\d+\.\d+\.\d+/.test(name)) {
         // Version-named payloads are immutable per release: accept a stored
-        // copy only when it has exactly the same size.
-        if ((await channelFileSize(url)) === stat.size) {
+        // copy only when it is demonstrably the artifact we just built.
+        // latest.yml records the sha512 electron-builder computed for this
+        // file, so hashing the file on disk proves it is that build; a size
+        // match alone would just as happily keep a truncated or stale upload.
+        const declared = declaredSha512(name)
+        const stored = await channelFileSize(url)
+        if (declared) {
+          if (fileSha512(f) !== declared) {
+            throw new Error(`${name} does not match the sha512 release/latest.yml declares for it — this is not the artifact that build produced`)
+          }
+          if (stored === stat.size) {
+            console.log(`  ${name} is already published with the same sha512, kept`)
+            continue
+          }
+        } else if (stored === stat.size) {
+          // Not described by latest.yml (the blockmap, for one): the stored
+          // size is the only cheap signal left.
           console.log(`  ${name} is already published with the same size, kept`)
           continue
         }
@@ -228,8 +308,19 @@ async function giteaChannel() {
         // The swap window is one small file (sub-second), not the whole channel.
         const del = await fetch(url, { method: 'DELETE', headers: { Authorization: `token ${env.GIT_TOKEN}` } })
         console.log(`  delete old ${name}: HTTP ${del.status}`)
-        resp = await put()
-        console.log(`  put ${name}: HTTP ${resp.status}`)
+        // A delete that did not happen leaves the PUT below facing the same
+        // conflict, so fail here instead of after a pointless retry loop.
+        // 404 means the file is already gone, which is what we wanted.
+        if (!del.ok && del.status !== 404) throw new Error(`channel delete failed (${del.status}) for ${name}`)
+        // Retry: the delete→put gap is the one moment the channel serves no
+        // latest.yml at all, so closing it fast matters more than request count.
+        for (let attempt = 1; ; attempt++) {
+          resp = await put()
+          console.log(`  put ${name}: HTTP ${resp.status}`)
+          if (resp.ok || attempt >= 3) break
+          console.log(`  put ${name} failed (HTTP ${resp.status}), retrying in ${attempt}s…`)
+          await new Promise((r) => setTimeout(r, attempt * 1000))
+        }
       }
     }
     if (!resp.ok) {
@@ -281,7 +372,12 @@ async function github() {
   // Skip assets a previous partial run already uploaded — the upload POST
   // 422s on duplicates, so without this a retry could never get past them.
   const assetsResp = await gh(`${api}/releases/${rel.id}/assets?per_page=100`)
-  const existing = new Set(assetsResp.ok ? (await assetsResp.json()).map((a) => a.name) : [])
+  // A failed listing must not read as "nothing uploaded": that re-POSTs every
+  // already-uploaded asset, 422s on the duplicate name and only gives up after
+  // three retries. Fail loudly, exactly like the Gitea side — a re-run then
+  // resumes correctly instead of stalling.
+  if (!assetsResp.ok) throw new Error(`GitHub asset listing failed: HTTP ${assetsResp.status}`)
+  const existing = new Set((await assetsResp.json()).map((a) => a.name))
   for (const f of [...files, path.join(R, `OpenTerminal-${V}-setup.exe.blockmap`), path.join(R, 'latest.yml')]) {
     if (existing.has(path.basename(f))) {
       console.log(`  skip ${path.basename(f)} (already uploaded)`)
@@ -302,6 +398,9 @@ async function github() {
 }
 
 async function main() {
+  // Before anything is uploaded: a downgrade breaks the GitHub release clients
+  // read first and the channel they fall back to.
+  await assertNoDowngrade()
   // --channel-only: the release and its assets already exist (or are not needed),
   // so republish just the update channel — the repair path for a channel upload
   // that died halfway.
