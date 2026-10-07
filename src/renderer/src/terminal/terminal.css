@@ -26,6 +26,14 @@
   background-color: transparent;
 }
 
+/* With a background image the dock must dim toward a fixed dark base instead of
+   the theme chrome color: on light themes --chrome-bg is near-white, so lowering
+   the image opacity would wash the wallpaper out to white (text unreadable)
+   rather than darkening it. */
+.terminal-view.has-bg-image .terminal-view-dock {
+  background: #0d1117;
+}
+
 /* Slim slate scrollbar for the xterm viewport — the native Windows one renders
    light track + arrow buttons that look broken on the dark surface. The thumb
    sits inset inside a wider grab lane (transparent border + padding-box clip)

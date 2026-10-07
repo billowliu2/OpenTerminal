@@ -284,7 +284,7 @@ const settings: Record<string, string> = {
   'settings.theme.accent': 'Tab accent color',
   'settings.theme.accentDesc': 'Accent color for the active tab border, the sidebar indicator, and SSH badges',
   'settings.theme.backgroundImage': 'Background image',
-  'settings.theme.backgroundImageDesc': 'Show an image behind the terminal; remove it to go back to a solid background. Lower the opacity if text gets hard to read (20–40% works well for bright images)',
+  'settings.theme.backgroundImageDesc': 'Show an image behind the terminal; remove it to go back to a solid background. In every theme the image dims toward dark and text is brightened automatically; lower the opacity if it is still hard to read (20–40% works well for bright images)',
   'settings.theme.chooseImage': 'Choose image',
   'settings.theme.clearImage': 'Remove',
   'settings.theme.imageOpacity': 'Image opacity',

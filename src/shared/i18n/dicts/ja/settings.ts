@@ -279,7 +279,7 @@ const settings: Record<string, string> = {
   'settings.theme.accent': 'タブのアクセントカラー',
   'settings.theme.accentDesc': 'アクティブなタブの枠線、サイドバーのインジケーター、SSH バッジのアクセントカラー',
   'settings.theme.backgroundImage': '背景画像',
-  'settings.theme.backgroundImageDesc': 'ターミナルの背後に画像を表示します。削除すると無地の背景に戻ります。文字が読みにくい場合は不透明度を下げてください（明るい画像は 20–40% が目安です）',
+  'settings.theme.backgroundImageDesc': 'ターミナルの背後に画像を表示します。削除すると無地の背景に戻ります。どのテーマでも画像は暗い側へ減光され、文字は自動で明るくなります。それでも読みにくい場合は不透明度を下げてください（明るい画像は 20–40% が目安です）',
   'settings.theme.chooseImage': '画像を選択',
   'settings.theme.clearImage': '削除',
   'settings.theme.imageOpacity': '画像の不透明度',

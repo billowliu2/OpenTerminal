@@ -268,7 +268,7 @@ const settings: Record<string, string> = {
   'settings.theme.accent': '标签强调色',
   'settings.theme.accentDesc': '活动标签边框、侧栏指示条与 SSH 徽章的强调颜色',
   'settings.theme.backgroundImage': '背景图片',
-  'settings.theme.backgroundImageDesc': '为终端设置一张背景图片；移除后恢复纯色背景；文字看不清时调低透明度（亮图建议 20–40%）',
+  'settings.theme.backgroundImageDesc': '为终端设置一张背景图片；移除后恢复纯色背景；任何主题下图片都向深色压暗、文字自动提亮，仍看不清时调低透明度（亮图建议 20–40%）',
   'settings.theme.chooseImage': '选择图片',
   'settings.theme.clearImage': '移除图片',
   'settings.theme.imageOpacity': '图片不透明度',

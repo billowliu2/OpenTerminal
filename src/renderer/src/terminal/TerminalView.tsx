@@ -778,7 +778,11 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       allowTransparency: true,
       overviewRuler: { width: 9, showTopBorder: false, showBottomBorder: false },
       drawBoldTextInBrightColors: true,
-      minContrastRatio: 1,
+      // In image mode the xterm background is transparent (#00000000), which
+      // xterm's contrast cache treats as black; a raised contrast floor lifts
+      // dark foreground colors (light themes) enough to stay readable over
+      // the wallpaper. Without an image keep 1 (off) to honor theme colors.
+      minimumContrastRatio: tSettings.backgroundImage ? 4.5 : 1,
       automaticFontFallback: true,
       convertEol: false,
       windowsPty: { backend: 'conpty', buildNumber: 0 }
@@ -1113,6 +1117,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     // terminals opened after the change, which reads as "the setting is broken".
     term.options.scrollback = tSettings.scrollback
     term.options.theme = withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme, Boolean(tSettings.backgroundImage))
+    term.options.minimumContrastRatio = tSettings.backgroundImage ? 4.5 : 1
     scheduleFit()
   }, [tSettings, settings.customThemes, scheduleFit])
 

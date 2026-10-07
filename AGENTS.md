@@ -51,6 +51,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 - 终端主题由 xterm 主题派生 UI 配色：`src/renderer/src/theme/chrome.ts` 的 `applyChromeTheme` 写入 `--chrome-bg/-bg-deep/-border/-hover` CSS 变量，antd token 在 `main.tsx` ThemedConfigProvider 派生
 - 标签强调色：`settings.tabAccentColor`（默认 `#3fb950`），经 `--tab-accent` CSS 变量生效
+- 背景图（`settings.terminal.backgroundImage`）：图片层 `.term-bg-image` 在 xterm 画布之下（`terminal.css`），xterm 背景设 `#00000000` 透明。**图片模式下的两条铁律**：① `.terminal-view.has-bg-image .terminal-view-dock` 强制深色底衬 `#0d1117`，不能用 `--chrome-bg`——浅色主题下它是白色，调低透明度会把图洗白而不是压暗；② `minimumContrastRatio` 从 1 提到 4.5（WCAG AA，与 VS Code 终端默认值一致；TerminalView 构造与设置热更两处都要改；注意正确拼写是 `minimumContrastRatio`，`minContrastRatio` 会被静默忽略），xterm 的对比度计算把透明背景当黑色亮度，会把浅色主题的深色前景自动提亮到可读。无图时保持 1 不动主题配色
 
 ## 终端尺寸同步
 

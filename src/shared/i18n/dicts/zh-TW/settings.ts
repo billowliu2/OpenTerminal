@@ -268,7 +268,7 @@ const settings: Record<string, string> = {
   'settings.theme.accent': '標籤強調色',
   'settings.theme.accentDesc': '作用中標籤的邊框、側邊欄指示條與 SSH 徽章的強調顏色',
   'settings.theme.backgroundImage': '背景圖片',
-  'settings.theme.backgroundImageDesc': '為終端設定一張背景圖片；移除後恢復純色背景；文字看不清時調低透明度（亮圖建議 20–40%）',
+  'settings.theme.backgroundImageDesc': '為終端設定一張背景圖片；移除後恢復純色背景；任何主題下圖片都向深色壓暗、文字自動提亮，仍看不清時調低透明度（亮圖建議 20–40%）',
   'settings.theme.chooseImage': '選擇圖片',
   'settings.theme.clearImage': '移除圖片',
   'settings.theme.imageOpacity': '圖片不透明度',
