@@ -29,6 +29,13 @@ import { t } from '../shared/i18n'
 const OFFER_TIMEOUT_MS = 120_000
 /** Abort a transfer that makes no byte progress for this long (ms). */
 const STALL_TIMEOUT_MS = 90_000
+/**
+ * Progress broadcast floor (ms), same value as sftp.ts. A receive calls
+ * on_input once per ZDATA subpacket (1-8KB), so an unthrottled emit is one
+ * webContents.send per packet: ~10k-100k events for a 100MB file, and every
+ * one of them copies the transfer Map in TransferPanel and re-renders it.
+ */
+const PROGRESS_THROTTLE_MS = 150
 
 const ABORT_BUFFER = Buffer.from(Zmodem.ZMLIB.ABORT_SEQUENCE)
 
@@ -62,6 +69,14 @@ interface Engine {
   transferId: string
   /** one progress terminal event at most */
   progressEmitted: boolean
+  /** Timestamp of the last *running* progress broadcast (throttle window). */
+  lastProgressAt: number
+  /**
+   * True while *we* are tearing the session down (abort). zmodem.js's abort()
+   * fires 'session_end' synchronously, and that event must not be read as the
+   * peer finishing cleanly — see makeSessionEnd().
+   */
+  ending: boolean
   doneEmitted: boolean
   offerTimer: NodeJS.Timeout | null
   stallTimer: NodeJS.Timeout | null
@@ -100,6 +115,27 @@ function emitProgress(engine: Engine, patch: Partial<TransferProgressEvent>): vo
   }
 }
 
+/**
+ * Progress broadcast with a 150ms floor (same rule as sftp.ts). `force` is for
+ * events that must land no matter what — a file boundary or the final byte
+ * count of a transfer — so the UI never stops on a stale number.
+ */
+function emitProgressThrottled(
+  engine: Engine,
+  patch: Partial<TransferProgressEvent>,
+  force = false
+): void {
+  // Nothing may report progress once the transfer is over: a late `running`
+  // event (a send loop or an accept() callback that outlives the session)
+  // would flip the renderer's finished row back to "in progress" with no
+  // terminal event left to close it.
+  if (!engine.active) return
+  const now = Date.now()
+  if (!force && now - engine.lastProgressAt < PROGRESS_THROTTLE_MS) return
+  engine.lastProgressAt = now
+  emitProgress(engine, patch)
+}
+
 function emitDone(engine: Engine, ok: boolean, message?: string): void {
   if (engine.doneEmitted) return
   engine.doneEmitted = true
@@ -122,14 +158,22 @@ function finalize(
   failState: 'cancelled' | 'error' = 'error'
 ): void {
   engine.active = false
+  // Everything below is us ending the session, not the peer: abort() fires
+  // 'session_end' synchronously (see makeSessionEnd), and that must not be
+  // mistaken for a clean finish.
+  engine.ending = true
   cancelTimers(engine)
-  if (engine.receiveStream) {
+  const stream = engine.receiveStream
+  engine.receiveStream = null
+  // Clear the slot *before* end(): an errored/destroyed sink must not be ended
+  // again (ERR_STREAM_DESTROYED), and the 'error' handler must no longer see
+  // this stream as the current one.
+  if (stream && !stream.destroyed && !stream.writableEnded) {
     try {
-      engine.receiveStream.end()
+      stream.end()
     } catch {
       // already closed
     }
-    engine.receiveStream = null
   }
   if (!ok && engine.session) {
     // Failure paths (stall watchdog, corrupt frame) must stop the peer too:
@@ -153,9 +197,20 @@ function finalize(
   else emitDone(engine, false, message ?? t('main.zmodem.transferFailed'))
 }
 
-/** Called by the zsession's own 'session_end' event (its `this` is the session). */
+/**
+ * Called by the zsession's own 'session_end' event (its `this` is the session).
+ *
+ * 'session_end' is the clean-finish signal ONLY when the peer ended it. Our own
+ * session.abort() fires it synchronously too, and letting that through re-enters
+ * finalize(ok=true) *before* the failing caller emits its own terminal events —
+ * which reported every stalled / cancelled / failed transfer as a success
+ * (progress state 'done', ZMODEM_DONE ok:true, no error message).
+ */
 function makeSessionEnd(engine: Engine): () => void {
-  return () => finalize(engine, true)
+  return () => {
+    if (engine.ending) return
+    finalize(engine, true)
+  }
 }
 
 function touchActivity(engine: Engine): void {
@@ -198,7 +253,13 @@ async function sendOneFile(
     mode: undefined
   })
   if (!xfer) return // receiver skipped the file
-  emitProgress(engine, { file: file.name, bytes: engine.bytes, totalBytes: engine.totalBytes })
+  // Forced: a file boundary must always be visible even if the previous chunk
+  // just consumed the throttle window.
+  emitProgressThrottled(
+    engine,
+    { file: file.name, bytes: engine.bytes, totalBytes: engine.totalBytes },
+    true
+  )
 
   await new Promise<void>((resolve, reject) => {
     const rs = createReadStream(file.path)
@@ -213,7 +274,12 @@ async function sendOneFile(
         return
       }
       engine.bytes += buf.length
-      emitProgress(engine, { file: file.name, bytes: engine.bytes, totalBytes: engine.totalBytes })
+      emitProgressThrottled(engine, {
+        file: file.name,
+        bytes: engine.bytes,
+        totalBytes: engine.totalBytes
+      })
+      // Not throttled: the stall watchdog measures byte progress, not UI events.
       touchActivity(engine)
       rs.resume()
     })
@@ -239,10 +305,20 @@ async function runSend(engine: Engine, paths: string[]): Promise<void> {
     engine.totalBytes = files.reduce((acc, f) => acc + f.size, 0)
 
     for (const f of files) {
-      emitProgress(engine, { file: f.name, bytes: engine.bytes, totalBytes: engine.totalBytes })
+      emitProgressThrottled(
+        engine,
+        { file: f.name, bytes: engine.bytes, totalBytes: engine.totalBytes },
+        true
+      )
       await sendOneFile(engine, session, f)
     }
-    emitProgress(engine, { file: '', bytes: engine.totalBytes, totalBytes: engine.totalBytes })
+    // Forced: the last running progress must show the true total before the
+    // terminal event lands.
+    emitProgressThrottled(
+      engine,
+      { file: '', bytes: engine.totalBytes, totalBytes: engine.totalBytes },
+      true
+    )
     // Final state + ZMODEM_DONE come from the session_end event fired by close().
     await session.close()
   } catch (err) {
@@ -264,6 +340,21 @@ function handleOffer(engine: Engine, offer: Zmodem.Offer): void {
   engine.receiveStream = stream
   emitProgress(engine, { file: name, bytes: engine.bytes, totalBytes: engine.totalBytes })
 
+  // A dead sink (ENOSPC, EACCES, path deleted mid-transfer) must end the
+  // transfer right here. Without this listener the 'error' event is unhandled
+  // and takes the process down; even with a listener, skipping finalize leaves
+  // the engine `active` — terminal output stays suppressed and keystrokes keep
+  // being swallowed until the 90s stall watchdog finally fires.
+  stream.on('error', (err: Error) => {
+    // Only the stream the engine still owns may end the transfer: a late error
+    // from a file a later offer already replaced (or from a finished transfer)
+    // must not tear down the new one. It is still *handled* either way — an
+    // unhandled 'error' is fatal.
+    if (engine.receiveStream !== stream) return
+    engine.receiveStream = null
+    finalize(engine, false, err instanceof Error ? err.message : t('main.zmodem.receiveFailed'))
+  })
+
   offer
     .accept({
       on_input: (payload: Uint8Array | number[]) => {
@@ -274,14 +365,26 @@ function handleOffer(engine: Engine, offer: Zmodem.Offer): void {
           stream.write(buf)
         }
         engine.bytes += buf.byteLength
-        emitProgress(engine, { file: name, bytes: engine.bytes, totalBytes: engine.totalBytes })
+        emitProgressThrottled(engine, {
+          file: name,
+          bytes: engine.bytes,
+          totalBytes: engine.totalBytes
+        })
+        // Not throttled: the stall watchdog measures byte progress, not UI events.
         touchActivity(engine)
       }
     })
     .then(() => {
+      // The sink may already be dead (write error, session teardown): end() on
+      // a destroyed stream raises ERR_STREAM_DESTROYED.
+      if (stream.destroyed || stream.writableEnded) return
       stream.end(() => {
         if (engine.receiveStream === stream) engine.receiveStream = null
-        emitProgress(engine, { file: name, bytes: engine.bytes, totalBytes: engine.totalBytes })
+        emitProgressThrottled(
+          engine,
+          { file: name, bytes: engine.bytes, totalBytes: engine.totalBytes },
+          true
+        )
       })
     })
     .catch((err: unknown) => {
@@ -336,6 +439,13 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
         engine.bytes = 0
         engine.totalBytes = 0
         engine.transferId = `zm-${sessionId}`
+        // 0 = window open, so the first data chunk of the new transfer is
+        // reported immediately instead of being swallowed by the previous
+        // transfer's throttle window.
+        engine.lastProgressAt = 0
+        // The previous transfer may have ended by our own abort; this one starts
+        // fresh, so its peer-driven 'session_end' must count again.
+        engine.ending = false
         emitProgress(engine, { file: '', bytes: 0, totalBytes: 0 })
         try {
           deps.broadcast(Ipc.ZMODEM_OFFER, { id: sessionId, mode: engine.mode })
@@ -376,6 +486,8 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
     confirmed: false,
     transferId: `zm-${sessionId}`,
     progressEmitted: false,
+    lastProgressAt: 0,
+    ending: false,
     doneEmitted: false,
     offerTimer: null,
     stallTimer: null,
@@ -391,6 +503,7 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
  * the CAN abort sequence directly so the remote program exits.
  */
 function abortWithoutSession(engine: Engine, message: string): void {
+  engine.ending = true
   try {
     engine.detection?.deny()
   } catch {
@@ -411,6 +524,9 @@ function abortWithoutSession(engine: Engine, message: string): void {
 
 /** Abort a confirmed session cleanly (sends CAN so remote rz/sz exits). */
 function abortSession(engine: Engine, message: string): void {
+  // Set before abort(): the abort fires 'session_end' synchronously and that
+  // must not be taken as the peer completing the transfer.
+  engine.ending = true
   try {
     engine.session?.abort()
   } catch {
@@ -498,19 +614,34 @@ export function respondZmodem(resp: ZmodemResponse): void {
   }
 }
 
-/** Detach + clean up (session close / kill). Safe to call any number of times. */
+/**
+ * Detach + clean up (session close / kill). Safe to call any number of times.
+ *
+ * A live transfer dies with the session, so it must be finalized here: nothing
+ * else will ever answer the pending offer or finish the progress row, and the
+ * renderer would keep its ZMODEM offer modal (and a `running` transfer entry)
+ * up forever. Only `active` engines are finalized — an idle engine never
+ * announced anything, and emitting a terminal event for every session close
+ * would spam the UI with failures that never happened. finalize()/emitDone()
+ * are one-shot, so a second detach (or a detach after the normal session_end)
+ * emits nothing.
+ */
 export function detachZmodem(sessionId: string): void {
   const engine = current(sessionId)
   if (!engine) return
+  if (engine.active) {
+    finalize(engine, false, t('main.zmodem.sessionClosed'), 'cancelled')
+  }
   engine.active = false
   cancelTimers(engine)
-  if (engine.receiveStream) {
+  const stream = engine.receiveStream
+  engine.receiveStream = null
+  if (stream && !stream.destroyed && !stream.writableEnded) {
     try {
-      engine.receiveStream.end()
+      stream.end()
     } catch {
       // ignore
     }
-    engine.receiveStream = null
   }
   engine.session = null
   engine.detection = null
