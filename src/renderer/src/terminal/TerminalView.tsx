@@ -1400,6 +1400,14 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
               }}
             />
           )}
+          {settings.terminal.backgroundImage !== '' && settings.terminal.backgroundImageDim > 0 && (
+            <div
+              className="term-bg-dim"
+              style={{
+                opacity: Math.min(90, Math.max(0, settings.terminal.backgroundImageDim)) / 100
+              }}
+            />
+          )}
           {dead && (
             <div className="term-dead-mask">
               <div>{t('terminal.dead.message', { code: exitCode })}</div>

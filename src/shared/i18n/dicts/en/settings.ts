@@ -288,6 +288,8 @@ const settings: Record<string, string> = {
   'settings.theme.chooseImage': 'Choose image',
   'settings.theme.clearImage': 'Remove',
   'settings.theme.imageOpacity': 'Image opacity',
+  'settings.theme.backgroundImageDim': 'Background dim',
+  'settings.theme.backgroundImageDimDesc': 'Overlays a black dim layer on top of the image; text is brightened automatically. 30–50% works well for bright images',
   'settings.theme.customBadge': 'Custom',
   'settings.theme.deleteTitle': 'Delete custom theme',
   'settings.theme.create': 'New theme',

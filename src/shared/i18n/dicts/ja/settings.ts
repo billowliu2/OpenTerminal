@@ -283,6 +283,8 @@ const settings: Record<string, string> = {
   'settings.theme.chooseImage': '画像を選択',
   'settings.theme.clearImage': '削除',
   'settings.theme.imageOpacity': '画像の不透明度',
+  'settings.theme.backgroundImageDim': '背景の減光',
+  'settings.theme.backgroundImageDimDesc': '画像の上に黒い減光レイヤーを重ね、文字は自動で明るくなります。明るい画像は 30–50% が目安です',
   'settings.theme.customBadge': 'カスタム',
   'settings.theme.deleteTitle': 'カスタムテーマを削除',
   'settings.theme.create': '新しいテーマ',

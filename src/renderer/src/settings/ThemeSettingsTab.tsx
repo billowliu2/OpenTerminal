@@ -32,6 +32,7 @@ export function ThemeSettingsTab({
   const setCustomThemes = useSettingsStore((s) => s.setCustomThemes)
   const activeTheme = useResolvedTheme()
   const [opacityDraft, setOpacityDraft] = useState<number | null>(null)
+  const [dimDraft, setDimDraft] = useState<number | null>(null)
 
   const themeCards = useMemo(
     () => [...BUILTIN_THEMES, ...settings.customThemes],
@@ -86,6 +87,26 @@ export function ThemeSettingsTab({
             onChangeComplete={(v) => {
               setOpacityDraft(null)
               void updateTerminal({ backgroundImageOpacity: v })
+            }}
+          />
+        </div>
+      )}
+      {settings.terminal.backgroundImage !== '' && (
+        <div className="theme-accent-row">
+          <div>
+            <div className="settings-block-label">{t('settings.theme.backgroundImageDim')}</div>
+            <div className="settings-block-hint">{t('settings.theme.backgroundImageDimDesc')}</div>
+          </div>
+          <Slider
+            style={{ width: 200 }}
+            min={0}
+            max={90}
+            step={5}
+            value={dimDraft ?? settings.terminal.backgroundImageDim}
+            onChange={(v) => setDimDraft(v)}
+            onChangeComplete={(v) => {
+              setDimDraft(null)
+              void updateTerminal({ backgroundImageDim: v })
             }}
           />
         </div>

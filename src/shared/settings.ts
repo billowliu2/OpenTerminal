@@ -112,6 +112,8 @@ export interface TerminalSettings {
   backgroundImage: string
   /** background image layer opacity, 10..100 (%) */
   backgroundImageOpacity: number
+  /** black scrim over the background image, under the text, 0..90 (%); 0 = off */
+  backgroundImageDim: number
 }
 
 export type HighlightMode = 'all' | 'basic' | 'off'
@@ -459,7 +461,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     highlightThemeColors: false,
     highlightPerHost: false,
     backgroundImage: '',
-    backgroundImageOpacity: 30
+    backgroundImageOpacity: 30,
+    backgroundImageDim: 0
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,

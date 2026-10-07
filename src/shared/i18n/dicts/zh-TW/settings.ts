@@ -272,6 +272,8 @@ const settings: Record<string, string> = {
   'settings.theme.chooseImage': '選擇圖片',
   'settings.theme.clearImage': '移除圖片',
   'settings.theme.imageOpacity': '圖片不透明度',
+  'settings.theme.backgroundImageDim': '背景壓暗',
+  'settings.theme.backgroundImageDimDesc': '在圖片之上疊加黑色壓暗層，文字隨之自動提亮；亮圖建議 30–50%',
   'settings.theme.customBadge': '自訂',
   'settings.theme.deleteTitle': '刪除自訂主題',
   'settings.theme.create': '新增主題',
