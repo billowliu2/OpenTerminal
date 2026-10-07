@@ -35,6 +35,7 @@ const main: Record<string, string> = {
   'main.sftp.invalidUidGid': '不正な uid/gid',
   'main.sftp.commandTimeout': 'コマンドがタイムアウトしました',
   'main.sftp.openTimeout': 'SFTP チャネルのオープンがタイムアウトしました',
+  'main.sftp.opTimeout': 'SFTP 操作が {seconds} 秒応答しません。接続が切断された可能性があります。再接続して再試行してください',
   'main.sftp.commandExitCode': 'コマンドの終了コード {code}',
   'main.sftp.cancelled': 'キャンセルしました',
   'main.sftp.localNotAllowed': 'ローカルパスが許可されていません: {path}。「ファイルを選択 / ディレクトリを選択」ダイアログで選び直してください。',

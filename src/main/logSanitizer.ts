@@ -66,7 +66,9 @@ export class LogSanitizer {
           } else if (c === '\n') {
             out += this.emitLine()
           } else if (c === '\t' || c >= ' ') {
-            // printable + tab; DEL and C0 controls (bell etc.) are dropped
+            // printable + tab; C0 controls (bell, backspace, …) are dropped.
+            // Note DEL (0x7F) is not a C0 control and passes this test, so it
+            // is kept as an ordinary character.
             if (this.alt) this.altDirty = true
             else this.line += c
           }

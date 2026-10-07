@@ -35,6 +35,7 @@ const main: Record<string, string> = {
   'main.sftp.invalidUidGid': 'uid/gid 無效',
   'main.sftp.commandTimeout': '命令執行逾時',
   'main.sftp.openTimeout': 'SFTP 通道開啟逾時',
+  'main.sftp.opTimeout': 'SFTP 操作無回應（{seconds} 秒），連線可能已中斷，請重新連線後再試',
   'main.sftp.commandExitCode': '指令結束碼 {code}',
   'main.sftp.cancelled': '已取消',
   'main.sftp.localNotAllowed': '本機路徑未獲授權: {path}。請改用「選擇檔案 / 選擇目錄」對話框重新選擇。',

@@ -35,6 +35,7 @@ const main: Record<string, string> = {
   'main.sftp.invalidUidGid': 'Invalid uid/gid',
   'main.sftp.commandTimeout': 'Command timed out',
   'main.sftp.openTimeout': 'Opening the SFTP channel timed out',
+  'main.sftp.opTimeout': 'The SFTP operation stopped responding ({seconds}s); the connection is probably dead — reconnect and try again',
   'main.sftp.commandExitCode': 'Command exited with code {code}',
   'main.sftp.cancelled': 'Cancelled',
   'main.sftp.localNotAllowed': 'Local path not authorised: {path}. Pick it again with the "choose file / choose directory" dialog.',

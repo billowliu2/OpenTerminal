@@ -40,6 +40,12 @@ tests/.session-e2e.cjs
 tests/.hl-split-smoke.cjs
 tests/.hl-rules.cjs
 tests/.zmodem-e2e.cjs
+tests/.ssh.cjs
+tests/.updater.cjs
+tests/.ipc.cjs
+tests/.ipc-channels.cjs
+tests/.log-sanitizer.cjs
+tests/.reserved-accelerators.cjs
 release/
 
 # stray local test artifacts

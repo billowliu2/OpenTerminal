@@ -33,15 +33,84 @@ export function registerSftpClientProvider(provider: (id: string) => Client | un
 }
 
 function p<T>(fn: (cb: (err: Error | null, res: T) => void) => void): Promise<T> {
+  return bounded(rawP(fn), timeouts.op)
+}
+
+/** For ssh2 calls whose callback only yields an error. */
+function pVoid(fn: (cb: (err: Error | null) => void) => void): Promise<void> {
+  return bounded(rawVoid(fn), timeouts.op)
+}
+
+/**
+ * Transfer-chunk variants: a 256KB read/write on a slow link is legitimately
+ * seconds, so these run on the wider `transfer` budget instead of the metadata
+ * one. Same class of failure, different tolerance.
+ */
+function pTransfer<T>(fn: (cb: (err: Error | null, res: T) => void) => void): Promise<T> {
+  return bounded(rawP(fn), timeouts.transfer)
+}
+
+function pVoidTransfer(fn: (cb: (err: Error | null) => void) => void): Promise<void> {
+  return bounded(rawVoid(fn), timeouts.transfer)
+}
+
+/**
+ * Operation budgets.
+ *
+ * Two classes, because one number cannot serve both: metadata round trips are
+ * milliseconds on any working link, while a 256KB transfer chunk on a slow link
+ * is legitimately seconds (and the upload path additionally waits on a peer
+ * that ACKs lazily — see the transfer section). The metadata budget is the
+ * "channel is dead" detector; the transfer budget is a backstop for the same
+ * failure at chunk granularity, set wide enough that it cannot fire on a merely
+ * slow transfer.
+ */
+const timeouts = { op: 30_000, transfer: 60_000, open: 10_000 }
+
+/**
+ * Test seam: shrink the budgets so the offline harness does not have to wait
+ * them out. Mirrors setLocalPathPolicy — injected, never read from renderer
+ * input.
+ */
+export function setSftpTimeouts(patch: { op?: number; transfer?: number; open?: number }): void {
+  if (patch.op !== undefined) timeouts.op = patch.op
+  if (patch.transfer !== undefined) timeouts.transfer = patch.transfer
+  if (patch.open !== undefined) timeouts.open = patch.open
+}
+
+/** Unbounded primitive behind `p` / `pVoid`. */
+function rawP<T>(fn: (cb: (err: Error | null, res: T) => void) => void): Promise<T> {
   return new Promise((resolve, reject) => {
     fn((err, res) => (err ? reject(err) : resolve(res)))
   })
 }
 
-/** For ssh2 calls whose callback only yields an error. */
-function pVoid(fn: (cb: (err: Error | null) => void) => void): Promise<void> {
+function rawVoid(fn: (cb: (err: Error | null) => void) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     fn(err => (err ? reject(err) : resolve()))
+  })
+}
+
+/**
+ * Reject `promise` once `ms` elapses. ssh2's SFTP callbacks are raw socket
+ * completions: a channel that is half-dead (peer gone, no FIN ever delivered,
+ * the case mobile / NAT'd links produce) accepts the request and then never
+ * calls back — the operation, and the UI spinner behind it, used to wait
+ * forever. The losing side of the race is left pending on purpose: it is only
+ * dropped, never cancelled, so a late reply cannot resurrect the operation.
+ */
+function bounded<T>(promise: Promise<T>, ms: number): Promise<T> {
+  // The race may already have been decided by the time this one rejects; an
+  // unhandled rejection would take the whole process down.
+  promise.catch(() => undefined)
+  let timer: NodeJS.Timeout | undefined
+  const expiry = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new SftpTimeoutError(t('main.sftp.opTimeout', { seconds: Math.round(ms / 1000) })))
+    }, ms)
+  })
+  return Promise.race([promise, expiry]).finally(() => {
+    if (timer) clearTimeout(timer)
   })
 }
 
@@ -79,9 +148,6 @@ export function formatMode(mode: number): string {
  */
 const sftpCache = new Map<string, SFTPWrapper>()
 
-/** How long an SFTP subsystem open may take before the client counts as dead. */
-const SFTP_OPEN_TIMEOUT_MS = 10_000
-
 /**
  * Our own "session is gone" error. `isTransportError` classifies on the class,
  * not on the message text: the message is translated, the classifier must not
@@ -117,7 +183,7 @@ async function sftpOf(sessionId: string): Promise<SFTPWrapper> {
     // back; bound the wait (like execQuiet does) so withSftp can evict and retry.
     const timer = setTimeout(
       () => reject(new SftpTimeoutError(t('main.sftp.openTimeout'))),
-      SFTP_OPEN_TIMEOUT_MS
+      timeouts.open
     )
     try {
       client.sftp((err, sftp_) => {
@@ -189,13 +255,16 @@ export function closeSftp(sessionId: string): void {
 
 const FAKE_FS = new Set(['tmpfs', 'overlay', 'udev', 'devtmpfs', 'none', 'squashfs', 'shm'])
 
+/** readdir, both shapes ssh2 can yield (plain names or `{filename}` objects). */
+function readdir(sftp: SFTPWrapper, dir: string): Promise<string[]> {
+  return p<Array<string | { filename: string }>>(cb => sftp.readdir(dir, cb)).then(raw =>
+    raw.map(n => (typeof n === 'string' ? n : n.filename))
+  )
+}
+
 export function listRemote(sessionId: string, dir: string): Promise<SftpEntry[]> {
   return withSftp(sessionId, async sftp => {
-    const raw = await new Promise<Array<string | { filename: string }>>((resolve, reject) => {
-      sftp.readdir(dir, (err, names) => (err ? reject(err) : resolve(names)))
-    })
-    // ssh2 readdir yields plain strings OR {filename} objects depending on version/options
-    const names = raw.map(n => (typeof n === 'string' ? n : n.filename))
+    const names = await readdir(sftp, dir)
     const entries: SftpEntry[] = []
     const queue = [...names]
     const base = dir.replace(/\/+$/, '') || '/'
@@ -240,10 +309,7 @@ async function deleteRecursive(sftp: SFTPWrapper, path: string, isDir: boolean):
     await pVoid(cb => sftp.unlink(path, cb))
     return
   }
-  const raw = await new Promise<Array<string | { filename: string }>>((resolve, reject) => {
-    sftp.readdir(path, (err, names) => (err ? reject(err) : resolve(names)))
-  })
-  const names = raw.map(n => (typeof n === 'string' ? n : n.filename))
+  const names = await readdir(sftp, path)
   const base = path.replace(/\/+$/, '') || '/'
   for (const name of names) {
     const child = `${base}/${name}`
@@ -472,7 +538,7 @@ export function uploadRemote(
                   lastEmit = now
                   emit({ transferId: id, kind: 'upload', state: 'running', file: name, bytes: pos, totalBytes: size })
                 }
-                const pr = pVoid(cb => sftp.write(handle, buf, 0, bytesRead, offset, cb))
+                const pr = pVoidTransfer(cb => sftp.write(handle, buf, 0, bytesRead, offset, cb))
                 inflight.add(
                   pr.catch((err: Error) => {
                     firstError = firstError ?? err
@@ -485,7 +551,10 @@ export function uploadRemote(
               await localHandle.close()
             }
             await Promise.race([
-              pVoid(cb => sftp.close(handle, cb)),
+              // The stall guard owns this wait (10s), so the close itself stays
+              // unbounded-by-`bounded` — otherwise a timeout landing after the
+              // race is decided would reject with nothing listening.
+              rawVoid(cb => sftp.close(handle, cb)),
               new Promise<void>((r) => setTimeout(r, 10_000))
             ])
             await Promise.allSettled(inflight)
@@ -547,7 +616,7 @@ export function downloadRemote(
               const buf = Buffer.alloc(CHUNK)
               for (;;) {
                 if (transfer.cancelled) throw new OperationError(t('main.sftp.cancelled'))
-                const { bytesRead } = await p<{ bytesRead: number; buffer: Buffer }>(cb =>
+                const { bytesRead } = await pTransfer<{ bytesRead: number; buffer: Buffer }>(cb =>
                   sftp.read(handle, buf, 0, CHUNK, pos, cb)
                 )
                 if (bytesRead === 0) break

@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Input, InputNumber, Radio, Select, Switch } from 'antd'
 import type { ThemeColors } from '@shared/theme'
 import { DEFAULT_LANGUAGE, LANGUAGES, t, type Language } from '@shared/i18n'
+import { isReservedAccelerator } from '@shared/reservedAccelerators'
 import { useSettingsStore, useResolvedTheme } from './store'
 import {
   DEFAULT_FONT_STACK,
@@ -482,28 +483,11 @@ function acceleratorFromEvent(e: React.KeyboardEvent<HTMLInputElement>): string 
 }
 
 /**
- * Keys this app binds while Control is held: font size (Ctrl+=/-/0, main.tsx)
- * and tab cycling (Ctrl+PgUp/PgDn, Workspace). Neither handler looks at the
- * other modifiers, so any Control combo on one of these keys would shadow the
- * in-app action — the recorder refuses it instead of saving a shortcut that
- * silently loses its original meaning.
+ * The reserved-accelerator table (in-app font/tab chords and the Ctrl+L panic
+ * lock) lives in @shared/reservedAccelerators so this recorder and the main
+ * process's registration guard (`applyGlobalShortcut`) cannot drift apart —
+ * they are the two halves of one rule. See that module for the rationale.
  */
-const RESERVED_CONTROL_KEYS = new Set(['=', '-', '0', 'PageUp', 'PageDown'])
-
-/**
- * Whole chords the app owns outright, matched exactly (modifier set included).
- * Ctrl+L is the panic lock, captured in main's before-input-event: a global
- * registration intercepts the key at the OS level even while this window is
- * focused, so binding it here would silently disable the lock shortcut.
- */
-const RESERVED_EXACT_ACCELERATORS = new Set(['Control+L'])
-
-/** true when `accel` (e.g. "Control+Shift+=") collides with an in-app shortcut */
-function isReservedAccelerator(accel: string): boolean {
-  if (RESERVED_EXACT_ACCELERATORS.has(accel)) return true
-  const parts = accel.split('+')
-  return parts.includes('Control') && RESERVED_CONTROL_KEYS.has(parts[parts.length - 1])
-}
 
 /** t() falls back to the key itself when a translation is missing. */
 function tOr(key: string, fallback: string): string {

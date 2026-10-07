@@ -23,11 +23,30 @@ const GITHUB_RELEASES_API =
   'https://api.github.com/repos/billowliu2/OpenTerminal/releases?per_page=10'
 const GITHUB_PROBE_URL =
   'https://api.github.com/repos/billowliu2/OpenTerminal/releases/latest'
-const GITHUB_PROBE_TIMEOUT_MS = 20_000
-/** Overall budget for ONE check attempt — see withTimeout. */
-const CHECK_TIMEOUT_MS = 30_000
-/** Changelog / releases-API fetches: a stalled response must not hang the About tab. */
-const FETCH_TIMEOUT_MS = 15_000
+
+/**
+ * Time budgets, kept in one mutable object so the offline harness
+ * (tests/updater-fallback.mjs) can drive the timeout and fallback paths without
+ * waiting out the production values. Nothing in the app calls
+ * `setUpdateTimeouts`; the numbers below are the shipping ones.
+ *
+ *  - `probe`: GitHub connectivity probe. Short enough that a proxy-less user
+ *    falls back to Gitea instead of hanging on a dead proxy/DNS.
+ *  - `check`: overall budget for ONE check attempt — see withTimeout, which
+ *    exists because electron-updater's own socket idle timeout only fires on
+ *    silence, so a slow trickling response can hold an attempt open forever.
+ *  - `fetch`: changelog / releases-API fetches; a stalled response must not
+ *    hang the About tab.
+ */
+const budgets = {
+  probe: 20_000,
+  check: 30_000,
+  fetch: 15_000
+}
+
+export function setUpdateTimeouts(patch: Partial<typeof budgets>): void {
+  Object.assign(budgets, patch)
+}
 
 let state: UpdateState = { status: 'idle', currentVersion: app.getVersion() }
 let activeFeed: 'gitea' | 'github' = 'gitea'
@@ -113,7 +132,7 @@ async function checkWithFallback(): Promise<void> {
   if (await probeGithub()) {
     useFeed('github')
     try {
-      await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS)
+      await withTimeout(autoUpdater.checkForUpdates(), budgets.check)
       return
     } catch (err) {
       console.warn('[updater] github feed failed, falling back to gitea:', err)
@@ -126,7 +145,7 @@ async function checkWithFallback(): Promise<void> {
   try {
     // Bounded as well: a still-stuck GitHub check is handed back to us here, and
     // it must not leave the state at "checking" forever.
-    await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS)
+    await withTimeout(autoUpdater.checkForUpdates(), budgets.check)
   } catch (err) {
     if (githubErr === undefined) throw err
     const giteaErr = err instanceof Error ? err.message : String(err)
@@ -166,7 +185,7 @@ async function directFetch(url: string): Promise<Response> {
   // to the releases APIs instead of leaving the view spinning.
   return s.fetch(url, {
     headers: { 'User-Agent': 'OpenTerminal' },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+    signal: AbortSignal.timeout(budgets.fetch)
   })
 }
 
@@ -181,7 +200,7 @@ async function probeGithub(): Promise<boolean> {
     await s.setProxy({ mode: 'system' })
     const resp = await s.fetch(GITHUB_PROBE_URL, {
       headers: { 'User-Agent': 'OpenTerminal' },
-      signal: AbortSignal.timeout(GITHUB_PROBE_TIMEOUT_MS)
+      signal: AbortSignal.timeout(budgets.probe)
     })
     return resp.ok
   } catch {
@@ -215,7 +234,7 @@ async function fetchChangelog(): Promise<ReleaseNote[]> {
     try {
       const resp = await net.fetch(url, {
         headers: { 'User-Agent': 'OpenTerminal' },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+        signal: AbortSignal.timeout(budgets.fetch)
       })
       if (!resp.ok) continue
       const data = (await resp.json()) as Array<{

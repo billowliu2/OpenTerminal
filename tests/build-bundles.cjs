@@ -13,9 +13,16 @@ const esbuild = require('esbuild')
 
 const ROOT = path.join(__dirname, '..')
 
+/** Loader tweaks every bundle shares: `?asset` imports land on text loaders. */
+const LOADERS = { '.png': 'text' }
+
 const BUNDLES = [
   // Real session layer: pty.ts also re-exports the ssh + sysinfo engines.
   { entry: 'src/main/pty.ts', out: 'tests/.session-e2e.cjs', external: ['@lydell/node-pty', 'ssh2'] },
+  // The real SSH service on its own (no electron surface at all), so the
+  // loopback harness can exercise the shipped connect/verify/shell code
+  // instead of a hand-copied ConnectConfig.
+  { entry: 'src/main/ssh.ts', out: 'tests/.ssh.cjs', external: ['ssh2'] },
   // ESM (`.mjs`): tests/sftp-*.mjs load it with `await import()`.
   { entry: 'src/main/sftp.ts', out: 'tests/.sftp-svc.mjs', format: 'esm', external: ['ssh2'] },
   { entry: 'src/main/commands.ts', out: 'tests/.commands-store.cjs' },
@@ -36,6 +43,25 @@ const BUNDLES = [
   { entry: 'src/main/lockController.ts', out: 'tests/.lock-controller.cjs' },
   // Lock keyboard classifier: pure, so the bundle needs no electron surface.
   { entry: 'src/main/lockShortcuts.ts', out: 'tests/.lock-shortcuts.cjs' },
+  // Reserved-accelerator table shared by the settings recorder and main's
+  // registration guard: pure, table-tested.
+  { entry: 'src/shared/reservedAccelerators.ts', out: 'tests/.reserved-accelerators.cjs' },
+  // Update service: feed probe/fallback. `electron-updater` is aliased to a
+  // stub (the real package boots Electron), and the shell half (tray.ts) pulls
+  // a `?asset` import, hence LOADERS.
+  { entry: 'src/main/updater.ts', out: 'tests/.updater.cjs', alias: { 'electron-updater': './tests/electron-updater-stub.cjs' } },
+  // IPC sender-frame guard: driven through the real registerIpc registration
+  // path (the stub records handlers instead of dropping them).
+  {
+    entry: 'src/main/ipc.ts',
+    out: 'tests/.ipc.cjs',
+    external: ['ssh2', '@lydell/node-pty', 'font-list', 'cpu-features']
+  },
+  // Session-log plain-text transformer: ANSI state machine + alt-screen folding.
+  { entry: 'src/main/logSanitizer.ts', out: 'tests/.log-sanitizer.cjs' },
+  // Channel-name constants, so a test can name channels instead of inlining
+  // string literals that would silently drift from src/shared/ipc.ts.
+  { entry: 'src/shared/ipc.ts', out: 'tests/.ipc-channels.cjs' },
   // zmodem.js stays bundled (NOT external) — the test drives a second in-process
   // Sentry from the same library.
   { entry: 'src/main/zmodem.ts', out: 'tests/.zmodem-e2e.cjs', external: ['ssh2'] },
@@ -45,7 +71,7 @@ const BUNDLES = [
   { entry: 'tests/hl-rules.mjs', out: 'tests/.hl-rules.cjs' }
 ]
 
-for (const { entry, out, format = 'cjs', external = [] } of BUNDLES) {
+for (const { entry, out, format = 'cjs', external = [], alias = {} } of BUNDLES) {
   esbuild.buildSync({
     absWorkingDir: ROOT,
     entryPoints: [path.join(ROOT, entry)],
@@ -54,7 +80,8 @@ for (const { entry, out, format = 'cjs', external = [] } of BUNDLES) {
     platform: 'node',
     format,
     external,
-    alias: { electron: './tests/electron-stub.cjs', '@shared': './src/shared' },
+    loader: LOADERS,
+    alias: { electron: './tests/electron-stub.cjs', '@shared': './src/shared', ...alias },
     logLevel: 'warning'
   })
   console.log(`built ${out}`)
