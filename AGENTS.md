@@ -7,8 +7,9 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 开发：`npm run dev`（主进程改动不热重建，需重启）
 - dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
-- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 11 个测试：ssh-loopback、commands-store、settings-store、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 11 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
+- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 12 个测试：ssh-loopback、commands-store、connections-store、settings-store、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
+- 下载量统计：`node scripts/download-stats.cjs`（Gitea + GitHub release 资产的 download_count 汇总；GitHub 优先直连、失败自动回退 `HTTPS_PROXY`/本地 7897；更新通道无计数接口不计入）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 12 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 
@@ -32,6 +33,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
    - Gitea：release（msi + exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`：exe.blockmap → exe → release-notes.md → **latest.yml 最后**）
    - GitHub：release 资产再次随版本同步发布（exe + exe.blockmap + latest.yml），electron-updater 标准 GitHub provider 直接吃 release 资产
    - 通道不再先删旧版：新版本文件全部传完、latest.yml 生效后才清掉上一版 exe/blockmap，中途失败不会把通道打空；同一版本可重复运行（release 复用、已传资产跳过）
+   - 上传前先比通道版本：`assertNoDowngrade()` 读通道 latest.yml，若线上版本**高于**待发布版本就直接拒绝——三条本地护栏只比本地产物，旧分支发旧版本号会一路通过，覆盖 latest.yml 之后 `pruneChannel` 会把线上新版本的 exe/blockmap 删掉
    - 只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub）
    - 国内通道全程直连，**不需要设代理**；GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub 请求）
 5. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
@@ -42,6 +44,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 检查更新：**GitHub 优先**（走系统代理；前置 20 秒连通性探测 `probeGithub`——探测失败/超时直接兜底 Gitea，不给 electron-updater 挂起的机会），失败回退国内 Gitea 通用包通道（强制直连，不走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
 - 更新日志：Gitea 仓库是私有的（匿名 API 404），改为从更新通道的 `release-notes.md` 读取（直连 session `openterminal-update-direct`），再回退 Gitea/GitHub releases API
 - electron-updater 不支持 MSI 自动更新，自动更新只走 NSIS exe
+- 每次 checkForUpdates 都被 **30s 整体超时**包住（`withTimeout`）：electron-updater 自带的 60s 只是 socket 空闲超时，慢滴流响应能一直占住它。超时按普通失败走 GitHub→Gitea 回退，但**被放弃的检查取消不掉**，而 electron-updater 对并发检查去重（返回同一个 in-flight promise），所以兜底那次共用被放弃的 promise——它同样被超时兜住，最终落到错误态，不会永远停在「检查中」
+- 更新日志 / releases API 的 fetch 都带 `AbortSignal.timeout(15s)`（`directFetch` 与 `fetchChangelog` 里的 `net.fetch`）：卡住的通道必须让位给下一个来源，不能把「关于」页吊住
 
 ## 主题机制
 
@@ -55,7 +59,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 ## 锁屏
 
-- 只使用**主窗口内的不透明遮罩**（`src/renderer/src/lock/LockScreen.tsx` + `lock.css` 的 `.lock-screen`，z-index 4000），**不创建第二个 Electron 窗口**。锁定时 `App.tsx` 把 `.app-root` 设为 `inert` 并**保持挂载**——卸载会杀掉遮罩后面的本地/SSH 会话与传输列表；antd portal（Modal/Dropdown/Tooltip）挂在 `document.body` 上、不在 `#root` 内，锁定时**要把 body 下 `#root` 以外的子节点也设为 `inert`**，否则键盘 Tab 仍能走进遮罩后面的浮层
+- 只使用**主窗口内的不透明遮罩**（`src/renderer/src/lock/LockScreen.tsx` + `lock.css` 的 `.lock-screen`，z-index 4000），**不创建第二个 Electron 窗口**。锁定时 `App.tsx` 把 `.app-root` 设为 `inert` 并**保持挂载**——卸载会杀掉遮罩后面的本地/SSH 会话与传输列表；antd portal（Modal/Dropdown/Tooltip）挂在 `document.body` 上、不在 `#root` 内，锁定时**要把 body 下 `#root` 以外的子节点也设为 `inert`**，否则键盘 Tab 仍能走进遮罩后面的浮层。**这个一次性快照不够**：锁定之后才挂上的 portal 不在其中（典型场景是 SSH 连接发出后闲置自动锁屏，主机密钥弹窗此刻才弹出，antd 的 autoFocus 还会抢走密码框焦点），所以锁定期间 `App.tsx` 用 `MutationObserver` 盯着 `document.body` 的 childList，给新加的非 `#root` 子节点补 `inert`，解锁时断开 observer 并按记录恢复；observer 只在锁定时存在，平时零开销，且**锁屏遮罩自身在 `#root` 内，永远不参与 inert**
 - 密码 verifier 在 `<userData>/lock.json`（`src/main/lockStore.ts` 的 `LockStore`）：scrypt(N=16384,r=8,p=1) + 每次写入重新生成的 16 字节 salt + `timingSafeEqual`，**不存明文**；缺 `version: 1`、salt/hash 尺寸不符一律当「未配置」（宁失效也不崩启动路径），但 `version` 不认识会**每进程 warn 一次**——将来改格式不许静默失锁
 - 锁状态由主进程独占（`src/main/lockController.ts`）：`LockSettingsState` 只有 configured/enabled/autoLockMinutes/lockAtStartup/locked/cooldownMs，**salt/hash/密码永不出主进程**，渲染层从不自行判定锁定
 - 锁标志落盘在 `<userData>/lock-state.json`（`LockStateStore`），**locked/failures/cooldownUntil 每次变化立即写**，所以托盘退出、任务管理器强杀、崩溃后重启仍然是锁的——`lockAtStartup` 只是额外一层。没有 verifier 时启动会删掉该文件；从磁盘恢复的 `cooldownUntil` 夹紧到 `now+30s`，防系统时间回拨导致永久锁死
@@ -63,9 +67,15 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 闲置锁屏：`powerMonitor.getSystemIdleTime()`，15s 轮询；读不到（无会话/工作站已锁）一律当「不闲置」。`settings.lock.autoLockMinutes` 是白名单 `{0,1,5,15,30,60}`（`src/shared/settings.ts` 的 `LOCK_AUTO_DELAYS`），0 = 从不
 - **清除密码会一并把 `settings.lock.enabled`/`lockAtStartup` 置 false**（`LockControllerOptions.clearLockPreferences`，默认走 `mutateSettings`）：设置页文案承诺「清除后锁屏会一并关闭」，留着会让用户下次设密码时被静默重新武装
 - 锁屏期间主进程在 `win.webContents.on('before-input-event')` 里吞掉 F5/Ctrl+R、Ctrl+±0（含 Shift 拼写）、Ctrl+Shift+I/J/C：遮罩是 DOM 层，拦不住浏览器进程处理的 Electron 默认菜单加速键，而重载会触发 `beforeunload` 把遮罩后面的会话全杀掉。**键盘判定抽在纯函数模块 `src/main/lockShortcuts.ts`（`isLockBlockedShortcut`/`isPanicLockChord`，无 Electron 依赖，表驱动测试 `tests/lock-shortcuts.mjs`）**——v1.0.17 的回归就是死在闭包里没法测。键盘之外还有鼠标路径：默认菜单按 Alt 就能唤出，菜单项点击不走 before-input-event，所以**锁定期间 `src/main/lockMenu.ts` 把整个应用菜单置 null（解锁时按 Electron 默认模板重建）**；菜单摘除挂在 `LockController` 的默认 publish 上，启动恢复锁定不经过 publish，由 `index.ts` 在 `initLockController()` 后按 `isLocked()` 直接补一次。渲染层的 `document.documentElement.dataset.locked` 守卫（字体快捷键、`Ctrl+PgUp/PgDn`）**只允许 `return` 跳过自身逻辑，绝不能 `preventDefault`**——keydown 的默认动作就是「往聚焦输入框插字符」，窗口级 preventDefault 会把锁屏密码框的全部输入杀掉（v1.0.17 就是这么坏的，v1.0.18 修复）
-- **Ctrl+L = 立即锁屏**（同一 `before-input-event` 里捕获，终端里也生效——这正是它的意义）：仅在锁定真的生效时才 `preventDefault`，未设置密码的应用保留 Ctrl+L 给 shell 的清屏；已锁定时不再拦截。长按的自动重复要跳过（`input.isAutoRepeat`），否则未配置密码时每次重复都同步读 lock.json + settings.json。**Ctrl+L 是保留键**：全局唤起快捷键的录制器（`SettingsTabs.tsx` 的 `RESERVED_EXACT_ACCELERATORS`）拒绝它——globalShortcut 在 OS 层拦截，绑上去会让锁屏快捷键静默失效。窗口藏进托盘后 Ctrl+L 无效（before-input-event 只对聚焦窗口触发），这是刻意的取舍：全局注册会从所有应用手里抢走这个组合键
+- **Ctrl+L = 立即锁屏**（同一 `before-input-event` 里捕获，终端里也生效——这正是它的意义）：仅在锁定真的生效时才 `preventDefault`，未设置密码的应用保留 Ctrl+L 给 shell 的清屏；已锁定时不再拦截。长按的自动重复要跳过（`input.isAutoRepeat`），否则未配置密码时每次重复都同步读 lock.json + settings.json。**Ctrl+L 是保留键**：全局唤起快捷键的录制器（`SettingsTabs.tsx` 的 `RESERVED_EXACT_ACCELERATORS`）拒绝它——globalShortcut 在 OS 层拦截，绑上去会让锁屏快捷键静默失效。窗口藏进托盘后 Ctrl+L 无效（before-input-event 只对聚焦窗口触发），这是刻意的取舍：全局注册会从所有应用手里抢走这个组合键。**主进程侧也拒绝注册它**：`applyGlobalShortcut`（globalShortcuts.ts）对 `Control+L` / `Ctrl+L` / `CommandOrControl+L`（大小写、修饰键别名都不敏感）直接跳过并 warn——录制器只拦得住它上线之后录入的值，老版本存下的 `Control+L` 仍会走到注册这一步
 - 启动时**不要**用 `locked: true` 作渲染层初值再直接画锁屏：`App.tsx` 用 `null` 表示「主进程还没答复」，此时只画 `.lock-screen-boot` 纯色层，否则每次启动都会给没设密码的用户闪一帧锁屏。`getLockState()` 失败时要落到「locked 且未配置」的状态，让输入框可达（主进程对无 verifier 的解锁请求直接放行）
 - 相关测试：`node tests/lock-store.mjs`（verifier + 状态存储）、`node tests/lock-controller.mjs`（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）、`node tests/lock-shortcuts.mjs`（键盘分类器表驱动用例）
+
+## 布局模板（工作区）
+
+- 应用模板（`Workspace.handleApplyTemplate`）读的是**外来 JSON**。`fromJSON` 一旦中途失败（别的版本写的模板、面板组件已不存在），dockview 会**先把目标 dockview 清空再抛错**（`failed to deserialize layout. Reverting changes`）。清空是逐面板走 `onDidRemovePanel` 的，所以**旧会话在抛错之前就已经被 `killSession` 杀掉了**——恢复出来的面板接不回它们，必须换新会话
+- 失败路径：应用前 `toJSON()` 快照两个 dockview → 抛错时只对**这次真的调用过 `fromJSON` 的** dockview 回灌快照（回灌本身会清空该 dockview；把快照灌进没被碰过的那个会连带杀掉它活着的会话）→ 对恢复出来的面板跑 `rebindRestoredPanels` → 再把「没有任何面板引用的 `previousSessions`」kill 掉 → `message.error`。`JSON.parse` 失败同样要提示，不能静默 return
+- 会话计数不靠累加器：`releaseSession` 直接扫 `api.panels` 判断还有没有面板在显示该会话——累加器与「`updateParameters` 原地换会话」「整块布局替换」这类无事件变化脱节，会漏杀或误杀
 
 ## 关键词高亮
 

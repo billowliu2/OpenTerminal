@@ -17,6 +17,7 @@
 | M8 | 工作区分离（Terminal/SSH 双工作区）+ SSH 底部文件面板 + 右键菜单 + 监控美化 + 补全修复 | ✅ 已完成（v0.8） |
 | M9 | 体验打磨：系统托盘 + 关闭行为 + 单实例 + 主题联动标题栏 + 布局菜单重做 + 补全交互修正 + 应用图标 | ✅ 已完成 |
 | M10 | 多语言界面（zh-CN / zh-TW / en / ja）+ 离线多语言更新日志 + 快捷键录制 + 可配终端工具条 + 设置健壮性 | ✅ 已完成（v1.0.13） |
+| M11 | 审查修复第二轮：渲染层性能 + asar 瘦身 + 安全纵深 + 测试补全 + 文档刷新 | 📋 已规划（2026-10 审查） |
 
 ## M2 — SSH 远程会话 ✅
 
@@ -105,6 +106,45 @@
 - [x] 终端右上角工具条可配置：打开工作区目录（随 `cd` 跟踪）、记录会话日志、打开日志目录
 - [x] 设置健壮性：清洗器修复而不丢弃（priority 字符串、0/1 布尔、缺前景色），异常写 `settings-warnings.log`；设置写入串行化；「每次询问」关闭行为不再被静默改回
 - [x] 「输入建议」「记录命令历史」默认关闭；浅色主题标签栏/设置弹窗对比度修复；会话日志改为每文件缓冲写入
+
+## M11 — 审查修复第二轮（计划）
+
+背景：2026-10 全面审查（6 个子代理分域审查 + 逐条核实）已在 Dev_20261001 落地第一轮修复（store 损坏兜底、zmodem 错误/节流/终结、release 降级护栏、主进程加固、模板应用恢复、锁屏 portal inert、设置页/SFTP 界面）。以下按优先级排队，均可独立交付。
+
+### 1. 渲染层性能
+
+- [ ] `TerminalView` settings 字段级订阅：现状是整对象订阅 + options effect 依赖 `settings.terminal` 身份，而主进程 `mutateSettings` 回推整个对象，任何设置写入都让所有 pane 重写 options + fit。需要在 store 层做浅比较/selector 拆分，或 effect 按字段分组
+- [ ] `FilePanel` 虚拟化：上万条目目录（node_modules）一次性挂载 + 每行一个 Dropdown 会卡死窗口；无虚拟化库依赖，可自实现固定行高 windowing 或引入 rc-virtual-list（antd 系）
+- [ ] per-panel ErrorBoundary：现在只有根部一个（`main.tsx`），任一 pane 崩溃卸载整个工作区；dockview panel 内容各加一层边界
+- [ ] `SshBottomPanel` 拖动期间 FilePanel 按帧重渲染：`React.memo(FilePanel)` 或拖动期只改 CSS 变量、pointerup 落 state
+- [ ] `TransferPanel` 每事件 Map 全量复制（zmodem 节流已缓解数量级，仍可改增量更新）；`MonitorPanel` 图表 ResizeObserver 每 3s 重建（应只建一次）
+
+### 2. asar 瘦身（~85MB）
+
+- [ ] 10 个纯渲染层依赖（`@xterm/*`、`antd`、`dockview-react`、`react`、`react-dom`、`zustand`）从 dependencies 移到 devDependencies：渲染层由 Vite 全量打包进 `out/renderer`，`externalizeDepsPlugin` 只作用 main/preload，安全；实测 asar 98MB 中 node_modules 占 95.7MB，其中渲染层包 ≈85MB 是重复体积
+- [ ] 验收：`npm run dist` 后 asar 内不再有这些包，win-unpacked 冒烟通过
+- [ ] `undici` 显式加入 devDependencies（`release.cjs`/`download-stats.cjs` 直接 require，目前靠 electron-builder 依赖树提升）
+
+### 3. 安全纵深
+
+- [ ] SFTP/zmodem/`keyPath` 的本地路径包含性校验（参照 `commands.ts:273-299` 的 realpath 包含性检查）；当前只有受信任帧 guard 兜底
+- [ ] `webPreferences` 显式写出 `contextIsolation: true`、`nodeIntegration: false`、`webSecurity: true`（现靠默认值，防将来被改）
+- [ ] 代码签名（M7 遗留，可选项；顺带关闭更新通道的完整性纵深缺口）
+
+### 4. 测试补全
+
+- [ ] 零测试高风险模块：`updater.ts`（feed 回退/超时）、`ipc.ts`（sender guard，安全关键）、`logSanitizer.ts`（ANSI 状态机）；`connectionsStore` 本轮已补
+- [ ] 保留键判定抽纯函数（仿 `lockShortcuts.ts`）+ 表驱动测试
+- [ ] SFTP per-op 超时（静默半死通道不 emit error 的场景，本轮只兜住子系统打开）
+- [ ] 渲染层测试框架评估（vitest + jsdom）；`ssh-loopback.mjs` 改为加载真实 `ssh.ts` 而非重写连接参数
+
+### 5. 文档与杂物
+
+- [ ] README 测试清单/架构图刷新、锁屏功能补录；`docs/STATE.md` 版本与发布流程刷新（还停在 v1.0.19、`--skip-github` 旧流程）
+- [ ] CI 缓存 Electron 二进制（每次省 ~110MB 下载）；`.gitignore` 补 `.env.*`
+- [ ] 归档脚本纳入版本控制并修危险默认值（`tmp-test/archive-releases.cjs` 的 `KEEP_TAG` 硬编码 v1.0.12）；`release/` 已 9.1GB，定清理策略
+- [ ] `isPanicLockChord` 改判 `input.code`（Dvorak/非拉丁布局下 `input.key` 不可靠）
+- [ ] P3 零散项：设置页「更新通道」无效控件、面板标题存已翻译字符串（切语言错位）、`TerminalHandle` 死 API、`layoutMenu`/`IconRail` memo 等
 
 ## 工程约定（贯穿各阶段）
 
