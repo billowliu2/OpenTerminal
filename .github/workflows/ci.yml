@@ -24,10 +24,20 @@ jobs:
           node-version: 22
           cache: npm
 
+      # `npm ci` triggers electron's postinstall, which downloads the ~100MB
+      # binary into %LOCALAPPDATA%\electron\Cache. Keyed on the lockfile so any
+      # dependency bump — electron included — refetches instead of restoring a
+      # binary that no longer matches the pinned version.
+      - name: Cache Electron binary
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/electron/Cache
+          key: electron-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
         run: npm ci
 
-      # npm test 会先自动跑 pretest（typecheck），再重建 esbuild bundle 并跑 10 个离线测试
+      # npm test 会先自动跑 pretest（typecheck），再重建 esbuild bundle 并跑 13 个离线测试
       - name: Test
         run: npm test
 

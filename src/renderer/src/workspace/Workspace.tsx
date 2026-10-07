@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { App, Button, Checkbox, Popover, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
@@ -1152,28 +1152,34 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
     [message]
   )
 
-  const layoutMenu: MenuProps = {
-    items: [
-      { key: 'split-right', label: t('workspace.layout.splitRight') },
-      { key: 'split-below', label: t('workspace.layout.splitBelow') },
-      { type: 'divider' },
-      { key: 'save', label: t('workspace.layout.saveTemplate') },
-      { key: 'apply', label: t('workspace.layout.applyTemplate') }
-    ],
-    onClick: ({ key }) => {
-      if (key === 'split-right') handleSplit('right')
-      else if (key === 'split-below') handleSplit('below')
-      else if (key === 'save') setSaveOpen(true)
-      else if (key === 'apply') setApplyOpen(true)
-    }
-  }
+  // Memoized so the memoized IconRail below can actually bail out: the labels
+  // are translated at build time, so `language` has to be a dependency or a
+  // language switch would leave stale menu text behind.
+  const language = useSettingsStore((s) => s.settings.system.language)
+  const layoutMenu = useMemo<MenuProps>(
+    () => ({
+      items: [
+        { key: 'split-right', label: t('workspace.layout.splitRight') },
+        { key: 'split-below', label: t('workspace.layout.splitBelow') },
+        { type: 'divider' },
+        { key: 'save', label: t('workspace.layout.saveTemplate') },
+        { key: 'apply', label: t('workspace.layout.applyTemplate') }
+      ],
+      onClick: ({ key }) => {
+        if (key === 'split-right') handleSplit('right')
+        else if (key === 'split-below') handleSplit('below')
+        else if (key === 'save') setSaveOpen(true)
+        else if (key === 'apply') setApplyOpen(true)
+      }
+    }),
+    [language, handleSplit]
+  )
 
   return (
     <div className="workspace-root">
       <IconRail
         onOpenSettings={onOpenSettings}
         onNewTerminal={handleRailNewTerminal}
-        onSplit={handleSplit}
         onToggleSidebar={toggleSidebar}
         sidebarOpen={sidebarOpen}
         connecting={connecting}
@@ -1394,11 +1400,14 @@ function WorkspaceBroadcastPopover({
 /**
  * XTerminal-style slim icon rail on the left edge — replaces the top toolbar.
  * Top: workspace actions; bottom: settings.
+ *
+ * Memoized: the workspace re-renders on every session/panel change, and the
+ * rail only depends on sidebar visibility, the connecting spinner and the
+ * (memoized) layout menu, so the shallow compare lets it skip those renders.
  */
-function IconRail({
+const IconRail = memo(function IconRail({
   onOpenSettings,
   onNewTerminal,
-  onSplit,
   onToggleSidebar,
   sidebarOpen,
   connecting,
@@ -1406,7 +1415,6 @@ function IconRail({
 }: {
   onOpenSettings: () => void
   onNewTerminal: () => void
-  onSplit: (direction: 'right' | 'below') => void
   onToggleSidebar: () => void
   sidebarOpen: boolean
   connecting: boolean
@@ -1433,7 +1441,7 @@ function IconRail({
       <RailButton title={t('workspace.rail.settings')} icon={<SettingOutlined />} onClick={onOpenSettings} />
     </div>
   )
-}
+})
 
 /** M6.1: terminal / SSH workspace entries in the icon rail. */
 function ModeRailButtons(): React.JSX.Element {
@@ -1464,7 +1472,7 @@ function ModeRailButtons(): React.JSX.Element {
  * rail's own stacking context, opens to the right of the rail, and closes only
  * on item pick, outside pointerdown, or Escape.
  */
-function LayoutFlyout({ menu }: { menu: MenuProps }): React.JSX.Element {
+const LayoutFlyout = memo(function LayoutFlyout({ menu }: { menu: MenuProps }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -1527,7 +1535,7 @@ function LayoutFlyout({ menu }: { menu: MenuProps }): React.JSX.Element {
       )}
     </div>
   )
-}
+})
 
 function RailButton({
   title,

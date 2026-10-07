@@ -6,6 +6,8 @@
 
 export interface LockInputEvent {
   key: string
+  /** Physical key position (`KeyL`, `F5`, …) — layout-independent, unlike `key`. */
+  code: string
   control: boolean
   shift: boolean
   alt: boolean
@@ -45,6 +47,12 @@ export function isLockBlockedShortcut(input: LockInputEvent): boolean {
  * because Ctrl+Shift+L is the switch-to-English chord on Chinese and Japanese
  * IMEs; Alt is excluded because AltGr arrives as Ctrl+Alt on most European
  * layouts. A chord that isn't exactly this must keep its original meaning.
+ *
+ * Matching is on `input.code` (the physical key) rather than `input.key`: the
+ * key character depends on the active keyboard layout, so on Dvorak or a
+ * non-Latin layout the physical L key no longer arrives as 'l' and matching
+ * `key === 'l'` would silently stop locking. The code names the key position
+ * and is identical on every layout.
  */
 export function isPanicLockChord(input: LockInputEvent): boolean {
   return (
@@ -52,6 +60,6 @@ export function isPanicLockChord(input: LockInputEvent): boolean {
     !input.shift &&
     !input.alt &&
     !input.meta &&
-    input.key.toLowerCase() === 'l'
+    input.code === 'KeyL'
   )
 }

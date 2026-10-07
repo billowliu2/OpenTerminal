@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Progress, Select, Switch, Tag } from 'antd'
+import { Button, Progress, Switch, Tag } from 'antd'
 import { DEFAULT_LANGUAGE, t, type Language } from '@shared/i18n'
 import type { AppInfo, ReleaseNote, UpdateState, UpdateStatus } from '@shared/ipc'
 import { useSettingsStore } from './store'
@@ -103,11 +103,6 @@ export function AboutTab(): React.JSX.Element {
       </div>
 
       <div className="about-controls">
-        <Select
-          value="stable"
-          options={[{ value: 'stable', label: t('settings.about.channelStable') }]}
-          style={{ width: 150 }}
-        />
         <label className="about-autocheck">
           <Switch
             size="small"

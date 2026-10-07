@@ -5,9 +5,10 @@
  * in src/main/index.ts is built from. This is the decision v1.0.17 got wrong
  * from inside an untestable closure, so every chord spelling that matters is
  * pinned here:
- *   - the panic lock is exactly Ctrl+L: Shift (IME switch on zh/ja) and Alt
- *     (AltGr on European layouts) must pass through, as must Caps-Lock 'L'
- *     variants only when they really are Ctrl+L
+ *   - the panic lock is exactly Ctrl+L, matched on the physical key: Shift (IME
+ *     switch on zh/ja) and Alt (AltGr on European layouts) must pass through,
+ *     Caps-Lock 'L' still locks, and a layout whose 'l' key sits elsewhere
+ *     (Dvorak) neither locks on a different physical key nor misses its own
  *   - the locked-window blocklist: reload (F5, Ctrl+R, Ctrl+Shift+R), zoom in
  *     both plain and Shift-shifted spellings ('='/'+' and '-'/'_'), reset ('0'),
  *     and DevTools (Ctrl+Shift+I/J/C)
@@ -28,9 +29,12 @@ const ok = (cond, msg) => {
   if (!cond) failed += 1
 }
 
-/** Build a classifier input; modifiers default to off. */
+/** Build a classifier input; modifiers default to off. `code` defaults to the
+ *  physical key for `k` ('l'/'L' → KeyL) — the panic chord matches on code,
+ *  not on the layout-dependent key character. */
 const key = (k, mods = {}) => ({
   key: k,
+  code: `Key${k.toUpperCase()}`,
   control: false,
   shift: false,
   alt: false,
@@ -42,7 +46,9 @@ const ctrl = (k, mods = {}) => key(k, { control: true, ...mods })
 // ---- panic lock chord (exactly Ctrl+L) --------------------------------------
 console.log('panic lock chord')
 ok(isPanicLockChord(ctrl('l')), 'Ctrl+L is the panic chord')
-ok(isPanicLockChord(ctrl('L')), 'Ctrl+L with Caps Lock still matches (key is case-folded)')
+ok(isPanicLockChord(ctrl('L')), 'Ctrl+L with Caps Lock still matches (code is case-independent)')
+ok(isPanicLockChord(key('s', { code: 'KeyL', control: true })), 'Ctrl+physical-L matches on code when the layout produces a different key (Dvorak)')
+ok(!isPanicLockChord(key('l', { code: 'KeyI', control: true })), "key 'l' from a non-L physical key is not the panic chord (Dvorak: 'l' sits on KeyI)")
 ok(!isPanicLockChord(ctrl('l', { shift: true })), 'Ctrl+Shift+L passes (IME input-mode switch)')
 ok(!isPanicLockChord(ctrl('l', { alt: true })), 'Ctrl+Alt+L passes (AltGr on European layouts)')
 ok(!isPanicLockChord(ctrl('l', { meta: true })), 'Ctrl+Meta+L passes')

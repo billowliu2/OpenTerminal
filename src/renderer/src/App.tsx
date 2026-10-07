@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import zhTW from 'antd/locale/zh_TW'
@@ -46,6 +46,9 @@ export default function App(): React.JSX.Element {
   const tabAccentColor = useSettingsStore((s) => s.settings.terminal.tabAccentColor)
   const storedLanguage = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Stable so the memoized icon rail inside Workspace can bail out of the
+  // re-renders Workspace does on every session/panel change.
+  const openSettings = useCallback((): void => setSettingsOpen(true), [])
   /** Secure default: main may already hold a startup lock before this IPC
    *  resolves, so the shell must not become interactive while unknown. `null`
    *  means "not answered yet" and is kept distinct from "locked": the overlay
@@ -171,7 +174,7 @@ export default function App(): React.JSX.Element {
             before the browser checks for a focused descendant. */}
         <div className="app-root" inert={locked || undefined} aria-hidden={locked || undefined}>
           <TitleBar />
-          <Workspace onOpenSettings={() => setSettingsOpen(true)} />
+          <Workspace onOpenSettings={openSettings} />
           <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
           <TransferPanel />
         </div>

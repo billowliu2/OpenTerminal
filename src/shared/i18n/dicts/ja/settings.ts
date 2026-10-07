@@ -302,7 +302,6 @@ const settings: Record<string, string> = {
   'settings.about.statusDownloaded': 'ダウンロード完了。再起動してインストールできます',
   'settings.about.statusError': '確認に失敗しました',
   'settings.about.statusDev': '開発モードでは更新を確認できません',
-  'settings.about.channelStable': '安定版チャンネル',
   'settings.about.autoCheck': '起動時に自動で確認',
   'settings.about.download': '更新をダウンロード',
   'settings.about.downloadGithub': '（GitHub ソース）',

@@ -291,7 +291,6 @@ const settings: Record<string, string> = {
   'settings.about.statusDownloaded': '下载完成，可重启安装',
   'settings.about.statusError': '检查失败',
   'settings.about.statusDev': '开发模式不支持更新检查',
-  'settings.about.channelStable': '稳定更新通道',
   'settings.about.autoCheck': '启动时自动检查',
   'settings.about.download': '下载更新',
   'settings.about.downloadGithub': '（GitHub 源）',

@@ -307,7 +307,6 @@ const settings: Record<string, string> = {
   'settings.about.statusDownloaded': 'Download complete — restart to install',
   'settings.about.statusError': 'Check failed',
   'settings.about.statusDev': 'Update checks are unavailable in development mode',
-  'settings.about.channelStable': 'Stable channel',
   'settings.about.autoCheck': 'Check automatically at startup',
   'settings.about.download': 'Download update',
   'settings.about.downloadGithub': ' (GitHub source)',

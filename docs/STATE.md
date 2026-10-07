@@ -4,7 +4,7 @@
 
 ## 当前版本与仓库
 
-- v1.0.19，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
+- v1.0.20，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
 - 开源协议：MIT（LICENSE）
 - 更新通道 = `https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/`（公网可读，含 latest.yml/exe/blockmap）
 - 技术栈：Electron + electron-vite + React 19 + TS strict + antd 6（全局深色）+ zustand + dockview-react 8 + @xterm/xterm 6 + @lydell/node-pty + ssh2 + zmodem.js + electron-updater + electron-builder
@@ -25,6 +25,18 @@
 | M8 工作区分离+底部文件面板+右键菜单+监控美化+补全修复 | ✅（v0.8.0） |
 | M9 体验打磨（托盘+关闭行为+单实例+主题联动标题栏+布局菜单重做+补全修正+图标） | ✅ |
 | M10 多语言界面（zh-CN/zh-TW/en/ja）+离线多语言更新日志+按键录制+可配工具条+设置健壮性 | ✅（v1.0.13） |
+| M11 终端自定义（背景图/压暗层+对比度护栏）、高亮预设扩到 22 条、传输健壮性修复 | ✅（v1.0.14–1.0.16） |
+| M12 锁屏（主窗口遮罩+scrypt 密码+Ctrl+L 立即锁屏+冷却阶梯+落盘状态） | ✅（v1.0.17，v1.0.18 修复锁屏输入回归，v1.0.20 摘除菜单加固） |
+| M13 更新源改为 GitHub 优先 + Gitea 通道兜底，高亮引擎性能优化 | ✅（v1.0.19–1.0.20） |
+
+## 锁屏实现要点（v1.0.17+，已落地）
+
+- **只在主窗口内加不透明遮罩**（`lock/LockScreen.tsx`，z-index 4000），不另开 Electron 窗口。锁定时 `.app-root` 置 `inert` 但**保持挂载**（卸载会杀掉遮罩后的本地/SSH 会话与传输列表）；antd portal 挂在 `document.body` 上不在 `#root` 内，所以还要给 `body` 下非 `#root` 子节点补 `inert`，并用 `MutationObserver` 覆盖锁定之后才挂上的浮层（SSH 发出后闲置锁屏、主机密钥弹窗恰好在此刻弹出的场景）
+- **密码永不进渲染层**：`lockStore.ts` 用 scrypt(N=16384,r=8,p=1) + 每次写入重新生成的 16 字节 salt + `timingSafeEqual`，存 `<userData>/lock.json`；锁状态机独占在 `lockController.ts`（`LockSettingsState` 只有 configured/enabled/autoLockMinutes/lockAtStartup/locked/cooldownMs）
+- **锁标志落盘** `<userData>/lock-state.json`（locked/failures/cooldownUntil 每次变化立即写）→ 托盘退出/强杀/崩溃重启后仍是锁的；`lockAtStartup` 只是额外一层。磁盘恢复的 `cooldownUntil` 夹到 `now+30s` 防系统时间回拨
+- **Ctrl+L = 立即锁屏**：`before-input-event` 捕获，未设密码时不 `preventDefault`（保留给 shell 清屏），已锁定时不拦截，跳过 `isAutoRepeat`。判定函数 `isPanicLockChord` 判 **`input.code === 'KeyL'`**（物理键位，非布局相关的 `key`），Shift/Alt/Meta 任一存在即放行（IME 切输入法的 Ctrl+Shift+L、AltGr 的 Ctrl+Alt）
+- **键盘之外还有鼠标路径**：默认菜单 Alt 就能唤出，菜单点击不走 `before-input-event`，所以锁定期间 `lockMenu.ts` 把整个应用菜单置 null。渲染层的 `document.documentElement.dataset.locked` 守卫**只允许 return，绝不能 preventDefault**（keydown 默认动作就是往聚焦输入框插字符，v1.0.17 的回归就死在这里，v1.0.18 修）
+- **Ctrl+L 是保留键**：快捷键录制器（`RESERVED_EXACT_ACCELERATORS`）与主进程 `applyGlobalShortcut` 双重拒绝注册它——globalShortcut 在 OS 层拦截会让紧急锁屏静默失效；老版本存下的 `Control+L` 只能靠主进程那道拒绝兜底
 
 ## M8 实现要点（v0.8.0，已落地）
 
@@ -48,28 +60,35 @@
 
 ## 发布流程（下一版本照抄）
 
-1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）。`predist` 末尾会 `npm install --package-lock-only` 自动同步锁文件根版本号，**release 提交要包含 package-lock.json**（否则根版本会漂移，v1.0.15–1.0.19 曾漂了 5 个版本）
-2. `node scripts/release.cjs <版本号> --skip-github`：脚本自己建 Gitea release（msi/exe 资产）→ 传更新通道 `exe.blockmap → exe → release-notes.md → latest.yml`（**latest.yml 最后**）；不再先删旧版，latest.yml 生效后才清掉上一版 exe/blockmap
-3. 通道传坏了只补通道：`node scripts/release.cjs <版本号> --channel-only`（同一版本可重复运行：release 复用、已传资产跳过）
+1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）。`predist` 会先跑 `npm test`（typecheck + 12 个离线测试）再 `npm install --package-lock-only` 同步锁文件根版本号，**release 提交要包含 package-lock.json**（否则根版本会漂移，v1.0.15–1.0.19 曾漂了 5 个版本）
+2. `node scripts/release.cjs <版本号>`（**不带 skip 参数**，Gitea 与 GitHub 一起发）：脚本自己建 Gitea release（msi/exe 资产）→ 传更新通道 `exe.blockmap → exe → release-notes.md → latest.yml`（**latest.yml 最后**）；再把 exe/exe.blockmap/latest.yml 作为 release 资产同步发到 GitHub（electron-updater 标准 GitHub provider 直接吃 release 资产）。不再先删旧版，latest.yml 生效后才清掉上一版 exe/blockmap。上传前 `assertNoDowngrade()` 会读通道 latest.yml，线上版本更高时直接拒绝
+3. 通道传坏了只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub；同一版本可重复运行：release 复用、已传资产跳过）
 4. 校验：无 token `curl .../generic/openterminal-update/stable/latest.yml` 应 200 且 version 正确
-5. `git tag vX.Y.Z && git push origin main vX.Y.Z`（GitHub 镜像只推代码/tag，不随版本发 release 资产）
+5. `git tag vX.Y.Z && git push origin main vX.Y.Z`（GitHub 镜像推代码/tag + release 资产，与 Gitea 保持同步）
+
+> GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub）；国内通道全程直连，不设代理
 
 ## 测试（全部通过，改动后必跑）
 
 ```bash
 npm run typecheck   # tsconfig.node.json + tsconfig.web.json
 npm run build
-npm test            # = node tests/build-bundles.cjs && 下面 8 个测试（依次，全部离线可跑）
+npm test            # = pretest(typecheck) + node tests/build-bundles.cjs + 下面 12 个测试（依次，全部离线可跑）
 node tests/ssh-loopback.mjs
 node tests/commands-store.mjs
-node tests/settings-store.mjs        # 设置清洗器（closeAction/高亮规则修复/旧预设升级/告警日志）
+node tests/connections-store.mjs       # SSH 书签 CRUD / 公开-密文切分 / 损坏文件备份
+node tests/settings-store.mjs          # 设置清洗器（closeAction/高亮规则修复/旧预设升级/告警日志）
+node tests/lock-store.mjs              # 锁屏密码校验值（scrypt 往返、损坏文件）
+node tests/lock-controller.mjs         # 冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动
+node tests/lock-shortcuts.mjs          # 锁屏快捷键分类器（表驱动）
 node tests/.hl-split-smoke.cjs
-node tests/.hl-rules.cjs             # 内置高亮预设（词边界、大小写、负向词、危险命令）
+node tests/.hl-rules.cjs               # 内置高亮预设（词边界、大小写、负向词、危险命令）
 node tests/zmodem-e2e.mjs
 node tests/ssh-session-e2e.mjs
 node tests/sysinfo-e2e.mjs
-# `node tests/build-bundles.cjs` 单独重建全部 7 个 esbuild bundle（别名只存在于该脚本）：
-#   .session-e2e.cjs(pty.ts) .sftp-svc.mjs(sftp.ts，ESM) .commands-store.cjs .settings-store.cjs
+# `node tests/build-bundles.cjs` 单独重建全部 esbuild bundle（别名只存在于该脚本）：
+#   .session-e2e.cjs(pty.ts) .sftp-svc.mjs(sftp.ts，ESM) .commands-store.cjs .connections-store.cjs
+#   .known-hosts.cjs .settings-store.cjs .lock-store.cjs .lock-controller.cjs .lock-shortcuts.cjs
 #   .zmodem-e2e.cjs .hl-split-smoke.cjs .hl-rules.cjs —— 少 --alias:@shared=./src/shared 会编译失败
 # 真实服务器测试（需 JD 环境变量凭据，旧凭据已过期，不在 npm test 内）：
 # JD_HOST=... JD_USER=root JD_PASS=... node tests/sftp-real.mjs / tests/sftp-chmod.mjs
@@ -100,5 +119,5 @@ node tests/sysinfo-e2e.mjs
 
 1. ~~应用图标~~（已完成：build/icon.png，程序生成的原创图标）
 2. 用户实测项：Ctrl+PgUp/PgDn 真实键盘（合成键盘无法验证修饰键）、真实服务器 rz/sz 一轮、全局唤起快捷键、中文 IME 候选窗跟随光标（每次发版前手测一遍，CI 无法覆盖）
-3. `@xterm/xterm` 6.1.0 stable 发布后把精确锁定的 `6.1.0-beta.304` 改回 `^` 范围并回归验证 IME（背景见已踩坑 11）
-3. 小项：autoWrap=false 固定列宽、OSC 标题跟随、内置 OFL 字体打包、WebGL 终端数上限降级、最近命令历史出现两条命令拼接的记录（广播键入时行捕获合并，低优先级修）
+3. `@xterm/xterm` 6.1.0 stable 发布后把精确锁定的 `6.1.0-beta.304` 改回 `^` 范围并回归验证 IME（背景见已踩坑 11；该 pin 随 v1.0.20 的中文输入法候选窗修复上线）
+4. 小项：autoWrap=false 固定列宽、OSC 标题跟随、内置 OFL 字体打包、WebGL 终端数上限降级、最近命令历史出现两条命令拼接的记录（广播键入时行捕获合并，低优先级修）

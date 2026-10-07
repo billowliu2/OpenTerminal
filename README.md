@@ -11,7 +11,7 @@ npm install        # 已安装可跳过
 npm run dev        # 开发模式（热更新）
 npm run build      # 生产构建到 out/
 npm run typecheck  # 全量类型检查
-npm test           # 重建测试 bundle 后依次跑离线测试（详见「测试」）
+npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 12 个离线测试（详见「测试」）
 ```
 
 > Electron 二进制下载失败时：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`
@@ -48,7 +48,16 @@ npm test           # 重建测试 bundle 后依次跑离线测试（详见「测
 - 命令面板：侧边栏「命令」标签分「历史」/「命令库」两页，历史按会话去重，命令库支持分组与一键运行
 - 输入建议：历史 + 命令库来源，Tab 接受、回车始终直接执行（可在设置中整体关闭）
 - 会话日志：手动启停、纯文本落盘
-- 快捷键：Ctrl+=/-/0 字号、Ctrl+PgUp/PgDn 切换面板、全局唤起/隐藏（可配）
+- 快捷键：Ctrl+=/-/0 字号、Ctrl+PgUp/PgDn 切换面板、Ctrl+L 立即锁屏（已设密码时生效）、全局唤起/隐藏（可配）
+
+**锁屏与隐私**
+- 主窗口内不透明遮罩锁定（不另开窗口），遮罩下的本地/SSH 会话与传输列表保持挂载，解锁即恢复
+- 密码只存 scrypt 派生值（`lock.json`，每次写入重新生成随机盐 + 定时安全比较），明文永不落盘；未设密码则不启用
+- 锁定状态落盘（`lock-state.json`），托盘退出 / 任务管理器强杀 / 崩溃重启后仍然是锁的
+- **Ctrl+L = 立即锁屏**，终端里也生效；未设密码的应用保留 Ctrl+L 给 shell 的清屏
+- 密码错误有冷却阶梯（1s → 2s → 5s → 10s → 30s），失败计数与冷却同样落盘
+- 可选「闲置自动锁屏」（1/5/15/30/60 分钟）与「启动即锁」，冷却中连输也逐级退避
+- 锁定期间吞掉 F5 / Ctrl+R / Ctrl+±0 / Ctrl+Shift+I/J/C，并整块摘除应用菜单，防止菜单键绕过遮罩
 
 **外观与窗口**
 - 12 款内置主题（Dracula / One Half / Solarized / Gruvbox / Nord / Monokai / GitHub 等）
@@ -56,6 +65,7 @@ npm test           # 重建测试 bundle 后依次跑离线测试（详见「测
 - 窗口标题栏与背景跟随终端主题
 - 系统托盘：关闭按钮可设「每次询问 / 最小化到托盘 / 直接退出」，托盘菜单可切换
 - 单实例运行：重复启动唤出已有窗口
+- 自动更新：GitHub 优先（走系统代理），失败回退国内 Gitea 更新通道（强制直连）；单次检查 30s 整体超时，MSI 仅分发、自动更新走 NSIS 安装包
 - 设置持久化（userData/settings.json，原子写入）+ 多窗口实时同步
 
 **界面与语言**
@@ -64,15 +74,22 @@ npm test           # 重建测试 bundle 后依次跑离线测试（详见「测
 
 **测试**
 
-`npm test` 会先重建 esbuild bundle，再依次跑下列测试（无需服务器与凭据）：
+`npm test` 会先跑 `pretest`（= `npm run typecheck`），再重建 esbuild bundle，最后依次跑下列 12 个测试（全部离线，无需服务器与凭据）：
 
 - `node tests/ssh-loopback.mjs` — ssh2 客户端/服务端回环（认证、shell、数据、resize、指纹）
+- `node tests/commands-store.mjs` — 命令库 / 历史 / 会话日志存储
+- `node tests/connections-store.mjs` — SSH 书签 CRUD、公开/密文字段切分、损坏文件备份
+- `node tests/settings-store.mjs` — 设置清洗器（closeAction/高亮规则修复/旧预设升级/告警日志）
+- `node tests/lock-store.mjs` — 锁屏密码校验器（scrypt 往返、文件损坏处理）
+- `node tests/lock-controller.mjs` — 锁屏控制器（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）
+- `node tests/lock-shortcuts.mjs` — 锁屏快捷键分类器（表驱动：Ctrl+L 恐慌锁 / 锁定时禁用的组合键）
+- `node tests/.hl-split-smoke.cjs` — 关键词高亮流分块回归（bundle 由 `node tests/build-bundles.cjs` 生成）
+- `node tests/.hl-rules.cjs` — 内置高亮预设（词边界、大小写、负向词、危险命令）
+- `node tests/zmodem-e2e.mjs` — ZMODEM 双向传输（与第二个 zmodem.js Sentry 对接，内容一致性）
 - `node tests/ssh-session-e2e.mjs` — 会话路由层端到端（SSH 数据面、replay、resize、kill）
 - `node tests/sysinfo-e2e.mjs` — 服务器监控轮询端到端（META、采样速率、stopPolling）
-- `node tests/zmodem-e2e.mjs` — ZMODEM 双向传输（与第二个 zmodem.js Sentry 对接，内容一致性）
-- `node tests/commands-store.mjs` / `node tests/settings-store.mjs` — 命令库/历史/会话日志与设置清洗器
-- `node tests/.hl-split-smoke.cjs` — 关键词高亮流分块回归（bundle 由 `node tests/build-bundles.cjs` 生成）
-- 真实服务器测试（需 `JD_HOST/JD_USER/JD_PASS`，不在 `npm test` 内）：`tests/sftp-real.mjs`、`tests/sftp-chmod.mjs`
+
+- 真实服务器测试（需 `JD_HOST/JD_USER/JD_PASS`，**不在** `npm test` 内，需联网与真实凭据）：`tests/sftp-real.mjs`、`tests/sftp-chmod.mjs`
 
 ## 架构
 
@@ -86,6 +103,8 @@ src/
 ├── main/              # 主进程
 │   ├── pty.ts         #   PTY 会话池（node-pty）→ 广播 PTY_DATA/PTY_EXIT
 │   ├── settingsStore.ts # JSON 持久化 + 深合并兜底
+│   ├── lockController.ts # 锁屏状态机（冷却阶梯、闲置触发、串行化解锁）
+│   ├── lockStore.ts   #   锁屏密码校验值（scrypt，不存明文）
 │   ├── layouts.ts     #   布局模板存储（userData/layouts/*.json）
 │   ├── tray.ts        #   系统托盘 + 关闭行为
 │   └── ipc.ts         #   全部 ipcMain 注册
@@ -105,6 +124,8 @@ src/
 - 布局模板：`%APPDATA%/OpenTerminal/layouts/*.json`
 - SSH 连接书签：`%APPDATA%/OpenTerminal/connections.json`（密钥字段 DPAPI 加密）
 - 主机指纹：`%APPDATA%/OpenTerminal/ssh_known_hosts.json`
+- 锁屏密码校验值：`%APPDATA%/OpenTerminal/lock.json`（scrypt 派生值，无明文）
+- 锁屏状态与冷却：`%APPDATA%/OpenTerminal/lock-state.json`
 
 ## License
 
