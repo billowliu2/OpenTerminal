@@ -254,16 +254,6 @@ export function RenderSettingsTab(): React.JSX.Element {
         {rendererModes.find((o) => o.value === settings.terminal.rendererMode)?.hint}
       </div>
       <SettingRow
-        label={t('settings.render.autoWrap')}
-        desc={t('settings.render.autoWrapDesc')}
-        control={
-          <Switch
-            checked={settings.terminal.autoWrap}
-            onChange={(checked) => void updateTerminal({ autoWrap: checked })}
-          />
-        }
-      />
-      <SettingRow
         label={t('settings.render.copyOnSelect')}
         desc={t('settings.render.copyOnSelectDesc')}
         control={

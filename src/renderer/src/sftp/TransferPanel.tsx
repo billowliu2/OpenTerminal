@@ -123,7 +123,21 @@ export function TransferPanel(): React.JSX.Element | null {
                             ? t('panels.transfer.zmodemUploading')
                             : t('panels.transfer.zmodemDownloading')}
               </span>
-              {(tr.state === 'error' || tr.state === 'done') && (
+              {/* Only the SFTP engine's own transfers can be cancelled; zmodem
+                  runs in a separate engine that ignores cancelTransfer. */}
+              {tr.state === 'running' && (tr.kind === 'upload' || tr.kind === 'download') && (
+                <button
+                  type="button"
+                  className="sftp-transfer-cancel"
+                  onClick={() => window.api.cancelTransfer(id)}
+                >
+                  {t('common.cancel')}
+                </button>
+              )}
+              {/* Cancelled rows dismiss themselves after 3s, but one that also
+                  carries an error (a cancel racing a failed file) skips that
+                  path, so every terminal state keeps a manual close. */}
+              {(tr.state === 'error' || tr.state === 'done' || tr.state === 'cancelled') && (
                 <button
                   type="button"
                   className="sftp-transfer-close"

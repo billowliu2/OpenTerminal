@@ -1,11 +1,13 @@
 /* M3 server sysinfo monitor panel (SSH sessions only). */
 
+/* Panel surface derived from the theme (a fixed dark value turned every
+   white-based child below unreadable on a light theme). */
 .mm-root {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px;
-  background: #1a1a1a;
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 6%, var(--chrome-bg, #181818));
   color: var(--chrome-fg);
   font-size: 12px;
   overflow-y: auto;
@@ -32,14 +34,14 @@
   gap: 1px;
   line-height: 1.3;
   padding-bottom: 8px;
-  border-bottom: 1px solid #262626;
+  border-bottom: 1px solid var(--chrome-border, #2d2d2d);
   margin-bottom: 2px;
 }
 
 .mm-host {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--chrome-fg, #cccccc);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -55,9 +57,9 @@
 
 /* ---------- blocks ---------- */
 .mm-block {
-  border: 1px solid #2a2a2a;
+  border: 1px solid var(--chrome-border, #2d2d2d);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.018);
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 4%, transparent);
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -108,7 +110,7 @@
   height: 5px;
   border-radius: 3px;
   overflow: hidden;
-  background: #2c2c2c;
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 12%, transparent);
   width: 100%;
 }
 
@@ -121,7 +123,7 @@
 /* ---------- memory ---------- */
 .mm-mem-size {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.78);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 78%, transparent);
   font-variant-numeric: tabular-nums;
 }
 
@@ -163,7 +165,7 @@
 }
 
 .mm-mount {
-  color: rgba(255, 255, 255, 0.75);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 75%, transparent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -214,7 +216,7 @@
   align-items: baseline;
   gap: 4px;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.82);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 82%, transparent);
 }
 
 .mm-net-unit {
@@ -243,7 +245,7 @@
 }
 
 .mm-uptime {
-  color: rgba(255, 255, 255, 0.85);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 85%, transparent);
 }
 
 /* ---------- empty / collecting state ---------- */
@@ -264,7 +266,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.4);
+  background: color-mix(in srgb, var(--chrome-fg, #cccccc) 55%, transparent);
   animation: mm-pulse 1.2s infinite ease-in-out;
 }
 

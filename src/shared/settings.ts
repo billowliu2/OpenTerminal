@@ -63,7 +63,6 @@ export interface TerminalSettings {
   cursorInactiveStyle: 'outline' | 'block' | 'bar' | 'underline' | 'none'
   themeId: string
   rendererMode: 'auto' | 'webgl' | 'dom'
-  autoWrap: boolean
   copyOnSelect: boolean
   /** confirm before pasting multi-line / suspicious text */
   pasteRiskConfirm: boolean
@@ -445,7 +444,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     cursorInactiveStyle: 'outline',
     themeId: 'material-dark',
     rendererMode: 'auto',
-    autoWrap: true,
     copyOnSelect: false,
     pasteRiskConfirm: true,
     suggestEnabled: false,
@@ -461,7 +459,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     highlightThemeColors: false,
     highlightPerHost: false,
     backgroundImage: '',
-    backgroundImageOpacity: 60
+    backgroundImageOpacity: 30
   },
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,

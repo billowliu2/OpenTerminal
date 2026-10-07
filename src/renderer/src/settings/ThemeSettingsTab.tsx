@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Button, ColorPicker, Popconfirm, Slider } from 'antd'
 import { t } from '@shared/i18n'
 import type { TerminalSettings } from '@shared/settings'
@@ -31,6 +31,7 @@ export function ThemeSettingsTab({
   const updateTerminal = useSettingsStore((s) => s.updateTerminal)
   const setCustomThemes = useSettingsStore((s) => s.setCustomThemes)
   const activeTheme = useResolvedTheme()
+  const [opacityDraft, setOpacityDraft] = useState<number | null>(null)
 
   const themeCards = useMemo(
     () => [...BUILTIN_THEMES, ...settings.customThemes],
@@ -80,8 +81,12 @@ export function ThemeSettingsTab({
             min={10}
             max={100}
             step={5}
-            value={settings.terminal.backgroundImageOpacity}
-            onChange={(v) => void updateTerminal({ backgroundImageOpacity: v })}
+            value={opacityDraft ?? settings.terminal.backgroundImageOpacity}
+            onChange={(v) => setOpacityDraft(v)}
+            onChangeComplete={(v) => {
+              setOpacityDraft(null)
+              void updateTerminal({ backgroundImageOpacity: v })
+            }}
           />
         </div>
       )}

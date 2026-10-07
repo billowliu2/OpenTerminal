@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Modal, Popconfirm, Tabs } from 'antd'
 import type { TabsProps } from 'antd'
 import { t } from '@shared/i18n'
@@ -33,6 +33,16 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
   // is open, a main-window resize re-derives that default in real time.
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
   const [winSize, setWinSize] = useState({ w: window.innerWidth, h: window.innerHeight })
+  /** Tears down the drag in progress; null while no drag is active. */
+  const resizeCleanupRef = useRef<(() => void) | null>(null)
+
+  const endResize = useCallback((): void => {
+    const cleanup = resizeCleanupRef.current
+    if (!cleanup) return
+    resizeCleanupRef.current = null
+    cleanup()
+  }, [])
+
   useEffect(() => {
     if (open) setSize(null)
   }, [open])
@@ -42,6 +52,13 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [open])
+  // A drag whose mouseup is never delivered (released outside the window) must
+  // not outlive the dialog: closing or unmounting drops its listeners and the
+  // body styles it installed.
+  useEffect(() => {
+    if (!open) endResize()
+  }, [open, endResize])
+  useEffect(() => endResize, [endResize])
 
   const clampToWindow = (w: number, h: number): { w: number; h: number } => ({
     w: Math.max(720, Math.min(w, winSize.w - 96)),
@@ -56,24 +73,33 @@ export function SettingsDialog({ open, onClose }: SettingsDialogProps): React.JS
   const startResize = (e: React.MouseEvent<HTMLSpanElement>): void => {
     e.preventDefault()
     e.stopPropagation()
+    if (resizeCleanupRef.current) return
     const startX = e.clientX
     const startY = e.clientY
     const base = dialogSize
+    const prevCursor = document.body.style.cursor
+    const prevUserSelect = document.body.style.userSelect
     const onMove = (ev: MouseEvent): void => {
       const w = Math.max(720, Math.min(window.innerWidth - 96, base.w + (ev.clientX - startX)))
       const h = Math.max(440, Math.min(window.innerHeight - 140, base.h + (ev.clientY - startY)))
       setSize({ w, h })
     }
-    const onUp = (): void => {
+    // One teardown for every way the drag can end: mouseup, the window losing
+    // focus (the release lands on another window and never reaches us), the
+    // dialog closing, or unmount.
+    const cleanup = (): void => {
       window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
+      window.removeEventListener('mouseup', cleanup)
+      window.removeEventListener('blur', cleanup)
+      document.body.style.cursor = prevCursor
+      document.body.style.userSelect = prevUserSelect
     }
+    resizeCleanupRef.current = cleanup
     document.body.style.cursor = 'nwse-resize'
     document.body.style.userSelect = 'none'
     window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('mouseup', cleanup)
+    window.addEventListener('blur', cleanup)
   }
 
   const tabItems: TabsProps['items'] = [
