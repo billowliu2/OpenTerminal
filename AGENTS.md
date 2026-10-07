@@ -7,9 +7,10 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 开发：`npm run dev`（主进程改动不热重建，需重启）
 - dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
-- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 12 个测试：ssh-loopback、commands-store、connections-store、settings-store、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
+- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 17 个测试：ssh-loopback、commands-store、connections-store、settings-store、local-path-grants、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、reserved-accelerators、ipc-guard、updater-fallback、log-sanitizer、sftp-timeout、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
+- 依赖分类规则：**只有 `src/main/`/`src/preload/` 实际 import 的包才能进 `dependencies`**（node-pty/ssh2/zmodem.js/font-list/electron-updater）；纯渲染层依赖一律 devDependencies（Vite 全量打包进 out/renderer，`externalizeDepsPlugin` 不作用渲染层）——这条让 asar 从 98MB 瘦到 8.1MB，加新依赖时别放错边
 - 下载量统计：`node scripts/download-stats.cjs`（Gitea + GitHub release 资产的 download_count 汇总；GitHub 优先直连、失败自动回退 `HTTPS_PROXY`/本地 7897；更新通道无计数接口不计入）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 12 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 17 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 
@@ -57,6 +58,18 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 - `TerminalView.scheduleFit`：fit 后**去抖 100ms** 再把 cols/rows 发给 PTY，并跳过与上次相同的尺寸。每次 ResizeObserver 都戳 PTY 会让全屏 TUI（Claude Code 等）在最大化/还原的中间尺寸上反复重绘，留下重复帧
 - 拖动窗口期间 xterm 网格立即更新，PTY 尺寸在停止后 100ms 生效
+
+## 性能与安全边界（M11 第二轮）
+
+- `TerminalView` 用 **5 组 `useShallow` 字段级订阅**（fontOpts/themeOpts/bgOpts/highlightOpts/toolbar + rendererMode），**不要再回到整对象订阅**——主进程 `mutateSettings` 回推整个 settings 对象，任何写入都会变身份，整对象订阅会让所有 pane 重写 options + refit。`useResolvedTheme` 也是 shallow + memo 后的稳定引用
+- `TerminalView` **已无 imperative handle**（`TerminalHandle`/forwardRef 全删，无人传 ref）；要加「外部聚焦/清屏」需重新引入
+- `FilePanel` 虚拟化：固定行高自实现 windowing（>200 条目启用）。**`.sftp-row` 的 `height: 24px`（`sftp.css`）与 `FilePanel.tsx` 的 `ROW_HEIGHT` 必须同步改**——本仓库没有全局 box-sizing reset，行高写成 `box-sizing: border-box` 是有意的，去掉会让虚拟列表算术错位
+- 每个 dockview pane 内有 `PanelErrorBoundary`（`ErrorBoundary.tsx`）：pane 崩溃只卸载自己，根部边界仍兜底
+- **本地路径准入**（`src/main/localPathGrants.ts`）：SFTP 上传/下载与 zmodem 收发的本地路径必须来自系统对话框授权（pickFiles/pickDirectory 是唯一授权源，进程级内存注册表、不落盘），realpath+stat 双重校验、Windows 大小写折叠、解析后的路径才是要打开的路径。新增「渲染层构造本地路径传给主进程」的调用点时**必须过这道门**，别绕
+- `keyPath`（SSH 私钥）：realpath → stat → 普通文件且 ≤1MB 才读（防设备文件永久阻塞 UI 线程/符号链接逃逸）
+- `src/shared/reservedAccelerators.ts`：设置页录制器与主进程 `applyGlobalShortcut` **共用同一张保留键表**（Ctrl+L、Ctrl+=/-/0/PgUp/PgDn），两处分表曾漂移出洞，加新全局快捷键时两边自动一致
+- SFTP 操作有 per-op 超时（`sftp.ts` 的 `bounded()`：元数据 30s / 传输块 60s / open 10s），超时按 transport 错误驱逐半死通道并重试一次；`setSftpTimeouts`/`setUpdateTimeouts` 是**测试缝**，生产无调用者，别接设置项
+- `webPreferences` 显式写死 `contextIsolation: true / nodeIntegration: false / webSecurity: true`（`index.ts` 唯一窗口创建点），防默认值被将来改动
 
 ## 锁屏
 
