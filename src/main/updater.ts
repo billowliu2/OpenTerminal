@@ -24,6 +24,10 @@ const GITHUB_RELEASES_API =
 const GITHUB_PROBE_URL =
   'https://api.github.com/repos/billowliu2/OpenTerminal/releases/latest'
 const GITHUB_PROBE_TIMEOUT_MS = 20_000
+/** Overall budget for ONE check attempt — see withTimeout. */
+const CHECK_TIMEOUT_MS = 30_000
+/** Changelog / releases-API fetches: a stalled response must not hang the About tab. */
+const FETCH_TIMEOUT_MS = 15_000
 
 let state: UpdateState = { status: 'idle', currentVersion: app.getVersion() }
 let activeFeed: 'gitea' | 'github' = 'gitea'
@@ -76,12 +80,30 @@ function wireEvents(): void {
 }
 
 /**
+ * Bound one updater call with an overall timeout. electron-updater's own socket
+ * idle timeout only fires on silence, so a slow trickling response can hold an
+ * attempt — and the "checking" state the UI shows — open indefinitely.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    const handle = setTimeout(() => reject(new Error(t('main.updater.checkTimeout'))), ms)
+    handle.unref?.()
+    timer = handle
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer)
+  })
+}
+
+/**
  * Check updates: GitHub releases first (system proxy, gated by a
  * connectivity probe), domestic Gitea generic package as fallback.
  *
- * The feed is decided BEFORE touching the updater: checkForUpdates has no
- * timeout, and racing it while mid-flight risks two concurrent checks
- * polluting state.
+ * The feed is decided BEFORE touching the updater: a check abandoned on timeout
+ * cannot be cancelled, and electron-updater de-dupes concurrent checks by
+ * handing back the in-flight promise — so the fallback attempt below shares the
+ * abandoned check's fate instead of racing a second request.
  */
 async function checkWithFallback(): Promise<void> {
   // The feed choice is per attempt: a transient GitHub failure must not pin
@@ -91,7 +113,7 @@ async function checkWithFallback(): Promise<void> {
   if (await probeGithub()) {
     useFeed('github')
     try {
-      await autoUpdater.checkForUpdates()
+      await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS)
       return
     } catch (err) {
       console.warn('[updater] github feed failed, falling back to gitea:', err)
@@ -102,7 +124,9 @@ async function checkWithFallback(): Promise<void> {
   }
   useFeed('gitea')
   try {
-    await autoUpdater.checkForUpdates()
+    // Bounded as well: a still-stuck GitHub check is handed back to us here, and
+    // it must not leave the state at "checking" forever.
+    await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS)
   } catch (err) {
     if (githubErr === undefined) throw err
     const giteaErr = err instanceof Error ? err.message : String(err)
@@ -138,7 +162,12 @@ async function handleDownload(): Promise<void> {
 async function directFetch(url: string): Promise<Response> {
   const s = session.fromPartition('openterminal-update-direct', { cache: false })
   await s.setProxy({ mode: 'direct' })
-  return s.fetch(url, { headers: { 'User-Agent': 'OpenTerminal' } })
+  // Bounded: the changelog is on screen, so a stalled channel must fall through
+  // to the releases APIs instead of leaving the view spinning.
+  return s.fetch(url, {
+    headers: { 'User-Agent': 'OpenTerminal' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+  })
 }
 
 /**
@@ -184,7 +213,10 @@ async function fetchChangelog(): Promise<ReleaseNote[]> {
   }
   for (const url of [GITEA_RELEASES_API, GITHUB_RELEASES_API]) {
     try {
-      const resp = await net.fetch(url, { headers: { 'User-Agent': 'OpenTerminal' } })
+      const resp = await net.fetch(url, {
+        headers: { 'User-Agent': 'OpenTerminal' },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      })
       if (!resp.ok) continue
       const data = (await resp.json()) as Array<{
         tag_name?: string

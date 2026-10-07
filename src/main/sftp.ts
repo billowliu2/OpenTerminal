@@ -52,11 +52,17 @@ export function formatMode(mode: number): string {
 }
 
 /**
- * One SFTP channel PER SESSION, cached. Strict sshd builds (MaxSessions 2-3,
- * e.g. hardened cloud images) refuse extra channels and drop the whole
- * connection when every operation opens its own subsystem.
+ * One SFTP channel PER SESSION, cached for the session's whole lifetime. Strict
+ * sshd builds (MaxSessions 2-3, e.g. hardened cloud images) refuse extra
+ * channels and drop the whole connection when every operation opens its own
+ * subsystem. Only the session ending (pty.ts) or the channel itself erroring
+ * drops it: a finished transfer must NOT close it, or the next transfer pays
+ * for another subsystem.
  */
 const sftpCache = new Map<string, SFTPWrapper>()
+
+/** How long an SFTP subsystem open may take before the client counts as dead. */
+const SFTP_OPEN_TIMEOUT_MS = 10_000
 
 /**
  * Our own "session is gone" error. `isTransportError` classifies on the class,
@@ -64,6 +70,13 @@ const sftpCache = new Map<string, SFTPWrapper>()
  * depend on the active locale.
  */
 class SessionGoneError extends Error {}
+
+/**
+ * Our own "the client stopped answering" error: an SFTP subsystem open that
+ * outlived its budget. Transport-classified, so withSftp evicts the possibly
+ * half-dead channel and retries once on a fresh one.
+ */
+class SftpTimeoutError extends Error {}
 
 /**
  * Our own "operation failed for a non-transport reason" error (server-side
@@ -82,7 +95,23 @@ async function sftpOf(sessionId: string): Promise<SFTPWrapper> {
     throw new SessionGoneError(t('main.sftp.sessionGone'))
   }
   const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
-    client.sftp((err, sftp_) => (err != null ? reject(err) : resolve(sftp_)))
+    // A half-dead client can accept the subsystem request and then never call
+    // back; bound the wait (like execQuiet does) so withSftp can evict and retry.
+    const timer = setTimeout(
+      () => reject(new SftpTimeoutError(t('main.sftp.openTimeout'))),
+      SFTP_OPEN_TIMEOUT_MS
+    )
+    try {
+      client.sftp((err, sftp_) => {
+        clearTimeout(timer)
+        if (err != null) reject(err)
+        else resolve(sftp_)
+      })
+    } catch (err) {
+      // ssh2 throws synchronously when the socket is already gone
+      clearTimeout(timer)
+      reject(err)
+    }
   })
   // ssh2.d.ts declares only the used surface; the wrapper is an EventEmitter
   ;(sftp as SFTPWrapper & { on(event: 'error', cb: (err: Error) => void): void }).on('error', (err: Error) => {
@@ -109,14 +138,16 @@ function evictSftp(sessionId: string): void {
  * another subsystem channel, which strict sshd (MaxSessions 2) punishes by
  * dropping the whole connection. Only transport-level death retries.
  *
- * Classification is class-based for our own errors (SessionGoneError /
- * OperationError) and matches only the ssh2 library's own message strings for
- * the rest: ssh2 is English-only and never translated, so the decision cannot
- * drift with the UI locale (our translated messages arrive as OperationError
- * and are rejected before any text is inspected).
+ * Classification is class-based for our own errors (SessionGoneError and
+ * SftpTimeoutError are transport-level, OperationError is not) and matches only
+ * the ssh2 library's own message strings for the rest: ssh2 is English-only and
+ * never translated, so the decision cannot drift with the UI locale (our
+ * translated messages arrive as OperationError and are rejected before any text
+ * is inspected).
  */
 function isTransportError(err: unknown): boolean {
   if (err instanceof SessionGoneError) return true
+  if (err instanceof SftpTimeoutError) return true
   if (err instanceof OperationError) return false
   const msg = (err as Error | undefined)?.message ?? ''
   return /not connected|ECONNRESET|EPIPE|timed out|disconnected|channel|read past end|no response/i.test(msg)
@@ -399,8 +430,10 @@ export function uploadRemote(
           error: (err as Error).message
         })
       } finally {
+        // The cached channel belongs to the session, not to this transfer: only
+        // the session ending or the channel erroring drops it (see the cache note
+        // at the top of the file).
         activeTransfers.delete(id)
-        closeSftp(sessionId)
       }
     })()
 
@@ -472,8 +505,10 @@ export function downloadRemote(
           error: (err as Error).message
         })
       } finally {
+        // The cached channel belongs to the session, not to this transfer: only
+        // the session ending or the channel erroring drops it (see the cache note
+        // at the top of the file).
         activeTransfers.delete(id)
-        closeSftp(sessionId)
       }
     })()
 

@@ -189,6 +189,14 @@ export function createPty(opts: PtyCreateOptions = {}, owner?: number): PtyCreat
   // explicit FORCE_COLOR=0 form of the same request.
   delete env.NO_COLOR
   if (env.FORCE_COLOR === '0') delete env.FORCE_COLOR
+  // Electron's own plumbing must not leak into the user's shell either:
+  // ELECTRON_RUN_AS_NODE would turn this app's own exe into plain node, and
+  // NODE_OPTIONS would be applied to every node process started from here.
+  // OT_UPDATE_TOKEN is the updater credential — the updater is the only thing
+  // that has a reason to see it, not every shell the user opens.
+  delete env.ELECTRON_RUN_AS_NODE
+  delete env.NODE_OPTIONS
+  delete env.OT_UPDATE_TOKEN
 
   // Shell integration (opt-in): let the shell announce its own cwd over OSC 7 so
   // the remembered path is exact instead of inferred from typed `cd` commands.

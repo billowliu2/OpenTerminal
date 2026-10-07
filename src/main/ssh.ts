@@ -144,6 +144,14 @@ export async function connectSsh(
 
     promptUser(conn.host, conn.port, fingerprint, status, timeouts.prompt, deps)
       .then((accepted) => {
+        // The prompt can outlive the handshake: the connect timer is re-armed
+        // only after the decision, but a socket error meanwhile may have failed
+        // the attempt (and destroyed the client). Pinning the key then would
+        // record trust for a connection that never completed — drop the answer.
+        if (settled) {
+          console.warn('[ssh] host key decision arrived after the handshake failed; ignored')
+          return
+        }
         if (accepted) {
           try {
             deps.knownHosts.accept(conn.host, conn.port, hostKey, fingerprint)

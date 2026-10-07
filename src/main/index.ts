@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, net, nativeImage, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, net, nativeImage, protocol, shell } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
@@ -12,7 +12,7 @@ import { isLockBlockedShortcut, isPanicLockChord } from './lockShortcuts'
 import { initTray, markQuitting, onMainWindowClose, refreshTrayMenu } from './tray'
 import { configureAutoUpdater, registerUpdateIpc } from './updater'
 import { applyWindowChrome } from './windowChrome'
-import { onLanguageChange } from '@shared/i18n'
+import { onLanguageChange, t } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
 
 /** Re-create the main window (tray restore path after all windows are gone). */
@@ -69,45 +69,63 @@ if (!gotSingleInstanceLock) {
 } else {
   app.on('second-instance', () => showOrCreate())
 
-  app.whenReady().then(() => {
-    // Serve the configured background image (path lives in settings; anything
-    // else — including a path that is no longer configured — is refused, so the
-    // protocol cannot be used to read arbitrary files).
-    protocol.handle('otimg', (request) => {
-      const url = new URL(request.url)
-      const requested = decodeURIComponent(url.pathname.replace(/^\//, ''))
-      const allowed = loadSettings().terminal.backgroundImage
-      if (allowed === '' || requested !== allowed || !existsSync(requested)) {
-        return new Response('', { status: 403 })
+  app
+    .whenReady()
+    .then(() => {
+      // Serve the configured background image (path lives in settings; anything
+      // else — including a path that is no longer configured — is refused, so the
+      // protocol cannot be used to read arbitrary files).
+      protocol.handle('otimg', (request) => {
+        const url = new URL(request.url)
+        const requested = decodeURIComponent(url.pathname.replace(/^\//, ''))
+        const allowed = loadSettings().terminal.backgroundImage
+        if (allowed === '' || requested !== allowed || !existsSync(requested)) {
+          return new Response('', { status: 403 })
+        }
+        return net.fetch(pathToFileURL(requested).toString())
+      })
+
+      registerIpc()
+      registerUpdateIpc()
+      // Before the window exists: a renderer-triggered check must not run against
+      // the updater's defaults (feed, proxy, autoDownload are set in here).
+      configureAutoUpdater()
+      // OS-level effects (login item, sleep blocker) must apply even if the
+      // settings dialog is never opened this run.
+      applyStartupSystemSettings(loadSettings())
+      // The lock state has to exist before the window loads, so a lockAtStartup
+      // lock is already in place when the renderer asks for it. It also starts the
+      // idle watcher, which is why it belongs after ready: powerMonitor cannot be
+      // touched before that. A restored startup lock engages before any publish,
+      // so the menu teardown is applied here from the flag itself.
+      const lock = initLockController()
+      applyMenuLockState(lock.isLocked())
+      createWindow()
+      initTray(showOrCreate)
+      // Tray labels are resolved from the dictionary at build time, so the menu has
+      // to be rebuilt whenever the interface language changes.
+      onLanguageChange(() => refreshTrayMenu())
+
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      })
+    })
+    // A throw anywhere above (protocol, IPC, updater, lock controller, window,
+    // tray) used to leave the process running with the single-instance lock held
+    // and neither a window nor a tray to reach it — a zombie that refuses every
+    // later launch. Report and exit so a relaunch can retry from scratch.
+    .catch((err: unknown) => {
+      console.error('[main] startup failed:', err)
+      try {
+        dialog.showErrorBox(
+          'OpenTerminal',
+          t('main.startupFailed', { detail: err instanceof Error ? err.message : String(err) })
+        )
+      } catch {
+        // no display / dialog unavailable: the console line is all we have
       }
-      return net.fetch(pathToFileURL(requested).toString())
+      app.exit(1)
     })
-
-    registerIpc()
-    registerUpdateIpc()
-    // Before the window exists: a renderer-triggered check must not run against
-    // the updater's defaults (feed, proxy, autoDownload are set in here).
-    configureAutoUpdater()
-    // OS-level effects (login item, sleep blocker) must apply even if the
-    // settings dialog is never opened this run.
-    applyStartupSystemSettings(loadSettings())
-    // The lock state has to exist before the window loads, so a lockAtStartup
-    // lock is already in place when the renderer asks for it. It also starts the
-    // idle watcher, which is why it belongs after ready: powerMonitor cannot be
-    // touched before that. A restored startup lock engages before any publish,
-    // so the menu teardown is applied here from the flag itself.
-    const lock = initLockController()
-    applyMenuLockState(lock.isLocked())
-    createWindow()
-    initTray(showOrCreate)
-    // Tray labels are resolved from the dictionary at build time, so the menu has
-    // to be rebuilt whenever the interface language changes.
-    onLanguageChange(() => refreshTrayMenu())
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-    })
-  })
 }
 
 function createWindow(): void {
@@ -213,11 +231,17 @@ function createWindow(): void {
 
   // ELECTRON_RENDERER_URL is honored in dev builds only — a packaged build must
   // always load the bundled renderer file, no matter what the environment says.
+  // Both loads are fire-and-forget, so the rejection is surfaced explicitly
+  // instead of dying as a floating promise.
   const devUrl = devRendererUrl()
   if (devUrl) {
-    win.loadURL(devUrl)
+    void win.loadURL(devUrl).catch((err) => {
+      console.error('[main] loadURL failed:', err)
+    })
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
+    void win.loadFile(join(__dirname, '../renderer/index.html')).catch((err) => {
+      console.error('[main] loadFile failed:', err)
+    })
   }
 }
 
