@@ -13,7 +13,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "pretest": "npm run typecheck",
-    "test": "node tests/build-bundles.cjs && node tests/ssh-loopback.mjs && node tests/commands-store.mjs && node tests/settings-store.mjs && node tests/lock-store.mjs && node tests/lock-controller.mjs && node tests/lock-shortcuts.mjs && node tests/.hl-split-smoke.cjs && node tests/.hl-rules.cjs && node tests/zmodem-e2e.mjs && node tests/ssh-session-e2e.mjs && node tests/sysinfo-e2e.mjs",
+    "test": "node tests/build-bundles.cjs && node tests/ssh-loopback.mjs && node tests/commands-store.mjs && node tests/connections-store.mjs && node tests/settings-store.mjs && node tests/lock-store.mjs && node tests/lock-controller.mjs && node tests/lock-shortcuts.mjs && node tests/.hl-split-smoke.cjs && node tests/.hl-rules.cjs && node tests/zmodem-e2e.mjs && node tests/ssh-session-e2e.mjs && node tests/sysinfo-e2e.mjs",
     "predist": "npm test && npm install --package-lock-only",
     "dist": "electron-vite build && electron-builder --win msi nsis",
     "dist:dir": "electron-vite build && electron-builder --win --dir"

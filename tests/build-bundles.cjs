@@ -19,6 +19,10 @@ const BUNDLES = [
   // ESM (`.mjs`): tests/sftp-*.mjs load it with `await import()`.
   { entry: 'src/main/sftp.ts', out: 'tests/.sftp-svc.mjs', format: 'esm', external: ['ssh2'] },
   { entry: 'src/main/commands.ts', out: 'tests/.commands-store.cjs' },
+  // SSH bookmarks store: CRUD, the public/secret split, corrupt-file backup.
+  // Its electron surface is `safeStorage` (already in the stub, unavailable ->
+  // the store's `plain:` dev fallback).
+  { entry: 'src/main/connectionsStore.ts', out: 'tests/.connections-store.cjs' },
   // Known-hosts store: TOFU / changed / unreadable fail-closed behavior.
   { entry: 'src/main/knownHosts.ts', out: 'tests/.known-hosts.cjs' },
   { entry: 'src/main/settingsStore.ts', out: 'tests/.settings-store.cjs' },

@@ -13,7 +13,7 @@
 
 import { safeStorage } from 'electron'
 import { randomUUID } from 'crypto'
-import { readFileSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync } from 'fs'
 import type { SshAuthMethod, SshConnection, SshConnectionInput } from '../shared/connections'
 import { writeJson } from './store'
 
@@ -144,6 +144,29 @@ function toPublic(stored: StoredConnection): SshConnection {
   }
 }
 
+/**
+ * A connections.json that exists but cannot be read or parsed must never be
+ * silently destroyed: load() falls back to an empty list, and the next write
+ * (any bookmark edit, or just a `touch()` after connecting) would rewrite the
+ * file from that empty list — taking every saved host and its `*_enc`
+ * credentials with it. Keep a one-time copy the user can recover from before
+ * that can happen.
+ */
+function backupUnparseableConnections(file: string, err: unknown): void {
+  try {
+    // ENOENT (first run) is the normal empty case: nothing to lose, stay quiet.
+    if (!existsSync(file)) return
+    const bak = `${file}.bak`
+    if (existsSync(bak)) return // keep the first backup; later loads must not clobber it
+    copyFileSync(file, bak)
+    console.warn(
+      `[connections] ${file} unparseable (${err instanceof Error ? err.message : String(err)}) — original kept at ${bak}`
+    )
+  } catch {
+    // best effort: the backup must never break loading
+  }
+}
+
 export class ConnectionsStore {
   constructor(private readonly filePath: string) {}
 
@@ -159,8 +182,9 @@ export class ConnectionsStore {
             typeof (x as StoredConnection).host === 'string'
         )
       }
-    } catch {
-      // missing / corrupted file -> start fresh
+    } catch (err) {
+      // missing -> start fresh; unreadable / corrupt -> keep the original first
+      backupUnparseableConnections(this.filePath, err)
     }
     return []
   }

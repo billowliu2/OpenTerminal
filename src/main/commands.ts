@@ -20,7 +20,7 @@
 
 import { app, shell } from 'electron'
 import { randomUUID } from 'crypto'
-import { mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, statSync } from 'fs'
+import { mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, statSync, copyFileSync } from 'fs'
 import { appendFile } from 'fs/promises'
 import { basename, dirname, join, resolve, sep } from 'path'
 import type { CommandItem, SessionLogMeta } from '../shared/commands'
@@ -58,6 +58,29 @@ function stamp(d = new Date()): string {
     `${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}` +
     `-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`
   )
+}
+
+/**
+ * A commands.json that exists but cannot be read or parsed must never be
+ * silently destroyed: loadCommands falls back to an empty file, and the next
+ * write (recording one command, or saving a library item) would rewrite the
+ * file from that empty state — taking the whole command history *and* the
+ * library with it. Keep a one-time copy the user can recover from before that
+ * can happen.
+ */
+function backupUnparseableCommands(file: string, err: unknown): void {
+  try {
+    // ENOENT (first run) is the normal empty case: nothing to lose, stay quiet.
+    if (!existsSync(file)) return
+    const bak = `${file}.bak`
+    if (existsSync(bak)) return // keep the first backup; later loads must not clobber it
+    copyFileSync(file, bak)
+    console.warn(
+      `[commands] ${file} unparseable (${err instanceof Error ? err.message : String(err)}) — original kept at ${bak}`
+    )
+  } catch {
+    // best effort: the backup must never break loading
+  }
 }
 
 export class CommandsStore {
@@ -107,8 +130,9 @@ export class CommandsStore {
           library: Array.isArray(data.library) ? data.library : []
         }
       }
-    } catch {
-      // missing / corrupted file -> start fresh
+    } catch (err) {
+      // missing -> start fresh; unreadable / corrupt -> keep the original first
+      backupUnparseableCommands(this.file, err)
     }
     return emptyFile()
   }

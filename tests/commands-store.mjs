@@ -334,6 +334,38 @@ kh.accept('h1', 22, keyB, fpB)
 ok(kh.check('h1', 22, keyB).status === 'match', 'knownHosts: accept works again once the store is readable')
 rmSync(khDir, { recursive: true, force: true })
 
+// ---- 9. Corrupt commands.json is backed up, never silently replaced -------------
+// A file that exists but cannot be parsed used to be treated exactly like a
+// missing one: the next recordCommand wrote a fresh file from an empty history,
+// destroying the whole history + library in one write. The original must be
+// copied aside first (ENOENT is still silent — there is nothing to lose).
+const corrupt = '{"history":[{"id":"keep-me","command":"ps aux"}'
+writeFileSync(join(userData, 'commands.json'), corrupt, 'utf8')
+writeSettings({ historyLimit: 50, historyEnabled: true })
+store.recordCommand('after-corruption')
+const bakFile = join(userData, 'commands.json.bak')
+ok(existsSync(bakFile), 'corrupt commands.json is backed up to .bak')
+ok(readFileSync(bakFile, 'utf8') === corrupt, '.bak holds the corrupt original byte for byte')
+const rewritten = JSON.parse(readFileSync(join(userData, 'commands.json'), 'utf8'))
+ok(
+  Array.isArray(rewritten.history) && rewritten.history.some((h) => h.command === 'after-corruption'),
+  'the new command is written normally after the backup'
+)
+
+// A second corrupt episode must not overwrite the first backup: the earliest
+// copy is the one that still holds the user's real data.
+writeFileSync(join(userData, 'commands.json'), 'not json at all', 'utf8')
+store.recordCommand('second-corruption')
+ok(readFileSync(bakFile, 'utf8') === corrupt, 'an existing .bak is kept (earliest evidence wins)')
+
+// A store whose file simply does not exist yet (first run) backs up nothing.
+const freshDir = mkdtempSync(join(tmpdir(), 'm5-cmd-fresh-'))
+const store4 = new commandsMod.CommandsStore(freshDir)
+store4.recordCommand('first-ever')
+ok(!existsSync(join(freshDir, 'commands.json.bak')), 'a missing file (ENOENT) is not backed up')
+ok(existsSync(join(freshDir, 'commands.json')), 'and the first write lands normally')
+rmSync(freshDir, { recursive: true, force: true })
+
 // All stores wrote into temp dirs; drop them so repeated runs do not litter.
 rmSync(userData, { recursive: true, force: true })
 
