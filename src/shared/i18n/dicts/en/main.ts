@@ -26,6 +26,8 @@ const main: Record<string, string> = {
   'main.ssh.shellOpenFailed': 'Could not open the SSH shell ({host}:{port}): {detail}',
   'main.ssh.initFailed': 'SSH connection initialization failed ({host}:{port}): {detail}',
   'main.ssh.readKeyFailed': 'Could not read the private key file {path}: {detail}',
+  'main.ssh.keyNotAFile': 'The private key path is not a regular file (directories, devices and other special files are refused)',
+  'main.ssh.keyTooLarge': 'The private key file is too large - the path is probably wrong',
 
   'main.sftp.sessionGone': 'The SSH session does not exist or has disconnected',
   'main.sftp.deleteFailed': 'Delete failed: {detail}',
@@ -35,6 +37,7 @@ const main: Record<string, string> = {
   'main.sftp.openTimeout': 'Opening the SFTP channel timed out',
   'main.sftp.commandExitCode': 'Command exited with code {code}',
   'main.sftp.cancelled': 'Cancelled',
+  'main.sftp.localNotAllowed': 'Local path not authorised: {path}. Pick it again with the "choose file / choose directory" dialog.',
 
   'main.zmodem.transferFailed': 'Transfer failed',
   'main.zmodem.transferTimeout': 'Transfer timed out',
@@ -49,6 +52,9 @@ const main: Record<string, string> = {
   'main.zmodem.sessionCreateFailed': 'Could not establish the ZMODEM session',
   'main.zmodem.noSaveDir': 'No save directory specified',
   'main.zmodem.noFiles': 'No files selected',
+  'main.zmodem.saveDirNotAllowed': 'The save directory is not authorised. Pick it again with the "choose directory" dialog.',
+  'main.zmodem.savePathNotAllowed': 'The remote file name was refused, transfer aborted: {name}',
+  'main.zmodem.filesNotAllowed': 'The selected local files are not authorised, transfer aborted',
 
   'main.ipc.connectionMissing': 'Connection bookmark not found ({id})',
 

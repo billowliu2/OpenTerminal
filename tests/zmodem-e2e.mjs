@@ -83,6 +83,23 @@ if (!existsSync(bundlePath)) {
 const zmodem = require_('zmodem.js')
 const engine = require_(bundlePath)
 
+/**
+ * Local-path admission for the engine. In the app the default policy only
+ * accepts paths the user granted through a native dialog (localPathGrants.ts),
+ * and this harness has no dialog to grant from — so the scenarios supply their
+ * own double. It is deliberately permissive (and deliberately NOT a re-export
+ * of the real policy, which is what keeps these scenarios about transfer
+ * mechanics rather than admission rules).
+ */
+engine.setLocalPathPolicy({
+  readSource: (p) => (typeof p === 'string' ? p : null),
+  readDirectory: (d) => (typeof d === 'string' && d !== '' ? d : null),
+  writeTarget: (dir, name) =>
+    typeof dir === 'string' && dir !== '' && typeof name === 'string' && name !== ''
+      ? join(dir, name)
+      : null
+})
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**

@@ -26,6 +26,8 @@ const main: Record<string, string> = {
   'main.ssh.shellOpenFailed': '无法打开 SSH shell ({host}:{port}): {detail}',
   'main.ssh.initFailed': 'SSH 连接初始化失败 ({host}:{port}): {detail}',
   'main.ssh.readKeyFailed': '无法读取私钥文件 {path}: {detail}',
+  'main.ssh.keyNotAFile': '私钥路径不是一个普通文件（目录、设备或其他特殊文件均不被接受）',
+  'main.ssh.keyTooLarge': '私钥文件过大，疑似路径填写有误',
 
   'main.sftp.sessionGone': 'SSH 会话不存在或已断开',
   'main.sftp.deleteFailed': '删除失败: {detail}',
@@ -35,6 +37,7 @@ const main: Record<string, string> = {
   'main.sftp.openTimeout': 'SFTP 通道打开超时',
   'main.sftp.commandExitCode': '命令退出码 {code}',
   'main.sftp.cancelled': '已取消',
+  'main.sftp.localNotAllowed': '本地路径未被授权: {path}。请通过「选择文件 / 选择目录」对话框重新选择。',
 
   'main.zmodem.transferFailed': '传输失败',
   'main.zmodem.transferTimeout': '传输超时',
@@ -49,6 +52,9 @@ const main: Record<string, string> = {
   'main.zmodem.sessionCreateFailed': '无法建立 ZMODEM 会话',
   'main.zmodem.noSaveDir': '未指定保存目录',
   'main.zmodem.noFiles': '未选择文件',
+  'main.zmodem.saveDirNotAllowed': '保存目录未被授权，请通过「选择目录」对话框重新选择',
+  'main.zmodem.savePathNotAllowed': '远端文件名不被接受，已中止传输: {name}',
+  'main.zmodem.filesNotAllowed': '所选的本地文件未被授权，已中止传输',
 
   'main.ipc.connectionMissing': '连接书签不存在 ({id})',
 

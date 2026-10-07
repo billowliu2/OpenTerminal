@@ -5,10 +5,28 @@
 import { createRequire } from 'module'
 import { randomUUID } from 'crypto'
 import { promises as fsp } from 'fs'
+import { join } from 'path'
 const require_ = createRequire(import.meta.url)
 const sessionLayer = require_('./.session-e2e.cjs')
 const sftpMod = await import('./.sftp-svc.mjs')
 sftpMod.registerSftpClientProvider((id) => sessionLayer.getSshClient(id))
+
+/**
+ * Local-path admission. In the app the default policy only accepts paths the
+ * user granted through a native dialog (localPathGrants.ts); this harness picks
+ * its own temp paths and has no dialog to grant from, so it supplies a
+ * permissive double. It is NOT a re-export of the real policy — the admission
+ * rules have their own test (tests/local-path-grants.mjs) and these scenarios
+ * stay about transfer mechanics.
+ */
+sftpMod.setLocalPathPolicy({
+  readSource: (p) => (typeof p === 'string' ? p : null),
+  readDirectory: (d) => (typeof d === 'string' && d !== '' ? d : null),
+  writeTarget: (dir, name) =>
+    typeof dir === 'string' && dir !== '' && typeof name === 'string' && name !== ''
+      ? join(dir, name)
+      : null
+})
 
 const events = []
 sessionLayer.configureSessionRuntime({

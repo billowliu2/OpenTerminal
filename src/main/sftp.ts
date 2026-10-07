@@ -2,10 +2,28 @@ import { dialog } from 'electron'
 import type { Client, SFTPWrapper } from 'ssh2'
 import { randomUUID } from 'crypto'
 import { createWriteStream, promises as fsp } from 'fs'
-import { basename, join } from 'path'
+import { basename } from 'path'
 import { Ipc } from '../shared/ipc'
 import { t } from '../shared/i18n'
 import type { SftpEntry, TransferProgressEvent } from '../shared/sftp'
+import {
+  grantPickedDirectory,
+  grantPickedFiles,
+  grantedPaths,
+  type LocalPathPolicy
+} from './localPathGrants'
+
+/**
+ * Local-path admission for this module's transfers. Defaults to the real grant
+ * registry — a caller that forgets to inject one is still enforced — and is
+ * only swapped by the offline test harnesses, which have no dialog to grant
+ * from. Never fed from renderer input.
+ */
+let pathPolicy: LocalPathPolicy = grantedPaths
+
+export function setLocalPathPolicy(policy: LocalPathPolicy): void {
+  pathPolicy = policy
+}
 
 /** ssh2 Client lookup injected by pty.ts (kind === 'ssh' sessions only). */
 let clientProvider: ((id: string) => Client | undefined) | undefined
@@ -347,12 +365,74 @@ type Broadcast = (channel: string, payload: unknown) => void
 const CHUNK = 256 * 1024
 const UPLOAD_WINDOW = 64
 
+/**
+ * Path checks for the local side of a transfer.
+ *
+ * Threat model: `localPaths` and `localDir` arrive from the renderer, which is
+ * untrusted — without a check the main process would read or write any path the
+ * user can reach (a compromised renderer, a hand-crafted IPC message, or a
+ * future caller that forgets the dialog). Only paths the user granted through a
+ * native dialog are accepted; see localPathGrants.ts for what a grant is and
+ * why it is realpath-based.
+ *
+ * Both helpers throw, so the invoke rejects right away and the renderer
+ * surfaces the reason instead of starting a transfer that fails later. The
+ * checks run *before* the sftp channel is opened, so a refused request never
+ * costs a subsystem channel. Each returns the *resolved* path to open: the
+ * caller must use that, not the renderer's spelling, or it would re-traverse
+ * the very symlink the check followed.
+ */
+function requireUploadSources(localPaths: unknown): { source: string; name: string }[] {
+  if (!Array.isArray(localPaths) || localPaths.length === 0) {
+    throw new Error(t('main.sftp.localNotAllowed', { path: '' }))
+  }
+  return localPaths.map(local => {
+    // readSource also insists on a real regular file: a directory or a device
+    // node must never reach the upload's file handle.
+    const source = pathPolicy.readSource(local)
+    if (source === null) {
+      throw new Error(t('main.sftp.localNotAllowed', { path: String(local) }))
+    }
+    // The remote name stays the one derived from the path the USER saw in the
+    // dialog, not from the resolved target: FilePanel computes its overwrite
+    // confirmation from the same spelling, and a name that differed from the
+    // one the user approved would let an upload overwrite a file it never
+    // warned about. Only the path that gets READ is the resolved one.
+    return { source, name: basename(String(local)) }
+  })
+}
+
+/**
+ * Where each remote file lands locally. The directory must be one the user
+ * granted, and the name is the remote file's basename — checked as a plain leaf
+ * with any symlink already sitting at that name resolved (see
+ * localPathGrants.ts).
+ */
+function requireDownloadTargets(
+  remotePaths: unknown,
+  localDir: unknown
+): { remote: string; name: string; target: string }[] {
+  if (!Array.isArray(remotePaths) || remotePaths.length === 0) {
+    throw new Error(t('main.sftp.localNotAllowed', { path: String(localDir) }))
+  }
+  return remotePaths.map(remote => {
+    const path = String(remote)
+    const name = basename(path)
+    const target = pathPolicy.writeTarget(localDir, name)
+    if (target === null) {
+      throw new Error(t('main.sftp.localNotAllowed', { path: String(localDir) }))
+    }
+    return { remote: path, name, target }
+  })
+}
+
 export function uploadRemote(
   sessionId: string,
   localPaths: string[],
   remoteDir: string,
   broadcast: Broadcast
 ): Promise<string> {
+  const sources = requireUploadSources(localPaths)
   return withSftp(sessionId, async sftp => {
     const id = randomUUID()
     const transfer: ActiveTransfer = { kind: 'upload', cancelled: false }
@@ -361,9 +441,8 @@ export function uploadRemote(
 
     void (async () => {
       try {
-        for (const local of localPaths) {
+        for (const { source: local, name } of sources) {
           if (transfer.cancelled) break
-          const name = basename(local)
           const size = (await fsp.stat(local)).size
           const remote = `${remoteDir.replace(/\/+$/, '')}/${name}`
           const handle = await p<Buffer>(cb => sftp.open(remote, 'w', cb))
@@ -447,6 +526,7 @@ export function downloadRemote(
   localDir: string,
   broadcast: Broadcast
 ): Promise<string> {
+  const targets = requireDownloadTargets(remotePaths, localDir)
   return withSftp(sessionId, async sftp => {
     const id = randomUUID()
     const transfer: ActiveTransfer = { kind: 'download', cancelled: false }
@@ -455,11 +535,9 @@ export function downloadRemote(
 
     void (async () => {
       try {
-        for (const remote of remotePaths) {
+        for (const { remote, name, target: local } of targets) {
           if (transfer.cancelled) break
-          const name = basename(remote)
           const { size } = await p<{ size: number }>(cb => sftp.stat(remote, cb))
-          const local = join(localDir, name)
           const handle = await p<Buffer>(cb => sftp.open(remote, 'r', cb))
           try {
             const localHandle = await fsp.open(local, 'w')
@@ -516,13 +594,24 @@ export function downloadRemote(
   })
 }
 
-/** Native file dialogs parented to the focused window. */
+/**
+ * Native file dialogs parented to the focused window.
+ *
+ * These two are the ONLY grant source (see localPathGrants.ts): whatever the
+ * user picks here becomes usable by the transfer paths, and nothing else does.
+ * A cancelled dialog grants nothing — the empty result must not be read as
+ * "no restriction". Both return `filePaths` verbatim so the renderer's own
+ * display logic is unchanged.
+ */
 export async function pickFiles(): Promise<string[]> {
   const r = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+  grantPickedFiles(r.filePaths)
   return r.filePaths
 }
 
 export async function pickDirectory(): Promise<string> {
   const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })
-  return r.filePaths[0] ?? ''
+  const dir = r.filePaths[0] ?? ''
+  if (dir !== '') grantPickedDirectory(dir)
+  return dir
 }

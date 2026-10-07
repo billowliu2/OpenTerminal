@@ -26,6 +26,8 @@ const BUNDLES = [
   // Known-hosts store: TOFU / changed / unreadable fail-closed behavior.
   { entry: 'src/main/knownHosts.ts', out: 'tests/.known-hosts.cjs' },
   { entry: 'src/main/settingsStore.ts', out: 'tests/.settings-store.cjs' },
+  // Local-path admission (grants): pure fs/path, no electron surface at all.
+  { entry: 'src/main/localPathGrants.ts', out: 'tests/.local-path-grants.cjs' },
   // Lock-password store: scrypt verifier, round trip, damaged-file handling.
   { entry: 'src/main/lockStore.ts', out: 'tests/.lock-store.cjs' },
   // Lock controller: cooldown ladder, serialized attempts, persisted flags.

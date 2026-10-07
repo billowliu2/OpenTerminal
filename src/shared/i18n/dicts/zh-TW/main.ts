@@ -26,6 +26,8 @@ const main: Record<string, string> = {
   'main.ssh.shellOpenFailed': '無法開啟 SSH shell ({host}:{port}): {detail}',
   'main.ssh.initFailed': 'SSH 連線初始化失敗 ({host}:{port}): {detail}',
   'main.ssh.readKeyFailed': '無法讀取私密金鑰檔案 {path}: {detail}',
+  'main.ssh.keyNotAFile': '私密金鑰路徑不是一般檔案（目錄、裝置或其他特殊檔案均不接受）',
+  'main.ssh.keyTooLarge': '私密金鑰檔案過大，路徑可能填寫有誤',
 
   'main.sftp.sessionGone': 'SSH 連線不存在或已中斷',
   'main.sftp.deleteFailed': '刪除失敗: {detail}',
@@ -35,6 +37,7 @@ const main: Record<string, string> = {
   'main.sftp.openTimeout': 'SFTP 通道開啟逾時',
   'main.sftp.commandExitCode': '指令結束碼 {code}',
   'main.sftp.cancelled': '已取消',
+  'main.sftp.localNotAllowed': '本機路徑未獲授權: {path}。請改用「選擇檔案 / 選擇目錄」對話框重新選擇。',
 
   'main.zmodem.transferFailed': '傳輸失敗',
   'main.zmodem.transferTimeout': '傳輸逾時',
@@ -49,6 +52,9 @@ const main: Record<string, string> = {
   'main.zmodem.sessionCreateFailed': '無法建立 ZMODEM 連線',
   'main.zmodem.noSaveDir': '未指定儲存目錄',
   'main.zmodem.noFiles': '未選擇檔案',
+  'main.zmodem.saveDirNotAllowed': '儲存目錄未獲授權，請改用「選擇目錄」對話框重新選擇',
+  'main.zmodem.savePathNotAllowed': '遠端檔案名稱不被接受，已中止傳輸: {name}',
+  'main.zmodem.filesNotAllowed': '所選的本機檔案未獲授權，已中止傳輸',
 
   'main.ipc.connectionMissing': '連線書籤不存在 ({id})',
 

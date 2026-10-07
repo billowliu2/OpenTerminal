@@ -157,6 +157,14 @@ function createWindow(): void {
     ...(existsSync(devIcon) ? { icon: nativeImage.createFromPath(devIcon) } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
+      // Written out explicitly even though every value matches Electron's
+      // current default: these are the three that keep the renderer unable to
+      // reach the main process, and a default that silently changed (or a
+      // future Electron release flipping one) must not be the only thing
+      // holding that line. See also the sender guard in ipc.ts.
+      contextIsolation: true,
+      nodeIntegration: false,
+      webSecurity: true,
       // Keep the default renderer sandbox (preload only touches the electron
       // IPC bridge, so it does not need Node access).
       sandbox: true

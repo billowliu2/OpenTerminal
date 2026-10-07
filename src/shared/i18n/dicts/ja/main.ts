@@ -26,6 +26,8 @@ const main: Record<string, string> = {
   'main.ssh.shellOpenFailed': 'SSH シェルを開けません ({host}:{port}): {detail}',
   'main.ssh.initFailed': 'SSH 接続の初期化に失敗しました ({host}:{port}): {detail}',
   'main.ssh.readKeyFailed': '秘密鍵ファイルを読み取れません {path}: {detail}',
+  'main.ssh.keyNotAFile': '秘密鍵のパスが通常のファイルではありません（ディレクトリ・デバイス・その他の特殊ファイルは受け付けません）',
+  'main.ssh.keyTooLarge': '秘密鍵ファイルが大きすぎます。パスの指定が誤っている可能性があります',
 
   'main.sftp.sessionGone': 'SSH セッションが存在しないか、切断されています',
   'main.sftp.deleteFailed': '削除に失敗しました: {detail}',
@@ -35,6 +37,7 @@ const main: Record<string, string> = {
   'main.sftp.openTimeout': 'SFTP チャネルのオープンがタイムアウトしました',
   'main.sftp.commandExitCode': 'コマンドの終了コード {code}',
   'main.sftp.cancelled': 'キャンセルしました',
+  'main.sftp.localNotAllowed': 'ローカルパスが許可されていません: {path}。「ファイルを選択 / ディレクトリを選択」ダイアログで選び直してください。',
 
   'main.zmodem.transferFailed': '転送に失敗しました',
   'main.zmodem.transferTimeout': '転送がタイムアウトしました',
@@ -49,6 +52,9 @@ const main: Record<string, string> = {
   'main.zmodem.sessionCreateFailed': 'ZMODEM セッションを確立できません',
   'main.zmodem.noSaveDir': '保存先ディレクトリが指定されていません',
   'main.zmodem.noFiles': 'ファイルが選択されていません',
+  'main.zmodem.saveDirNotAllowed': '保存先ディレクトリが許可されていません。「ディレクトリを選択」ダイアログで選び直してください。',
+  'main.zmodem.savePathNotAllowed': 'リモートのファイル名を受け付けられないため、転送を中止しました: {name}',
+  'main.zmodem.filesNotAllowed': '選択されたローカルファイルが許可されていないため、転送を中止しました',
 
   'main.ipc.connectionMissing': '接続ブックマークが見つかりません ({id})',
 

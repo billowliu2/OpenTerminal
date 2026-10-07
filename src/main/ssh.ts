@@ -16,10 +16,19 @@
 import type { SshConnection, SshSecretOverride } from '../shared/connections'
 import { t } from '../shared/i18n'
 import { randomUUID } from 'crypto'
-import { readFileSync } from 'fs'
+import { readFileSync, realpathSync, statSync } from 'fs'
 import { fingerprintOf, type HostKeyCheckResult } from './knownHosts'
 import type { ConnectionsStore } from './connectionsStore'
 import type { Client, ClientChannel, ConnectConfig } from 'ssh2'
+
+/**
+ * Private keys are a few KB; a file past this is a mistyped path (a disk image,
+ * a log), and reading it would put the whole thing on the UI thread's heap.
+ */
+const MAX_KEY_BYTES = 1024 * 1024
+
+/** A refusal we produced ourselves: the message is already user-complete. */
+class RefusedKeyError extends Error {}
 
 export interface SshSessionHandle {
   id: string
@@ -350,11 +359,37 @@ export function resolveHostKey(promptId: string, action: 'accept' | 'reject'): v
   pending.resolve(action === 'accept')
 }
 
-/** Read a private key file; surfaces a descriptive error on failure. */
+/**
+ * Read a private key file, refusing anything that is not a regular file.
+ *
+ * Threat model: `keyPath` reaches here from the renderer (typed into the edit
+ * dialog, persisted in connections.json, then echoed back on connect), and it
+ * lands in a synchronous read on the UI thread. Two failures there would be
+ * fatal to the app, not just to this connection:
+ *
+ *  - a device or FIFO (`/dev/zero`, `\\.\pipe\...`) makes the read block
+ *    forever — the main process stops answering, and nothing times it out. A
+ *    directory at least fails, but only with a confusing EISDIR.
+ *  - a huge file (a disk image, a log) is slurped into memory in one call, so
+ *    a mistyped path can exhaust the heap.
+ *
+ * A symlink is a third problem: the OS follows it, so the file actually read is
+ * not the file that was named — and a link the user did not create could point
+ * at anything. Resolving with realpath first makes the check and the read agree
+ * on one path, and the read then uses that resolved path.
+ */
 function readKeyFile(keyPath: string): string {
   try {
-    return readFileSync(keyPath, 'utf8')
+    const real = realpathSync(keyPath)
+    const st = statSync(real)
+    if (!st.isFile()) throw new RefusedKeyError(t('main.ssh.keyNotAFile'))
+    if (st.size > MAX_KEY_BYTES) throw new RefusedKeyError(t('main.ssh.keyTooLarge'))
+    return readFileSync(real, 'utf8')
   } catch (err) {
-    throw new Error(t('main.ssh.readKeyFailed', { path: keyPath, detail: (err as Error).message }))
+    // A refusal is already a complete message; an I/O error has only an errno
+    // to contribute, so it gets wrapped with the path the user typed.
+    if (err instanceof RefusedKeyError) throw err
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(t('main.ssh.readKeyFailed', { path: keyPath, detail }))
   }
 }

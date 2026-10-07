@@ -15,7 +15,7 @@
  * reach the terminal), and pty.ts's writePty drops user keystrokes via
  * isZmodemActive.
  */
-import { basename, join } from 'path'
+import { basename } from 'path'
 import { createReadStream, createWriteStream } from 'fs'
 import { stat } from 'fs/promises'
 import type { Writable } from 'stream'
@@ -24,6 +24,19 @@ import { Ipc } from '../shared/ipc'
 import type { ZmodemDoneEvent, ZmodemResponse } from '../shared/ipc'
 import type { TransferProgressEvent } from '../shared/sftp'
 import { t } from '../shared/i18n'
+import { grantedPaths, type LocalPathPolicy } from './localPathGrants'
+
+/**
+ * Local-path admission, same shape and same rationale as sftp.ts's: defaults to
+ * the real grant registry so a caller that forgets to inject one is still
+ * enforced, and the offline e2e harness swaps in a double because it has no
+ * dialog to grant from. Never fed from renderer input.
+ */
+let pathPolicy: LocalPathPolicy = grantedPaths
+
+export function setLocalPathPolicy(policy: LocalPathPolicy): void {
+  pathPolicy = policy
+}
 
 /** How long to wait for the renderer to answer a ZMODEM_OFFER (ms). */
 const OFFER_TIMEOUT_MS = 120_000
@@ -293,6 +306,11 @@ async function sendOneFile(
   })
 }
 
+/**
+ * Upload the approved local files. `paths` are the paths the policy accepted
+ * *and* resolved, so `createReadStream` opens exactly what was checked; the
+ * name offered to the peer is the basename of that resolved path.
+ */
 async function runSend(engine: Engine, paths: string[]): Promise<void> {
   try {
     const session = engine.session as Zmodem.SendSession
@@ -332,8 +350,18 @@ async function runSend(engine: Engine, paths: string[]): Promise<void> {
 
 function handleOffer(engine: Engine, offer: Zmodem.Offer): void {
   const details = offer.get_details()
+  // The offered name is the PEER's string, so it is display data only: the path
+  // actually written is decided by the policy below, which refuses anything that
+  // is not a plain leaf inside the directory the user granted. `basename` keeps
+  // the UI honest for a peer that sends a path rather than a name.
   const name = basename(String(details.name ?? 'file'))
-  const dest = join(engine.dir ?? '.', name)
+  const dest = pathPolicy.writeTarget(engine.dir, name)
+  if (dest === null) {
+    // Refusing one file must not silently look like success: end the transfer
+    // with the reason, which also stops the peer (finalize aborts the session).
+    finalize(engine, false, t('main.zmodem.savePathNotAllowed', { name }))
+    return
+  }
   if (details.size) engine.totalBytes += details.size
 
   const stream = createWriteStream(dest)
@@ -596,7 +624,15 @@ export function respondZmodem(resp: ZmodemResponse): void {
       abortSession(engine, t('main.zmodem.noSaveDir'))
       return
     }
-    engine.dir = resp.dir
+    // The save directory came from the renderer: only one the user granted
+    // through the dialog is usable (localPathGrants.ts). Resolved once here, so
+    // every file of the transfer is written into the directory that was checked.
+    const dir = pathPolicy.readDirectory(resp.dir)
+    if (dir === null) {
+      abortSession(engine, t('main.zmodem.saveDirNotAllowed'))
+      return
+    }
+    engine.dir = dir
     const session = engine.session as Zmodem.ReceiveSession
     session.on('offer', (offer) => handleOffer(engine, offer))
     void session
@@ -605,12 +641,27 @@ export function respondZmodem(resp: ZmodemResponse): void {
         finalize(engine, false, err instanceof Error ? err.message : t('main.zmodem.receiveFailed'))
       )
   } else {
-    const paths = resp.paths ?? []
+    // Same for the files to send: the renderer supplies the paths, so each one
+    // must be a file the user picked. Checked before the transfer starts —
+    // rejecting mid-stream would leave the peer waiting on an abort.
+    const paths = Array.isArray(resp.paths) ? resp.paths : []
     if (paths.length === 0) {
       abortSession(engine, t('main.zmodem.noFiles'))
       return
     }
-    void runSend(engine, paths)
+    // All or nothing. Dropping just the refused entries would run a transfer
+    // that reports success while quietly shipping fewer files than the user
+    // selected.
+    const allowed: string[] = []
+    for (const p of paths) {
+      const source = pathPolicy.readSource(p)
+      if (source === null) {
+        abortSession(engine, t('main.zmodem.filesNotAllowed'))
+        return
+      }
+      allowed.push(source)
+    }
+    void runSend(engine, allowed)
   }
 }
 
