@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Dropdown, Input, Modal, Popconfirm, Space } from 'antd'
+import { App, Button, Dropdown, Input, Modal, Popconfirm, Space } from 'antd'
 import type { MenuProps } from 'antd'
 import { CloudServerOutlined } from '@ant-design/icons'
 import type { IDockviewPanelHeaderProps } from 'dockview-react'
@@ -132,6 +132,7 @@ export function SaveTemplateModal({
 }): React.JSX.Element {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
+  const { message } = App.useApp()
 
   const handleOk = async (): Promise<void> => {
     const trimmed = name.trim()
@@ -140,6 +141,12 @@ export function SaveTemplateModal({
     try {
       await onConfirm(trimmed)
       setName('')
+      onCancel()
+    } catch (error) {
+      // The ok button calls this through `void`, so a rejection would surface
+      // as an unhandled rejection instead of telling the user anything.
+      console.error('[workspace] saving the layout template failed', error)
+      message.error(t('common.saveFailed'))
       onCancel()
     } finally {
       setSaving(false)
@@ -183,6 +190,7 @@ export function ApplyTemplateModal({
 }): React.JSX.Element {
   const [items, setItems] = useState<LayoutMeta[]>([])
   const [busyId, setBusyId] = useState<string | null>(null)
+  const { message } = App.useApp()
 
   const refresh = async (): Promise<void> => {
     setItems(await list())
@@ -197,6 +205,15 @@ export function ApplyTemplateModal({
     setBusyId(meta.id)
     try {
       await onApply(meta)
+      onClose()
+    } catch (error) {
+      // `onApply` reports a failed load itself; what reaches here is the
+      // unexpected rejection (the layout read, an IPC failure), which the
+      // `void` call site would otherwise drop as an unhandled rejection. The
+      // workspace has already been put back into a usable state, so closing
+      // the dialog is safe.
+      console.error('[workspace] applying the layout template failed', meta.id, error)
+      message.error(t('workspace.template.applyFailed'))
       onClose()
     } finally {
       setBusyId(null)

@@ -105,18 +105,38 @@ export default function App(): React.JSX.Element {
     // above the inert `.app-root`, and stays reachable.
     const appRoot = document.getElementById('root')
     const inerted: Element[] = []
-    if (locked) {
-      for (const el of Array.from(document.body.children)) {
-        if (el === appRoot) continue
-        try {
-          el.setAttribute('inert', '')
-          inerted.push(el)
-        } catch {
-          // a node that refuses the attribute must not break the lock
-        }
+    const inertChild = (el: Element): void => {
+      if (el === appRoot) return
+      // Already inert for a reason of its own: leave the attribute alone so
+      // unlocking does not hand back a node whose own guard was removed.
+      if (el.hasAttribute('inert')) return
+      try {
+        el.setAttribute('inert', '')
+        inerted.push(el)
+      } catch {
+        // a node that refuses the attribute must not break the lock
       }
     }
+    let observer: MutationObserver | undefined
+    if (locked) {
+      for (const el of Array.from(document.body.children)) inertChild(el)
+      // The snapshot above only covers portals that already existed. A portal
+      // mounted *after* the lock engaged stays outside it — the canonical case
+      // is an SSH connection started just before the idle timer fired, whose
+      // host-key prompt pops up behind the overlay and whose antd autoFocus
+      // takes the password field's focus. Watch body children for as long as
+      // the lock holds; nothing is observed while unlocked.
+      observer = new MutationObserver((records) => {
+        for (const record of records) {
+          for (const node of Array.from(record.addedNodes)) {
+            if (node instanceof Element) inertChild(node)
+          }
+        }
+      })
+      observer.observe(document.body, { childList: true })
+    }
     return () => {
+      observer?.disconnect()
       for (const el of inerted) el.removeAttribute('inert')
     }
   }, [locked])

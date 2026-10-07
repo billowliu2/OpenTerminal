@@ -21,7 +21,8 @@ import type {
   IDockviewHeaderActionsProps,
   IDockviewPanel,
   IDockviewPanelHeaderProps,
-  IDockviewPanelProps
+  IDockviewPanelProps,
+  SerializedDockview
 } from 'dockview-react'
 import 'dockview-react/dist/styles/dockview.css'
 
@@ -110,6 +111,22 @@ function connectFailureMessage(error: unknown): string {
     .replace(/^Error:\s*/, '')
     .trim()
   return detail ? `${generic}: ${detail}` : generic
+}
+
+/**
+ * Put a `toJSON()` snapshot back into a dockview, swallowing a failure.
+ *
+ * Only used on the error path of a template load, where the dockview has just
+ * been wiped: a second throw must not escape into the caller, or it would skip
+ * the session cleanup that follows.
+ */
+function restoreLayoutSnapshot(api: DockviewApi | undefined, snapshot: SerializedDockview): void {
+  if (!api) return
+  try {
+    api.fromJSON(snapshot)
+  } catch (error) {
+    console.error('[workspace] restoring the layout after a failed template apply failed', error)
+  }
 }
 
 /**
@@ -459,27 +476,14 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
 
       // One pty/ssh session can back several panels — an SSH split mirrors a
       // single session on purpose. So closing a panel must not kill a session
-      // another panel is still showing; count the panels per session (seeding
-      // from the panels already present, e.g. a restored layout) and kill only
-      // when the last one goes away.
-      const useCount = new Map<string, number>()
-      for (const existing of api.panels) {
-        const sid = sessionIdOf(existing)
-        if (sid) useCount.set(sid, (useCount.get(sid) ?? 0) + 1)
-      }
-      const countPanel = (panel: IDockviewPanel): void => {
-        const sid = sessionIdOf(panel)
-        if (sid) useCount.set(sid, (useCount.get(sid) ?? 0) + 1)
-      }
+      // another panel is still showing: ask the panels that exist right now
+      // rather than keep a running count, so the answer cannot drift away from
+      // the layout (a panel's session is swapped in place by `updateParameters`,
+      // and a layout load replaces every panel of a dockview at once).
       const releaseSession = (panel: IDockviewPanel): void => {
         const sid = sessionIdOf(panel)
         if (!sid) return
-        const left = (useCount.get(sid) ?? 1) - 1
-        if (left > 0) {
-          useCount.set(sid, left)
-          return
-        }
-        useCount.delete(sid)
+        for (const other of api.panels) if (sessionIdOf(other) === sid) return
         killSession(sid)
         // No pane shows this session any more: drop its bookkeeping too, so
         // neither the dead-session set nor the cwd map grows for the whole run.
@@ -515,8 +519,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           recountAll()
           scheduleSave()
         }),
-        api.onDidAddPanel((panel: IDockviewPanel) => {
-          countPanel(panel)
+        api.onDidAddPanel(() => {
           recountAll()
           scheduleSave()
         })
@@ -1038,21 +1041,78 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       let parsed: unknown
       try {
         parsed = JSON.parse(raw)
-      } catch {
+      } catch (error) {
+        console.error('[workspace] template payload is not valid JSON', meta.id, error)
+        message.error(t('workspace.template.applyFailed'))
         return
       }
       const payload = parsed as { terminal?: unknown; ssh?: unknown }
       const hasDualLayout = payload !== null && typeof payload === 'object' && 'terminal' in payload && 'ssh' in payload
 
+      // Snapshot both dockviews before they are touched: a payload that
+      // deserializes half-way (a template written by another build, a panel
+      // whose component no longer exists) makes dockview clear every group and
+      // panel it built *and* the layout it replaced, and only then rethrow
+      // ("failed to deserialize layout. Reverting changes"). The snapshots are
+      // the way back to the layout the user had.
+      const terminalSnapshot = terminalApiRef.current?.toJSON()
+      const sshSnapshot = sshApiRef.current?.toJSON()
+
+      // Which dockview the payload reached — a failed load must not put a
+      // snapshot back into one it never touched: restoring a dockview wipes the
+      // panels that are still alive in it (and, through `onDidRemovePanel`,
+      // kills the sessions behind them).
+      let terminalTouched = false
+      let sshTouched = false
+
       // Dual layout (M6.1+): restore each dockview from its own payload.
       // Legacy layout (pre-M6.1 single toJSON): restore it wholly into the
       // terminal dockview.
-      if (hasDualLayout) {
-        terminalApiRef.current?.fromJSON(payload.terminal as never)
-        sshApiRef.current?.fromJSON(payload.ssh as never)
-      } else {
-        // Legacy single-dockview layout → restore into the terminal workspace.
-        terminalApiRef.current?.fromJSON((payload as unknown) as never)
+      try {
+        if (hasDualLayout) {
+          terminalTouched = true
+          terminalApiRef.current?.fromJSON(payload.terminal as never)
+          sshTouched = true
+          sshApiRef.current?.fromJSON(payload.ssh as never)
+        } else {
+          // Legacy single-dockview layout → restore into the terminal workspace.
+          terminalTouched = true
+          terminalApiRef.current?.fromJSON((payload as unknown) as never)
+        }
+      } catch (error) {
+        console.error('[workspace] template apply failed', meta.id, error)
+        // The wipe took the panels down with it — and `onDidRemovePanel` took
+        // their sessions, so the user is left with an empty workspace and
+        // nothing to reattach to. Put each touched dockview back from its
+        // snapshot, then give every pane that comes back a fresh session: the
+        // one it used to show is gone.
+        if (terminalTouched && terminalSnapshot) {
+          restoreLayoutSnapshot(terminalApiRef.current, terminalSnapshot)
+          if (terminalApiRef.current) await rebindRestoredPanels(terminalApiRef.current)
+        }
+        if (sshTouched && sshSnapshot) {
+          restoreLayoutSnapshot(sshApiRef.current, sshSnapshot)
+          if (sshApiRef.current) await rebindRestoredPanels(sshApiRef.current)
+        }
+        // No session may outlive its panels: the dockview the payload never
+        // reached still shows its own (they stay), everything else goes.
+        const live = new Set<string>()
+        for (const api of [terminalApiRef.current, sshApiRef.current]) {
+          for (const panel of api?.panels ?? []) {
+            const sid = sessionIdOf(panel)
+            if (sid) live.add(sid)
+          }
+        }
+        for (const sid of previousSessions) if (!live.has(sid)) killSession(sid)
+        // The panel counters and the sidebar list describe the aborted load,
+        // not the layout that is back; rebuild both from the panels that are
+        // actually here.
+        recountAll()
+        recomputeLocalPanels()
+        const mode = useWorkspaceModeStore.getState().mode
+        activePanelRef.current = apiOfMode(mode, terminalApiRef.current, sshApiRef.current)?.activePanel
+        message.error(t('workspace.template.applyFailedRestored'))
+        return
       }
 
       // Fresh sessions for every restored terminal panel in both workspaces.
@@ -1066,7 +1126,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const mode = useWorkspaceModeStore.getState().mode
       activePanelRef.current = apiOfMode(mode, terminalApiRef.current, sshApiRef.current)?.activePanel
     },
-    [killSession, rebindRestoredPanels, recountAll, recomputeLocalPanels]
+    [killSession, message, rebindRestoredPanels, recountAll, recomputeLocalPanels]
   )
 
   const handleDeleteTemplate = useCallback(async (meta: LayoutMetaLike): Promise<void> => {
