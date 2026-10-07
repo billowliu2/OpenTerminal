@@ -30,6 +30,8 @@ const workspace: Record<string, string> = {
   'workspace.template.empty': '尚無已儲存的範本',
   'workspace.template.apply': '套用',
   'workspace.template.deleteConfirm': '刪除這個範本？',
+  'workspace.template.applyFailed': '套用版面配置範本失敗',
+  'workspace.template.applyFailedRestored': '套用版面配置範本失敗，已還原原本的版面配置',
   'workspace.broadcast.toggle': '廣播輸入',
   'workspace.broadcast.activeTitle': '廣播中（{count} 個目標）',
   'workspace.broadcast.popoverTerminal': '廣播輸入（終端機）',

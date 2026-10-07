@@ -13,7 +13,10 @@ const main: Record<string, string> = {
   'main.tray.closeDetail': 'Minimizing to tray keeps your terminal sessions running.',
   'main.tray.rememberChoice': 'Remember my choice, never ask again',
 
+  'main.startupFailed': 'OpenTerminal failed to start: {detail}. Restart the app; if it keeps happening, check the logs.',
+
   'main.updater.feedFailed': 'Gitea feed: {gitea}; GitHub: {github}',
+  'main.updater.checkTimeout': 'Update check timed out',
 
   'main.ssh.connectTimeout': 'Connection timed out ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'Failed to save the host fingerprint: {detail}',
@@ -29,6 +32,7 @@ const main: Record<string, string> = {
   'main.sftp.invalidMode': 'Invalid permission value: {mode}',
   'main.sftp.invalidUidGid': 'Invalid uid/gid',
   'main.sftp.commandTimeout': 'Command timed out',
+  'main.sftp.openTimeout': 'Opening the SFTP channel timed out',
   'main.sftp.commandExitCode': 'Command exited with code {code}',
   'main.sftp.cancelled': 'Cancelled',
 
@@ -41,6 +45,7 @@ const main: Record<string, string> = {
   'main.zmodem.cancelled': 'Cancelled',
   'main.zmodem.offerTimedOut': 'No files selected, cancelled',
   'main.zmodem.sessionInvalid': 'The session is no longer valid',
+  'main.zmodem.sessionClosed': 'Session ended, transfer interrupted',
   'main.zmodem.sessionCreateFailed': 'Could not establish the ZMODEM session',
   'main.zmodem.noSaveDir': 'No save directory specified',
   'main.zmodem.noFiles': 'No files selected',

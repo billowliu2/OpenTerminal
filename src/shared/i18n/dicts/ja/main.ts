@@ -13,7 +13,10 @@ const main: Record<string, string> = {
   'main.tray.closeDetail': 'トレイに最小化すると、ターミナルセッションは実行を続けます。',
   'main.tray.rememberChoice': '選択を記憶して今後確認しない',
 
+  'main.startupFailed': 'OpenTerminal の起動に失敗しました: {detail}。アプリを再起動してください。繰り返す場合はログを確認してください。',
+
   'main.updater.feedFailed': 'Gitea フィード: {gitea}；GitHub: {github}',
+  'main.updater.checkTimeout': '更新の確認がタイムアウトしました',
 
   'main.ssh.connectTimeout': '接続がタイムアウトしました ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'ホスト鍵のフィンガープリントを保存できませんでした: {detail}',
@@ -29,6 +32,7 @@ const main: Record<string, string> = {
   'main.sftp.invalidMode': '不正なパーミッション値: {mode}',
   'main.sftp.invalidUidGid': '不正な uid/gid',
   'main.sftp.commandTimeout': 'コマンドがタイムアウトしました',
+  'main.sftp.openTimeout': 'SFTP チャネルのオープンがタイムアウトしました',
   'main.sftp.commandExitCode': 'コマンドの終了コード {code}',
   'main.sftp.cancelled': 'キャンセルしました',
 
@@ -41,6 +45,7 @@ const main: Record<string, string> = {
   'main.zmodem.cancelled': 'キャンセルしました',
   'main.zmodem.offerTimedOut': 'ファイルが選択されなかったためキャンセルしました',
   'main.zmodem.sessionInvalid': 'セッションが無効になりました',
+  'main.zmodem.sessionClosed': 'セッションが終了し、転送が中断されました',
   'main.zmodem.sessionCreateFailed': 'ZMODEM セッションを確立できません',
   'main.zmodem.noSaveDir': '保存先ディレクトリが指定されていません',
   'main.zmodem.noFiles': 'ファイルが選択されていません',

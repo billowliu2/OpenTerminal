@@ -13,7 +13,10 @@ const main: Record<string, string> = {
   'main.tray.closeDetail': '最小化到托盘时终端会话保持运行。',
   'main.tray.rememberChoice': '记住我的选择，不再询问',
 
+  'main.startupFailed': 'OpenTerminal 启动失败: {detail}。请重新启动应用；若反复出现，请查看日志。',
+
   'main.updater.feedFailed': '国内源: {gitea}；GitHub: {github}',
+  'main.updater.checkTimeout': '检查更新超时',
 
   'main.ssh.connectTimeout': '连接超时 ({host}:{port})',
   'main.ssh.saveFingerprintFailed': '保存主机指纹失败: {detail}',
@@ -29,6 +32,7 @@ const main: Record<string, string> = {
   'main.sftp.invalidMode': '非法权限值: {mode}',
   'main.sftp.invalidUidGid': '非法 uid/gid',
   'main.sftp.commandTimeout': '命令执行超时',
+  'main.sftp.openTimeout': 'SFTP 通道打开超时',
   'main.sftp.commandExitCode': '命令退出码 {code}',
   'main.sftp.cancelled': '已取消',
 
@@ -41,6 +45,7 @@ const main: Record<string, string> = {
   'main.zmodem.cancelled': '已取消',
   'main.zmodem.offerTimedOut': '未选择文件，已取消',
   'main.zmodem.sessionInvalid': '会话已失效',
+  'main.zmodem.sessionClosed': '会话已结束，传输已中断',
   'main.zmodem.sessionCreateFailed': '无法建立 ZMODEM 会话',
   'main.zmodem.noSaveDir': '未指定保存目录',
   'main.zmodem.noFiles': '未选择文件',

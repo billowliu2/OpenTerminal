@@ -13,7 +13,10 @@ const main: Record<string, string> = {
   'main.tray.closeDetail': '最小化到系統匣時，終端機連線會繼續執行。',
   'main.tray.rememberChoice': '記住我的選擇，不再詢問',
 
+  'main.startupFailed': 'OpenTerminal 啟動失敗：{detail}。請重新啟動應用程式；若持續發生，請查看日誌。',
+
   'main.updater.feedFailed': '國內來源: {gitea}；GitHub: {github}',
+  'main.updater.checkTimeout': '檢查更新逾時',
 
   'main.ssh.connectTimeout': '連線逾時 ({host}:{port})',
   'main.ssh.saveFingerprintFailed': '儲存主機指紋失敗: {detail}',
@@ -29,6 +32,7 @@ const main: Record<string, string> = {
   'main.sftp.invalidMode': '權限值無效: {mode}',
   'main.sftp.invalidUidGid': 'uid/gid 無效',
   'main.sftp.commandTimeout': '命令執行逾時',
+  'main.sftp.openTimeout': 'SFTP 通道開啟逾時',
   'main.sftp.commandExitCode': '指令結束碼 {code}',
   'main.sftp.cancelled': '已取消',
 
@@ -41,6 +45,7 @@ const main: Record<string, string> = {
   'main.zmodem.cancelled': '已取消',
   'main.zmodem.offerTimedOut': '未選擇檔案，已取消',
   'main.zmodem.sessionInvalid': '連線已失效',
+  'main.zmodem.sessionClosed': '工作階段已結束，傳輸已中斷',
   'main.zmodem.sessionCreateFailed': '無法建立 ZMODEM 連線',
   'main.zmodem.noSaveDir': '未指定儲存目錄',
   'main.zmodem.noFiles': '未選擇檔案',

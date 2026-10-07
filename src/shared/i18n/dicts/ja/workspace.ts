@@ -30,6 +30,8 @@ const workspace: Record<string, string> = {
   'workspace.template.empty': '保存済みのテンプレートはありません',
   'workspace.template.apply': '適用',
   'workspace.template.deleteConfirm': 'このテンプレートを削除しますか？',
+  'workspace.template.applyFailed': 'レイアウトテンプレートの適用に失敗しました',
+  'workspace.template.applyFailedRestored': 'レイアウトテンプレートの適用に失敗しました。元のレイアウトに戻しました',
   'workspace.broadcast.toggle': 'ブロードキャスト入力',
   'workspace.broadcast.activeTitle': 'ブロードキャスト中（{count} 件の対象）',
   'workspace.broadcast.popoverTerminal': 'ブロードキャスト入力（ターミナル）',
