@@ -1,5 +1,40 @@
 # OpenTerminal Changelog
 
+## v1.0.21 - 2026-10-07
+
+### Background image experience
+- **No more wash-out on light themes**: with a background image set, lowering the opacity now dims the image on every theme (on light themes it used to fade the image to white, making text unreadable).
+- **Automatic text brightening**: in image mode the terminal enforces WCAG AA-level contrast, so dark foreground text from light themes stays readable over wallpapers.
+- **New "Background dim" slider** (Settings → Theme): overlays an independent dim layer on the image, darkening it while preserving saturation. 30–50% works well for bright images.
+- Default background image opacity changed from 60% to 30%.
+
+### Performance
+- Settings writes no longer make every terminal pane rewrite its options and refit (field-level subscriptions — only affected panes react).
+- SFTP file list virtualization: directories with tens of thousands of entries (e.g. node_modules) no longer freeze the window.
+- A crashing pane no longer takes down the whole workspace: per-panel error boundary with a retry button.
+- Smoother SSH bottom-panel dragging; noticeably cheaper rendering for the transfer panel and monitor charts.
+
+### Installer size
+- Installer slimmed by about **90MB** (bundled dependencies 98MB → 8.1MB): UI-only packages are no longer shipped twice.
+
+### Security hardening
+- Local paths for SFTP upload/download and ZMODEM transfers are only accepted when picked through a native dialog, blocking crafted read/write paths.
+- SSH private key files are validated (must be a regular file ≤ 1MB).
+- Window security options pinned explicitly (contextIsolation / nodeIntegration / webSecurity) instead of relying on defaults.
+
+### Stability fixes
+- ZMODEM: write errors now terminate the transfer correctly, progress events are throttled, terminal events are emitted on session detach.
+- Corrupted connections/commands config files are backed up before rebuilding instead of silently losing settings.
+- Failed layout-template applies restore the previous layout; portals mounted while locked are properly inerted.
+- The release channel refuses downgrades and verifies assets by sha512.
+- SFTP operations have per-op timeouts with one automatic retry on half-dead channels.
+- Multiple hardening fixes in the startup chain and host-key verification.
+
+### Misc
+- Auto-numbered terminal tab titles ("Terminal 3") now follow the UI language.
+- The lock shortcut Ctrl+L uses physical key codes, so Dvorak and other non-QWERTY layouts trigger it correctly.
+- Removed the dead "update channel" dropdown from Settings.
+
 ## v1.0.20 - 2026-10-01
 
 ### Input Method Fixes
