@@ -56,7 +56,9 @@ const workspace: Record<string, string> = {
   'workspace.connect.connectingNamed': '正在连接 {name}',
   'workspace.connect.action': '连接',
   'workspace.error.title': '界面出现异常',
-  'workspace.error.reload': '重新加载'
+  'workspace.error.reload': '重新加载',
+  'workspace.error.panelTitle': '此面板出现异常',
+  'workspace.error.panelRetry': '重试'
 }
 
 export default workspace

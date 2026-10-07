@@ -2,7 +2,9 @@ import type { AppSettings, LockSettings, SystemSettings, TerminalSettings } from
 import { DEFAULT_SETTINGS } from '@shared/settings'
 import type { TerminalTheme } from '@shared/theme'
 import { getThemeById } from '@shared/theme'
+import { useMemo } from 'react'
 import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
 
 export interface SettingsState {
   /** true once initial settings have been loaded from the main process */
@@ -146,9 +148,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
 /**
  * Resolve the currently active TerminalTheme (builtin or custom) from the store.
- * Subscribes to settings so consumers re-render when the active theme changes.
+ * Subscribes to the two fields it actually reads (shallow), so an unrelated
+ * settings write — a font tweak, a lock preference — does not re-render every
+ * consumer. `getThemeById` rebuilds the array on every call, hence useMemo.
  */
 export function useResolvedTheme(): TerminalTheme {
-  const settings = useSettingsStore((s) => s.settings)
-  return getThemeById(settings.terminal.themeId, settings.customThemes)
+  const { themeId, customThemes } = useSettingsStore(
+    useShallow((s) => ({ themeId: s.settings.terminal.themeId, customThemes: s.settings.customThemes }))
+  )
+  return useMemo(() => getThemeById(themeId, customThemes), [themeId, customThemes])
 }

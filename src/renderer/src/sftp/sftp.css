@@ -37,6 +37,24 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Anchor for the windowed list: the spacer keeps the scrollbar honest and
+     the rendered window is absolutely positioned on top of it. */
+  position: relative;
+}
+
+/* Windowed list (node_modules-sized directories). Only the visible slice of
+   rows plus the overscan is mounted; the spacer carries the full scroll height. */
+.sftp-list-virtual {
+  position: relative;
+  width: 100%;
+}
+
+.sftp-list-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
 }
 
 /* Right-click menu wrapper: antd wraps each row in a span by default;
@@ -51,6 +69,12 @@
   align-items: center;
   column-gap: 8px;
   padding: 3px 8px;
+  /* Fixed outer height so the windowed list can offset rows arithmetically.
+     border-box is required — there is no global reset, so content-box would
+     add the 6px of vertical padding on top. Keep in sync with ROW_HEIGHT in
+     FilePanel.tsx. */
+  box-sizing: border-box;
+  height: 24px;
   font-size: 13px;
   color: var(--chrome-fg);
   cursor: pointer;

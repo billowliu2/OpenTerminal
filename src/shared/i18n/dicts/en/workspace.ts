@@ -57,7 +57,9 @@ const workspace: Record<string, string> = {
   'workspace.connect.connectingNamed': 'Connecting to {name}',
   'workspace.connect.action': 'Connect',
   'workspace.error.title': 'The interface hit an error',
-  'workspace.error.reload': 'Reload'
+  'workspace.error.reload': 'Reload',
+  'workspace.error.panelTitle': 'This panel hit an error',
+  'workspace.error.panelRetry': 'Retry'
 }
 
 export default workspace

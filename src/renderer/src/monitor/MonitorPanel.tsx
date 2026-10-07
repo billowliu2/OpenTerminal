@@ -26,6 +26,17 @@ interface HistoryChartProps {
 function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChartProps): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  // Latest sample + the live draw function. The observer and the canvas
+  // context are set up ONCE (their inputs are fixed at the call sites); a new
+  // sample only repaints. The previous version listed `data` in the setup
+  // effect, so every 3s sample tore down the observer and rebuilt the canvas.
+  const dataRef = useRef<number[]>(data)
+  const drawRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    dataRef.current = data
+    drawRef.current?.()
+  }, [data])
 
   useEffect(() => {
     const container = containerRef.current
@@ -44,7 +55,7 @@ function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChart
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, height)
 
-      const pts = data
+      const pts = dataRef.current
       if (pts.length < 2) return
 
       const top = maxY ?? Math.max(1, Math.max(...pts) * 1.2)
@@ -76,13 +87,15 @@ function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChart
       ctx.stroke()
     }
 
+    drawRef.current = draw
     draw()
     const ro = new ResizeObserver(draw)
     ro.observe(container)
-    return () => ro.disconnect()
-    // `data` is a dep on purpose: without it the chart only ever drew at mount,
-    // when the history is still empty, and the sparklines never updated.
-  }, [data, height, maxY, lineColor, fillColor])
+    return () => {
+      ro.disconnect()
+      drawRef.current = null
+    }
+  }, [height, maxY, lineColor, fillColor])
 
   return (
     <div ref={containerRef} className="mm-chart">

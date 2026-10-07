@@ -105,3 +105,48 @@ button {
   opacity: 0.75;
   font-weight: 500;
 }
+
+/* ---- per-panel error placeholder (PanelErrorBoundary) ---- */
+.panel-error {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  box-sizing: border-box;
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
+  text-align: center;
+}
+
+.panel-error-title {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.panel-error-message {
+  max-width: 100%;
+  max-height: 40%;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: #ff6b6b;
+}
+
+.panel-error-retry {
+  padding: 4px 16px;
+  cursor: pointer;
+  color: var(--chrome-fg);
+  background: var(--chrome-hover);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.panel-error-retry:hover {
+  border-color: var(--chrome-accent);
+}

@@ -1,5 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ForwardRefExoticComponent, Ref } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import type { ILink, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -14,6 +13,7 @@ import type { CommandItem } from '@shared/commands'
 import { highlightModeOf, type TerminalSettings } from '@shared/settings'
 import { rulesForProfile } from '@shared/highlightProfiles'
 import { useResolvedTheme, useSettingsStore } from '@renderer/settings/store'
+import { useShallow } from 'zustand/react/shallow'
 import { writeBroadcast } from '@renderer/workspace/broadcastStore'
 import { compileRules, HighlightStream, type RuleStat } from './highlightEngine'
 import { publishHighlightStats } from './highlightStats'
@@ -92,13 +92,6 @@ function withChromeColors(colors: ITheme, transparentBackground: boolean): IThem
  *  (the page itself cannot reference file: paths from non-file origins). */
 function toFileUrl(path: string): string {
   return `otimg://bg/${encodeURIComponent(path)}`
-}
-
-export interface TerminalHandle {
-  focus(): void
-  clear(): void
-  /** currently attached pty session id */
-  sessionId(): string
 }
 
 export interface TerminalViewProps {
@@ -268,12 +261,61 @@ function differenceWrite(sessionId: string, full: string, buf: string): void {
   writeBroadcast(sessionId, full)
 }
 
-export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?: Ref<TerminalHandle> }> =
-  forwardRef<TerminalHandle, TerminalViewProps>(function TerminalViewInner(
-    { sessionId, onClose, className, isSsh = false, connectionId },
-    ref
-  ) {
-  const settings = useSettingsStore((s) => s.settings)
+export function TerminalView({
+  sessionId,
+  onClose,
+  className,
+  isSsh = false,
+  connectionId
+}: TerminalViewProps): React.JSX.Element {
+  // Field-level subscriptions. A single `s.settings` subscription made every
+  // pane re-write every xterm option and refit on ANY settings write — the
+  // whole-`settings` object identity changes even when an unrelated group
+  // (lock, system, connections) is what got written. Each group below is one
+  // shallow subscription, so a write only reaches the panes whose own fields
+  // actually changed.
+  const fontOpts = useSettingsStore(
+    useShallow((s) => ({
+      fontSize: s.settings.terminal.fontSize,
+      fontFamily: s.settings.terminal.fontFamily,
+      fontWeight: s.settings.terminal.fontWeight,
+      boldFontWeight: s.settings.terminal.boldFontWeight,
+      letterSpacing: s.settings.terminal.letterSpacing,
+      lineHeight: s.settings.terminal.lineHeight,
+      scrollback: s.settings.terminal.scrollback,
+      cursorBlink: s.settings.terminal.cursorBlink,
+      cursorStyle: s.settings.terminal.cursorStyle,
+      cursorInactiveStyle: s.settings.terminal.cursorInactiveStyle
+    }))
+  )
+  const themeOpts = useSettingsStore(
+    useShallow((s) => ({ themeId: s.settings.terminal.themeId, customThemes: s.settings.customThemes }))
+  )
+  const bgOpts = useSettingsStore(
+    useShallow((s) => ({
+      image: s.settings.terminal.backgroundImage,
+      opacity: s.settings.terminal.backgroundImageOpacity,
+      dim: s.settings.terminal.backgroundImageDim
+    }))
+  )
+  const rendererMode = useSettingsStore((s) => s.settings.terminal.rendererMode)
+  const highlightOpts = useSettingsStore(
+    useShallow((s) => ({
+      mode: highlightModeOf(s.settings.terminal.highlightMode),
+      rules: s.settings.highlightRules,
+      profiles: s.settings.highlightProfiles,
+      perHost: s.settings.terminal.highlightPerHost,
+      themeColors: s.settings.terminal.highlightThemeColors,
+      stats: s.settings.terminal.highlightStats
+    }))
+  )
+  const toolbar = useSettingsStore(
+    useShallow((s) => ({
+      showRecButton: s.settings.terminal.showRecButton,
+      showOpenLogsButton: s.settings.terminal.showOpenLogsButton,
+      showOpenCwdButton: s.settings.terminal.showOpenCwdButton
+    }))
+  )
 
   const hostRef = useRef<HTMLDivElement | null>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -321,14 +363,13 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // The mode empties the rule set instead of bypassing the stream: the stream
   // holds a trailing text run back, and skipping it would drop those bytes. An
   // empty set is ~free — applyHighlights returns the chunk before it tokenizes.
-  const highlightMode = highlightModeOf(settings.terminal.highlightMode)
   const highlightTheme = useResolvedTheme()
   // Per-host profiles (opt-in): an SSH session bound to a profile runs only that
   // subset. The binding lives on the saved connection, so it is looked up once
   // per session — and only while the feature is switched on.
   const [boundProfileId, setBoundProfileId] = useState<string | undefined>(undefined)
   useEffect(() => {
-    if (connectionId === undefined || !settings.terminal.highlightPerHost) {
+    if (connectionId === undefined || !highlightOpts.perHost) {
       setBoundProfileId(undefined)
       return undefined
     }
@@ -344,31 +385,23 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     return () => {
       cancelled = true
     }
-  }, [connectionId, settings.terminal.highlightPerHost])
+  }, [connectionId, highlightOpts.perHost])
 
   const compiledRules = useMemo(() => {
-    if (highlightMode === 'off') return []
+    if (highlightOpts.mode === 'off') return []
     const active =
-      highlightMode === 'basic'
-        ? settings.highlightRules.filter((rule) => rule.basic === true)
-        : settings.highlightRules
-    const perHost = settings.terminal.highlightPerHost
-      ? rulesForProfile(active, boundProfileId, settings.highlightProfiles)
+      highlightOpts.mode === 'basic'
+        ? highlightOpts.rules.filter((rule) => rule.basic === true)
+        : highlightOpts.rules
+    const perHost = highlightOpts.perHost
+      ? rulesForProfile(active, boundProfileId, highlightOpts.profiles)
       : active
     // Palette-consistent highlighting (opt-in): the rule keeps its meaning, the
     // colour comes from the theme the terminal is actually drawn with.
     return compileRules(
-      settings.terminal.highlightThemeColors ? applyThemeColors(perHost, highlightTheme) : perHost
+      highlightOpts.themeColors ? applyThemeColors(perHost, highlightTheme) : perHost
     )
-  }, [
-    highlightMode,
-    settings.highlightRules,
-    settings.highlightProfiles,
-    settings.terminal.highlightThemeColors,
-    settings.terminal.highlightPerHost,
-    boundProfileId,
-    highlightTheme
-  ])
+  }, [highlightOpts, boundProfileId, highlightTheme])
 
   // Optional per-rule stats (settings → highlight → "count hits and time").
   // Attached and detached here, so toggling the switch never rebuilds the
@@ -376,7 +409,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // re-render the settings page once per chunk.
   const statsRef = useRef<Map<string, RuleStat> | null>(null)
   useEffect(() => {
-    const sink = settings.terminal.highlightStats
+    const sink = highlightOpts.stats
       ? (statsRef.current ?? new Map<string, RuleStat>())
       : null
     statsRef.current = sink
@@ -385,7 +418,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
     publishHighlightStats(new Map(sink))
     const timer = window.setInterval(() => publishHighlightStats(new Map(sink)), 1000)
     return () => window.clearInterval(timer)
-  }, [settings.terminal.highlightStats])
+  }, [highlightOpts.stats])
   // Push the latest compiled rules into the stream from an effect — assigning
   // during render would be a side effect in the render body.
   useEffect(() => {
@@ -420,7 +453,6 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // Inline command-completion overlays built from history/library (M5).
   const [suggestions, setSuggestions] = useState<CommandItem[]>([])
   const [suggestionIndex, setSuggestionIndex] = useState(0)
-  const tSettings = settings.terminal
 
   // [M5] Mirror completion selection into state's single source of truth. Kept
   // as a pair of effects so the construction-time key handler (below) always
@@ -763,17 +795,17 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   // ---- terminal instance: built once per session ----
   useLayoutEffect(() => {
     const term = new Terminal({
-      fontSize: tSettings.fontSize,
-      fontFamily: tSettings.fontFamily,
-      fontWeight: toFontWeight(tSettings.fontWeight),
-      fontWeightBold: toFontWeight(tSettings.boldFontWeight),
-      letterSpacing: tSettings.letterSpacing,
-      lineHeight: tSettings.lineHeight,
-      scrollback: tSettings.scrollback,
-      cursorBlink: tSettings.cursorBlink,
-      cursorStyle: tSettings.cursorStyle,
-      cursorInactiveStyle: tSettings.cursorInactiveStyle,
-      theme: withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme, Boolean(tSettings.backgroundImage)),
+      fontSize: fontOpts.fontSize,
+      fontFamily: fontOpts.fontFamily,
+      fontWeight: toFontWeight(fontOpts.fontWeight),
+      fontWeightBold: toFontWeight(fontOpts.boldFontWeight),
+      letterSpacing: fontOpts.letterSpacing,
+      lineHeight: fontOpts.lineHeight,
+      scrollback: fontOpts.scrollback,
+      cursorBlink: fontOpts.cursorBlink,
+      cursorStyle: fontOpts.cursorStyle,
+      cursorInactiveStyle: fontOpts.cursorInactiveStyle,
+      theme: withChromeColors(getThemeById(themeOpts.themeId, themeOpts.customThemes).colors as ITheme, bgOpts.image !== ''),
       allowProposedApi: true,
       allowTransparency: true,
       overviewRuler: { width: 9, showTopBorder: false, showBottomBorder: false },
@@ -782,7 +814,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       // xterm's contrast cache treats as black; a raised contrast floor lifts
       // dark foreground colors (light themes) enough to stay readable over
       // the wallpaper. Without an image keep 1 (off) to honor theme colors.
-      minimumContrastRatio: tSettings.backgroundImage ? 4.5 : 1,
+      minimumContrastRatio: bgOpts.image ? 4.5 : 1,
       automaticFontFallback: true,
       convertEol: false,
       windowsPty: { backend: 'conpty', buildNumber: 0 }
@@ -850,7 +882,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       recordingRef.current = false
       setRecording(false)
     }
-    applyRenderers(tSettings.rendererMode)
+    applyRenderers(rendererMode)
     scheduleFit()
 
     // xterm event hooks return IDisposable objects, api subscriptions return
@@ -1101,29 +1133,41 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
   }, [sessionId])
 
   // ---- options reactivity (no instance rebuild) ----
+  // Split by concern: font/cursor metrics refit on change, the palette (theme +
+  // background-image mode, which decides transparency and the contrast floor)
+  // repaints without a refit. Keeping them apart stops each group from
+  // re-triggering the other's work on every keystroke in the settings dialog.
   useEffect(() => {
     const term = termRef.current
     if (!term) return
-    term.options.fontSize = tSettings.fontSize
-    term.options.fontFamily = tSettings.fontFamily
-    term.options.fontWeight = toFontWeight(tSettings.fontWeight)
-    term.options.fontWeightBold = toFontWeight(tSettings.boldFontWeight)
-    term.options.letterSpacing = tSettings.letterSpacing
-    term.options.lineHeight = tSettings.lineHeight
-    term.options.cursorBlink = tSettings.cursorBlink
-    term.options.cursorStyle = tSettings.cursorStyle
-    term.options.cursorInactiveStyle = tSettings.cursorInactiveStyle
+    term.options.fontSize = fontOpts.fontSize
+    term.options.fontFamily = fontOpts.fontFamily
+    term.options.fontWeight = toFontWeight(fontOpts.fontWeight)
+    term.options.fontWeightBold = toFontWeight(fontOpts.boldFontWeight)
+    term.options.letterSpacing = fontOpts.letterSpacing
+    term.options.lineHeight = fontOpts.lineHeight
+    term.options.cursorBlink = fontOpts.cursorBlink
+    term.options.cursorStyle = fontOpts.cursorStyle
+    term.options.cursorInactiveStyle = fontOpts.cursorInactiveStyle
     // Live-appliable in xterm 6: without this the setting only took effect for
     // terminals opened after the change, which reads as "the setting is broken".
-    term.options.scrollback = tSettings.scrollback
-    term.options.theme = withChromeColors(getThemeById(tSettings.themeId, settings.customThemes).colors as ITheme, Boolean(tSettings.backgroundImage))
-    term.options.minimumContrastRatio = tSettings.backgroundImage ? 4.5 : 1
+    term.options.scrollback = fontOpts.scrollback
     scheduleFit()
-  }, [tSettings, settings.customThemes, scheduleFit])
+  }, [fontOpts, scheduleFit])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.theme = withChromeColors(
+      getThemeById(themeOpts.themeId, themeOpts.customThemes).colors as ITheme,
+      bgOpts.image !== ''
+    )
+    term.options.minimumContrastRatio = bgOpts.image ? 4.5 : 1
+  }, [themeOpts, bgOpts])
 
   // ---- renderer mode changes: keep the instance, swap renderer, refit ----
   useEffect(() => {
-    const next = tSettings.rendererMode
+    const next = rendererMode
     // The construction effect above already applied the mode on mount (this
     // effect runs on mount too); only an actual switch should re-run it.
     if (next === rendererModeRef.current) return
@@ -1133,35 +1177,19 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       applyRenderers(next)
     }
     scheduleFit()
-  }, [tSettings.rendererMode, applyRenderers, scheduleFit])
+  }, [rendererMode, applyRenderers, scheduleFit])
 
   // keep onClose fresh for the dead mask
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      focus() {
-        termRef.current?.focus()
-      },
-      clear() {
-        termRef.current?.clear()
-      },
-      sessionId() {
-        return sessionId
-      }
-    }),
-    [sessionId]
-  )
-
   const terminalClassName = useMemo(
     () =>
-      ['terminal-view', settings.terminal.backgroundImage !== '' && 'has-bg-image', className]
+      ['terminal-view', bgOpts.image !== '' && 'has-bg-image', className]
         .filter(Boolean)
         .join(' '),
-    [className, settings.terminal.backgroundImage]
+    [className, bgOpts.image]
   )
 
   /**
@@ -1295,7 +1323,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
         />
       )}
       <div className="term-recbar">
-        {settings.terminal.showRecButton && (
+        {toolbar.showRecButton && (
           <button
             type="button"
             className={`term-rec-btn${recording ? ' is-recording' : ''}`}
@@ -1309,7 +1337,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
             {recording ? <PauseOutlined /> : <SoundOutlined />}
           </button>
         )}
-        {settings.terminal.showOpenLogsButton && (
+        {toolbar.showOpenLogsButton && (
           <button
             type="button"
             className="term-rec-btn"
@@ -1320,7 +1348,7 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
             <FolderOpenOutlined />
           </button>
         )}
-        {settings.terminal.showOpenCwdButton && !isSsh && (
+        {toolbar.showOpenCwdButton && !isSsh && (
           <button
             type="button"
             className="term-rec-btn"
@@ -1391,20 +1419,20 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
           </div>
         )}
         <div className="terminal-view-dock" ref={hostRef}>
-          {settings.terminal.backgroundImage !== '' && (
+          {bgOpts.image !== '' && (
             <div
               className="term-bg-image"
               style={{
-                backgroundImage: `url("${toFileUrl(settings.terminal.backgroundImage)}")`,
-                opacity: Math.min(100, Math.max(10, settings.terminal.backgroundImageOpacity)) / 100
+                backgroundImage: `url("${toFileUrl(bgOpts.image)}")`,
+                opacity: Math.min(100, Math.max(10, bgOpts.opacity)) / 100
               }}
             />
           )}
-          {settings.terminal.backgroundImage !== '' && settings.terminal.backgroundImageDim > 0 && (
+          {bgOpts.image !== '' && bgOpts.dim > 0 && (
             <div
               className="term-bg-dim"
               style={{
-                opacity: Math.min(90, Math.max(0, settings.terminal.backgroundImageDim)) / 100
+                opacity: Math.min(90, Math.max(0, bgOpts.dim)) / 100
               }}
             />
           )}
@@ -1418,4 +1446,4 @@ export const TerminalView: ForwardRefExoticComponent<TerminalViewProps & { ref?:
       </div>
     </div>
   )
-})
+}

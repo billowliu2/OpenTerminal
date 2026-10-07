@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowUpOutlined,
   CopyOutlined,
@@ -112,6 +112,29 @@ function permRowLabels(): string[] {
 
 function permColLabels(): string[] {
   return [t('ssh.file.permColRead'), t('ssh.file.permColWrite'), t('ssh.file.permColExec')]
+}
+
+/** Row height in px — must match `.sftp-row` in sftp.css. */
+const ROW_HEIGHT = 24
+/** Rows rendered above and below the viewport so a fast scroll never blanks. */
+const OVERSCAN = 8
+/**
+ * Above this entry count the list switches to windowed rendering. Each row
+ * carries an antd Dropdown, so a node_modules-sized listing (tens of thousands
+ * of entries) mounted at once locked the window up entirely; below the
+ * threshold a plain map is cheaper than the bookkeeping.
+ */
+const VIRTUALIZE_THRESHOLD = 200
+
+/** Slice of the entry list to mount for the current scroll position. */
+interface WindowSlice {
+  start: number
+  end: number
+}
+
+/** First index to render for a given scroll offset and viewport height. */
+function windowStart(scrollTop: number): number {
+  return Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
 }
 
 interface PermissionModalProps {
@@ -316,7 +339,13 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
   )
 }
 
-export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
+/**
+ * Memoized: `sessionId` is the only prop and it is stable for the panel's
+ * lifetime, so dragging the SSH divider (which re-renders SshBottomPanel on
+ * every pointermove) no longer re-renders the whole file browser. Switching to
+ * a different directory still works — it is internal state.
+ */
+export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
   const { message, modal } = App.useApp()
   const [dir, setDir] = useState('/')
   const [entries, setEntries] = useState<SftpEntry[]>([])
@@ -328,6 +357,46 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
   const [renameOpen, setRenameOpen] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
   const [inputValue, setInputValue] = useState('')
+
+  // Windowed list state. `viewportH` is measured off the scroll container and
+  // `firstVisible` only advances when the scroll offset crosses a row boundary,
+  // so dragging the scrollbar re-renders at most once per ROW_HEIGHT of travel.
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const [viewportH, setViewportH] = useState(0)
+  const [firstVisible, setFirstVisible] = useState(0)
+  const virtualized = entries.length > VIRTUALIZE_THRESHOLD
+
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const measure = (): void => setViewportH(el.clientHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+    // `error` swaps the scroll container out for the error banner, so the
+    // observer has to be re-attached whenever the container is replaced.
+  }, [error])
+
+  // A new directory starts at the top; the stale scroll offset would otherwise
+  // leave the window slice pointing past the (now shorter) listing.
+  useEffect(() => {
+    const el = listRef.current
+    if (el) el.scrollTop = 0
+    setFirstVisible(0)
+  }, [dir])
+
+  const onListScroll = useCallback(() => {
+    const el = listRef.current
+    if (!el) return
+    const start = windowStart(el.scrollTop)
+    setFirstVisible((prev) => (prev === start ? prev : start))
+  }, [])
+
+  const slice = useMemo((): WindowSlice => {
+    const visible = Math.ceil(viewportH / ROW_HEIGHT) + OVERSCAN * 2
+    return { start: firstVisible, end: Math.min(entries.length, firstVisible + visible) }
+  }, [viewportH, firstVisible, entries.length])
 
   /** the entry the context menu is operating on (selected when right-clicked) */
   const menuTarget = menuEntry ?? selected
@@ -624,6 +693,44 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menuTarget, dir, entries, refresh, language])
 
+  /** One directory entry: icon, name, permissions, owner, size, mtime + menu. */
+  const renderRow = (e: SftpEntry): React.JSX.Element => (
+    <Dropdown
+      key={e.path}
+      menu={menu}
+      trigger={['contextMenu']}
+      getPopupContainer={() => document.body}
+      onOpenChange={(open) => {
+        if (!open) setMenuEntry(null)
+      }}
+    >
+      <div
+        className={`sftp-row${selected?.path === e.path ? ' sftp-row-selected' : ''}`}
+        onClick={() => setSelected(e)}
+        onContextMenu={() => {
+          setSelected(e)
+          setMenuEntry(e)
+        }}
+        onDoubleClick={() => (e.isDir ? void refresh(e.path) : doDownload(e))}
+      >
+        <span className="sftp-icon">{e.isDir ? <FolderOutlined className="sftp-icon-dir" /> : <FileOutlined />}</span>
+        <span className="sftp-name" title={e.name}>
+          {e.name}
+        </span>
+        <span className="sftp-mode" title={e.mode ?? t('ssh.file.modeUnavailable')}>
+          {e.mode ?? '----------'}
+        </span>
+        <span className="sftp-owner" title={`UID ${e.uid ?? '—'} / GID ${e.gid ?? '—'}`}>
+          {e.uid != null && e.gid != null ? `${e.uid}/${e.gid}` : '—'}
+        </span>
+        <span className="sftp-size" title={e.isDir ? '' : `${e.size} bytes`}>
+          {e.isDir ? '' : fmtSize(e.size)}
+        </span>
+        <span className="sftp-time">{fmtTime(e.mtime)}</span>
+      </div>
+    </Dropdown>
+  )
+
   return (
     <div className="sftp-panel">
       <div className="sftp-toolbar">
@@ -707,45 +814,21 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
       {error ? (
         <div className="sftp-error">{error}</div>
       ) : (
-        <div className="sftp-list">
+        <div className="sftp-list" ref={listRef} onScroll={onListScroll}>
           {loading && entries.length === 0 && <div className="sftp-empty">{t('ssh.file.loading')}</div>}
           {!loading && entries.length === 0 && <div className="sftp-empty">{t('ssh.file.empty')}</div>}
-          {entries.map((e) => (
-            <Dropdown
-              key={e.path}
-              menu={menu}
-              trigger={['contextMenu']}
-              getPopupContainer={() => document.body}
-              onOpenChange={(open) => {
-                if (!open) setMenuEntry(null)
-              }}
-            >
+          {virtualized ? (
+            <div className="sftp-list-virtual" style={{ height: entries.length * ROW_HEIGHT }}>
               <div
-                className={`sftp-row${selected?.path === e.path ? ' sftp-row-selected' : ''}`}
-                onClick={() => setSelected(e)}
-                onContextMenu={() => {
-                  setSelected(e)
-                  setMenuEntry(e)
-                }}
-                onDoubleClick={() => (e.isDir ? void refresh(e.path) : doDownload(e))}
+                className="sftp-list-window"
+                style={{ transform: `translateY(${slice.start * ROW_HEIGHT}px)` }}
               >
-                <span className="sftp-icon">{e.isDir ? <FolderOutlined className="sftp-icon-dir" /> : <FileOutlined />}</span>
-                <span className="sftp-name" title={e.name}>
-                  {e.name}
-                </span>
-                <span className="sftp-mode" title={e.mode ?? t('ssh.file.modeUnavailable')}>
-                  {e.mode ?? '----------'}
-                </span>
-                <span className="sftp-owner" title={`UID ${e.uid ?? '—'} / GID ${e.gid ?? '—'}`}>
-                  {e.uid != null && e.gid != null ? `${e.uid}/${e.gid}` : '—'}
-                </span>
-                <span className="sftp-size" title={e.isDir ? '' : `${e.size} bytes`}>
-                  {e.isDir ? '' : fmtSize(e.size)}
-                </span>
-                <span className="sftp-time">{fmtTime(e.mtime)}</span>
+                {entries.slice(slice.start, slice.end).map(renderRow)}
               </div>
-            </Dropdown>
-          ))}
+            </div>
+          ) : (
+            entries.map(renderRow)
+          )}
         </div>
       )}
 
@@ -791,4 +874,4 @@ export function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
       </Modal>
     </div>
   )
-}
+})

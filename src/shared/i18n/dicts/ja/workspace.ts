@@ -58,7 +58,9 @@ const workspace: Record<string, string> = {
   'workspace.connect.connectingNamed': '{name} に接続しています',
   'workspace.connect.action': '接続',
   'workspace.error.title': '画面でエラーが発生しました',
-  'workspace.error.reload': '再読み込み'
+  'workspace.error.reload': '再読み込み',
+  'workspace.error.panelTitle': 'このパネルでエラーが発生しました',
+  'workspace.error.panelRetry': '再試行'
 }
 
 export default workspace

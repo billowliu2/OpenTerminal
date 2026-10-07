@@ -4,6 +4,7 @@ import { Button } from 'antd'
 import { AreaChartOutlined } from '@ant-design/icons'
 
 import { t } from '@shared/i18n'
+import { PanelErrorBoundary } from '../ErrorBoundary'
 import { TerminalView } from '../terminal/TerminalView'
 import { MonitorPanel } from '../monitor/MonitorPanel'
 import { SshBottomPanel } from './SshBottomPanel'
@@ -78,27 +79,32 @@ export function TerminalPanel({ params, api, onSessionDead }: TerminalPanelProps
     />
   )
 
+  // A crash inside one pane must not take the workspace — and every other live
+  // session — down to the root boundary's reload screen. The pane's own content
+  // is remounted on retry; the shell (tab, broadcast registration) survives.
   return (
     <div className="workspace-terminal-panel">
-      {isSsh && (
-        <Button
-          type="text"
-          size="small"
-          className="workspace-terminal-monitor-toggle"
-          icon={<AreaChartOutlined />}
-          aria-label={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
-          title={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
-          onClick={() => setSideOpen((prev) => !prev)}
-        />
-      )}
-      <div className="workspace-terminal-split">
-        {isSsh ? <SshBottomPanel sessionId={sessionId} terminal={terminal} /> : terminal}
-        {isSsh && sideOpen && (
-          <div className="workspace-terminal-side">
-            <MonitorPanel sessionId={sessionId} />
-          </div>
+      <PanelErrorBoundary label={t('workspace.error.panelTitle')}>
+        {isSsh && (
+          <Button
+            type="text"
+            size="small"
+            className="workspace-terminal-monitor-toggle"
+            icon={<AreaChartOutlined />}
+            aria-label={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
+            title={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
+            onClick={() => setSideOpen((prev) => !prev)}
+          />
         )}
-      </div>
+        <div className="workspace-terminal-split">
+          {isSsh ? <SshBottomPanel sessionId={sessionId} terminal={terminal} /> : terminal}
+          {isSsh && sideOpen && (
+            <div className="workspace-terminal-side">
+              <MonitorPanel sessionId={sessionId} />
+            </div>
+          )}
+        </div>
+      </PanelErrorBoundary>
     </div>
   )
 }
