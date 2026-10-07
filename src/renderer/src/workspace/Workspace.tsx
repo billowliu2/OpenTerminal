@@ -28,6 +28,7 @@ import 'dockview-react/dist/styles/dockview.css'
 
 import { connectPromptFor, type HostKeyPromptEvent, type SshConnection, type SshSecretOverride } from '@shared/connections'
 import { t } from '@shared/i18n'
+import { nextTerminalTitle, retitleAutoTitles } from '@shared/terminalTitle'
 import { ConnectionSidebar } from '../connections/ConnectionSidebar'
 import type { ConnectionSidebarHandle } from '../connections/ConnectionSidebar'
 import { ConnectFlow } from './ConnectFlow'
@@ -127,31 +128,6 @@ function restoreLayoutSnapshot(api: DockviewApi | undefined, snapshot: Serialize
   } catch (error) {
     console.error('[workspace] restoring the layout after a failed template apply failed', error)
   }
-}
-
-/**
- * "终端 N" titles fill the lowest free number among live panels: closing a
- * pane frees its number for the next new terminal, and a session restore can
- * no longer leave the numbering behind (the old in-memory counter restarted
- * at zero on launch and produced duplicate titles).
- */
-function nextTerminalTitle(existing: Iterable<string | undefined>): string {
-  const used = new Set<number>()
-  // The pattern is translated, so the number is read back through that same
-  // pattern (the `{n}` placeholder marks the digits) instead of a fixed one.
-  const [head, tail] = t('workspace.tab.terminalTitle', { n: '\u0000' }).split('\u0000')
-  const matcher = new RegExp(`^${escapeRegExp(head)}(\\d+)${escapeRegExp(tail ?? '')}$`)
-  for (const title of existing) {
-    const n = title?.match(matcher)?.[1]
-    if (n) used.add(Number(n))
-  }
-  let n = 1
-  while (used.has(n)) n++
-  return t('workspace.tab.terminalTitle', { n })
-}
-
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function sessionIdOf(panel: IDockviewPanel | undefined): string | undefined {
@@ -455,6 +431,32 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
     const t = terminal ? terminal.panels.filter((p) => sessionIdOf(p)).length : 0
     const s = ssh ? ssh.panels.filter((p) => sessionIdOf(p)).length : 0
     setModeCounts((prev) => (prev.terminal === t && prev.ssh === s ? prev : { terminal: t, ssh: s }))
+  }, [])
+
+  /**
+   * Re-render every auto-numbered tab title in the active language, keeping its
+   * number. Idempotent — a title already in the active language is left alone.
+   *
+   * Titles are stored display text (they ride along in layout templates, the
+   * session snapshot and the broadcast registry) and outlive a language switch,
+   * so without this a pane keeps the wording of the language it was opened in.
+   *
+   * SSH panes are excluded: their title is the connection name the user typed,
+   * and a connection named "Terminal 3" must not be renamed behind their back.
+   *
+   * `setTitle` fires dockview's title-change event, which is all the rest needs:
+   * `TerminalPanel` re-registers the broadcast title, the tab component
+   * re-renders, the sidebar list refreshes and the snapshot save is scheduled
+   * (a panel title change forwards into the dockview's layout-change event).
+   */
+  const retitleAutoPanels = useCallback((): void => {
+    retitleAutoTitles(
+      [terminalApiRef.current, sshApiRef.current].flatMap((api) =>
+        (api?.panels ?? []).filter(
+          (panel) => (panel.params as TerminalParams | undefined)?.sessionKind !== 'ssh'
+        )
+      )
+    )
   }, [])
 
   /** Focus a local terminal panel from the sidebar (terminal dockview). */
@@ -996,6 +998,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const renames = new Map([...terminalLayout.renames, ...sshLayout.renames])
       await rebindSessionPanels(terminal, snapshot, true, renames)
       await rebindSessionPanels(ssh, snapshot, true, renames)
+      // A snapshot is written in whatever language was active at the time, so
+      // render its auto titles in the current language before anything compares
+      // them: the dedup below then sees "终端 3" and "Terminal 3" as the one
+      // collision they are instead of letting both through.
+      retitleAutoPanels()
       // Retitle duplicates left over from the old counter bug (the snapshot it
       // wrote keeps colliding titles forever otherwise): the first panel keeps
       // the title, later ones get the lowest free number.
@@ -1006,13 +1013,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const seenTitles = new Set<string>()
       for (const p of [...(terminal?.panels ?? []), ...(ssh?.panels ?? [])]) {
         if ((p.params as TerminalParams | undefined)?.sessionKind === 'ssh') continue
-        const t = p.title ?? ''
-        if (!t) continue
-        if (seenTitles.has(t)) {
+        const title = p.title ?? ''
+        if (!title) continue
+        if (seenTitles.has(title)) {
           const fresh = nextTerminalTitle(seenTitles)
           p.setTitle(fresh)
           seenTitles.add(fresh)
-        } else seenTitles.add(t)
+        } else seenTitles.add(title)
       }
       lastLocalCwdRef.current = snapshot.lastLocalCwd ?? lastLocalCwdRef.current
       useWorkspaceModeStore.getState().setMode(snapshot.mode)
@@ -1020,7 +1027,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       recomputeLocalPanels()
       return true
     },
-    [rebindSessionPanels, recountAll, recomputeLocalPanels]
+    [rebindSessionPanels, recountAll, recomputeLocalPanels, retitleAutoPanels]
   )
 
   const handleApplyTemplate = useCallback(
@@ -1119,6 +1126,11 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       if (terminalApiRef.current) await rebindRestoredPanels(terminalApiRef.current)
       if (sshApiRef.current) await rebindRestoredPanels(sshApiRef.current)
 
+      // A template carries the tab titles it was saved with, which may be in
+      // another language (or written by a build whose language the user has
+      // since switched away from).
+      retitleAutoPanels()
+
       // Old sessions are unreachable after the layout swap — kill them.
       for (const sid of previousSessions) killSession(sid)
       recountAll()
@@ -1126,7 +1138,7 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
       const mode = useWorkspaceModeStore.getState().mode
       activePanelRef.current = apiOfMode(mode, terminalApiRef.current, sshApiRef.current)?.activePanel
     },
-    [killSession, message, rebindRestoredPanels, recountAll, recomputeLocalPanels]
+    [killSession, message, rebindRestoredPanels, recountAll, recomputeLocalPanels, retitleAutoPanels]
   )
 
   const handleDeleteTemplate = useCallback(async (meta: LayoutMetaLike): Promise<void> => {
@@ -1156,6 +1168,20 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
   // are translated at build time, so `language` has to be a dependency or a
   // language switch would leave stale menu text behind.
   const language = useSettingsStore((s) => s.settings.system.language)
+
+  // Auto tab titles are stored display text, so they have to be re-rendered on
+  // a language switch — the rest of the UI re-renders itself. Skipped on mount
+  // (a boot pass has not restored any panel yet, and a restored title is
+  // retitled by the pass itself) and on every settings echo that leaves the
+  // language untouched, which is the common case.
+  const lastLanguageRef = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (lastLanguageRef.current === language) return
+    const changed = lastLanguageRef.current !== undefined
+    lastLanguageRef.current = language
+    if (changed) retitleAutoPanels()
+  }, [language, retitleAutoPanels])
+
   const layoutMenu = useMemo<MenuProps>(
     () => ({
       items: [

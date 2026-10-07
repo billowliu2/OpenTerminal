@@ -146,7 +146,7 @@
 - [x] 归档脚本入 `scripts/`，`KEEP_TAG` 改必传参数
 - [x] `isPanicLockChord` 改判 `input.code`（物理键位，Dvorak/非拉丁布局正确）
 - [x] P3：设置页「更新通道」死控件移除、layoutMenu/IconRail memo + onOpenSettings useCallback、TerminalHandle 死 API 移除
-- [ ] 面板标题存已翻译字符串（切语言错位）——** deferred**：牵涉 5 个消费点 + 旧持久化数据兼容，另开一轮处理
+- [x] 面板标题存已翻译字符串（切语言错位）——✅ 已修：不改持久化格式，改多语言反解 + 语言切换/快照恢复/模板应用三处原地重渲染（`src/shared/terminalTitle.ts`，18 号测试 terminal-title）
 
 ## 工程约定（贯穿各阶段）
 

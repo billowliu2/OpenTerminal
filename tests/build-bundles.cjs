@@ -46,6 +46,9 @@ const BUNDLES = [
   // Reserved-accelerator table shared by the settings recorder and main's
   // registration guard: pure, table-tested.
   { entry: 'src/shared/reservedAccelerators.ts', out: 'tests/.reserved-accelerators.cjs' },
+  // Auto terminal-tab titles: the pattern table is shared by the renderer's
+  // numbering and its language-switch retitle pass. Pure + dictionary-only.
+  { entry: 'tests/terminal-title.mjs', out: 'tests/.terminal-title.cjs' },
   // Update service: feed probe/fallback. `electron-updater` is aliased to a
   // stub (the real package boots Electron), and the shell half (tray.ts) pulls
   // a `?asset` import, hence LOADERS.

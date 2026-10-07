@@ -7,10 +7,10 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 开发：`npm run dev`（主进程改动不热重建，需重启）
 - dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
-- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 17 个测试：ssh-loopback、commands-store、connections-store、settings-store、local-path-grants、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、reserved-accelerators、ipc-guard、updater-fallback、log-sanitizer、sftp-timeout、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
+- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 18 个测试：ssh-loopback、commands-store、connections-store、settings-store、local-path-grants、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、reserved-accelerators、ipc-guard、updater-fallback、log-sanitizer、sftp-timeout、terminal-title、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
 - 依赖分类规则：**只有 `src/main/`/`src/preload/` 实际 import 的包才能进 `dependencies`**（node-pty/ssh2/zmodem.js/font-list/electron-updater）；纯渲染层依赖一律 devDependencies（Vite 全量打包进 out/renderer，`externalizeDepsPlugin` 不作用渲染层）——这条让 asar 从 98MB 瘦到 8.1MB，加新依赖时别放错边
 - 下载量统计：`node scripts/download-stats.cjs`（Gitea + GitHub release 资产的 download_count 汇总；GitHub 优先直连、失败自动回退 `HTTPS_PROXY`/本地 7897；更新通道无计数接口不计入）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 17 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 18 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 
@@ -70,6 +70,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - `src/shared/reservedAccelerators.ts`：设置页录制器与主进程 `applyGlobalShortcut` **共用同一张保留键表**（Ctrl+L、Ctrl+=/-/0/PgUp/PgDn），两处分表曾漂移出洞，加新全局快捷键时两边自动一致
 - SFTP 操作有 per-op 超时（`sftp.ts` 的 `bounded()`：元数据 30s / 传输块 60s / open 10s），超时按 transport 错误驱逐半死通道并重试一次；`setSftpTimeouts`/`setUpdateTimeouts` 是**测试缝**，生产无调用者，别接设置项
 - `webPreferences` 显式写死 `contextIsolation: true / nodeIntegration: false / webSecurity: true`（`index.ts` 唯一窗口创建点），防默认值被将来改动
+- 终端标签自动标题（「终端 N」）是**存储的显示文本**（进布局模板/会话快照/广播注册），`src/shared/terminalTitle.ts` 负责两个方向：反解用**全部 4 语言**的 pattern（任何语言生成的都能认出编号），渲染用当前语言；语言切换/快照恢复/模板应用时 `retitleAutoTitles` 原地重渲染（SSH 面板标题是用户起的连接名，永不动）。需要指定语言渲染时用 i18n 的 `tFor(lang, key, vars)`
 
 ## 锁屏
 

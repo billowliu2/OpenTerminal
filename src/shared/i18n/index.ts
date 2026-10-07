@@ -90,7 +90,18 @@ export function onLanguageChange(cb: (lang: Language) => void): () => void {
 
 /** Translate `key`; `{name}` placeholders are filled from `vars`. */
 export function t(key: string, vars?: Record<string, string | number>): string {
-  const raw = lookup(DICTS[current], key) ?? lookup(DICTS[DEFAULT_LANGUAGE], key) ?? key
+  return tFor(current, key, vars)
+}
+
+/**
+ * Translate `key` as if `lang` were the active language, with the same
+ * fallback chain as `t`. Needed where a string has to be produced for a
+ * language other than the one being rendered: stored display text (terminal
+ * tab titles) is re-rendered on a language switch, and the language that text
+ * was written in has to be readable back out of it.
+ */
+export function tFor(lang: Language, key: string, vars?: Record<string, string | number>): string {
+  const raw = lookup(DICTS[lang], key) ?? lookup(DICTS[DEFAULT_LANGUAGE], key) ?? key
   if (!vars) return raw
   return raw.replace(/\{(\w+)\}/g, (match, name: string) =>
     vars[name] === undefined ? match : String(vars[name])

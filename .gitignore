@@ -46,6 +46,7 @@ tests/.ipc.cjs
 tests/.ipc-channels.cjs
 tests/.log-sanitizer.cjs
 tests/.reserved-accelerators.cjs
+tests/.terminal-title.cjs
 release/
 
 # stray local test artifacts
