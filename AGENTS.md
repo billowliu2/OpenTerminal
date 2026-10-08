@@ -41,7 +41,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
    - 只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub）
    - 国内通道全程直连，**不需要设代理**；GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub 请求）
 5. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
-6. `git tag v<版本号>` 并推送两个远程（代码/tag 与 release 资产的镜像保持同步）
+6. `git tag v<版本号>` 并推送两个远程（代码/tag 与 release 资产的镜像保持同步）。注意顺序坑：release.cjs 创建 release 时若远端尚无该 tag,Gitea/GitHub 会在**默认分支 HEAD** 自动建一个指向错误 commit 的 tag，第 6 步推送会被拒——要么先建 tag 推上去再跑 release.cjs，要么事后 `git push -f <远端> v<版本号>` 强制修正到 release commit(v1.0.22 即踩过）
 
 ## 更新机制
 
