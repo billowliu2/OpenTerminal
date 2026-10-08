@@ -14,9 +14,12 @@ website/
 ├── index.html          # 单页站点：功能介绍 / 下载 / 更新日志
 ├── .nojekyll           # 让 GitHub Pages 原样托管（跳过 Jekyll 处理）
 └── assets/
-    ├── style.css       # 全部样式（企业风浅色主题，单一强调色）
+    ├── style.css       # 全部样式（深色默认 / 浅色可切换，主题令牌在 :root 与 html[data-theme='light']）
+    ├── fonts/          # 自托管 woff2：Space Grotesk 400/500/600/700、JetBrains Mono 400/500/600
     ├── shot-terminal.jpg   # 主界面截图（三路分屏并行 AI 编程 Agent，含背景图个性化）
     ├── shot-agents.png     # 多路 AI Agent 分屏截图（无背景图版）
+    ├── shot-sftp.png       # SFTP 文件面板：列头、排序、用户/组、字体缩放
+    ├── shot-sftp-menu.png  # 文件列表空白处右键菜单
     ├── shot-themes.jpg     # 主题设置页截图（背景图/不透明度/压暗层）
     ├── shot-lock.png       # 锁屏界面截图
     └── icon.png            # 应用图标（来自仓库 build/icon.png）
@@ -62,7 +65,10 @@ npx serve website
 
 ## 设计约定
 
-- 浅色企业风，避免营销站常见的霓虹/渐变装饰
-- 强调色仅一个：`#1a7f37`（应用品牌绿 #3fb950 的深色化，保证浅底对比度 ≥ 4.5:1）
-- 截图来自真实运行界面，与应用内设置一致
-- 中文为主要语言；字体使用系统栈（Segoe UI / 微软雅黑），不加载外部字体
+- **深色为主**：默认深色（`#0b0e12` 底 + 终端绿强调色），右上角按钮可切浅色；两套主题共用同一份令牌，新增样式一律走 CSS 变量，不要写死颜色
+- 主题选择存 `localStorage['openterminal.theme']`，首帧前由 `index.html` 头部的内联脚本定好，避免闪白/闪黑
+- 全站只用**一个强调色**：深底 `#3fb950`、浅底 `#1a7f37`（对比度 ≥ 4.5:1）
+- 字体自托管（`assets/fonts/`），不依赖 Google Fonts：展示字体 Space Grotesk、等宽 JetBrains Mono；中文回落到系统栈
+- 「核心能力」是横向滚动卡片轨道（箭头翻页 + 拖拽 + 键盘方向键），不再用三栏等高卡片
+- 截图来自真实运行界面，与应用内设置一致；涉及 IP / 主机名等敏感信息的截图必须打码后再放入 `assets/`
+- 中文为主要语言；文案保持具体、平实，避免营销套话

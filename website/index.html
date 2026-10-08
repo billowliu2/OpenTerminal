@@ -6,9 +6,27 @@
   <title>OpenTerminal - 本地终端 / SSH / SFTP 桌面终端，开源 Windows 终端工具</title>
   <meta name="description" content="OpenTerminal 是开源的 Windows 桌面终端：本地终端、SSH 远程会话、SFTP 文件管理、分屏与广播输入、主题定制。MIT 协议，支持自动更新。" />
   <link rel="icon" type="image/png" href="assets/icon.png" />
+  <link rel="preload" href="assets/fonts/space-grotesk-600.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="assets/fonts/jetbrains-mono-500.woff2" as="font" type="font/woff2" crossorigin />
+  <meta property="og:title" content="OpenTerminal - 本地终端 / SSH / SFTP 桌面终端" />
+  <meta property="og:description" content="开源的 Windows 桌面终端：本地终端、SSH 远程会话、SFTP 文件管理、分屏与广播输入。MIT 协议，支持自动更新。" />
+  <meta property="og:image" content="assets/shot-terminal.jpg" />
+  <meta name="theme-color" content="#0b0e12" />
   <link rel="stylesheet" href="assets/style.css" />
+  <script>
+    // 主题必须在首帧前定好，避免闪白/闪黑；默认深色，只有用户显式切过才用保存值
+    (function () {
+      var theme = 'dark';
+      try {
+        if (localStorage.getItem('openterminal.theme') === 'light') theme = 'light';
+      } catch (e) {}
+      document.documentElement.dataset.theme = theme;
+    })();
+  </script>
 </head>
 <body>
+
+  <a class="skip-link" href="#main">跳到主要内容</a>
 
   <header class="site-nav">
     <div class="container nav-inner">
@@ -16,22 +34,33 @@
         <img src="assets/icon.png" alt="OpenTerminal 图标" width="24" height="24" />
         <span>OpenTerminal</span>
       </a>
-      <nav class="nav-links">
-        <a href="#features">功能</a>
-        <a href="#download">下载</a>
-        <a href="#changelog">更新日志</a>
-        <a href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener">GitHub</a>
-      </nav>
+      <div class="nav-right">
+        <nav class="nav-links" aria-label="站内导航">
+          <a href="#features">功能</a>
+          <a href="#download">下载</a>
+          <a href="#changelog">更新日志</a>
+          <a href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener">GitHub</a>
+        </nav>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题">
+          <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+          </svg>
+          <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
-  <main id="top">
+  <main id="main">
 
-    <section class="hero">
+    <section class="hero" id="top">
       <div class="container hero-grid">
         <div class="hero-copy">
           <p class="hero-kicker">开源桌面终端 · MIT 协议</p>
-          <h1>本地终端、SSH 与 SFTP<br />装进同一个桌面应用</h1>
+          <h1>本地终端、SSH 与 SFTP<br />装进<span class="accent">同一个</span>桌面应用</h1>
           <p class="hero-sub">
             OpenTerminal 面向开发和运维场景：WebGL 加速的终端渲染、可分屏的 SSH 会话、
             内置 SFTP 文件管理与广播输入。安装即用，支持自动更新。
@@ -44,7 +73,7 @@
               查看源码
             </a>
           </div>
-          <p class="hero-note">当前版本 v1.0.22 · NSIS exe 安装包，支持应用内自动更新。</p>
+          <p class="hero-note">当前版本 <span class="mono">v1.0.22</span> · NSIS exe 安装包，支持应用内自动更新。</p>
         </div>
         <figure class="hero-shot">
           <img src="assets/shot-terminal.jpg" alt="OpenTerminal 主界面：三路分屏并行运行 Kimi Code、Claude Code 与 Codex" width="1739" height="870" />
@@ -52,46 +81,131 @@
         </figure>
       </div>
       <div class="container spec-strip">
-        <span>当前版本 <strong class="mono">1.0.22</strong></span>
+        <span>当前版本 <strong class="mono">v1.0.22</strong></span>
         <span>Windows 10 / 11 · x64</span>
         <span>MIT 开源协议</span>
         <span>exe 支持应用内自动更新</span>
       </div>
     </section>
 
-    <section class="features" id="features">
+    <section class="features grid-bg" id="features">
       <div class="container">
-        <h2>核心能力</h2>
-        <p class="section-sub">按使用场景划分的三组功能，全部能力见仓库 README。</p>
-
-        <div class="feature-row">
-          <div class="feature-copy">
-            <h3>终端核心</h3>
-            <ul>
-              <li>node-pty 本地会话，自动探测 PowerShell / zsh / bash</li>
-              <li>xterm.js WebGL 渲染，声明 256 色与真彩能力，异常时自动降级</li>
-              <li>内嵌搜索（Ctrl+F）、命令历史、粘贴风险确认</li>
-              <li>关键词高亮：22 条内置规则（错误状态、路径、IP、URL 等），支持自定义正则与三档强度</li>
-              <li>字体、字重、字距、行高、光标样式实时生效</li>
-            </ul>
+        <div class="section-head">
+          <div>
+            <p class="section-eyebrow">Capabilities</p>
+            <h2>核心能力</h2>
+            <p class="section-sub">按使用场景划分的能力组，左右拖动或用箭头浏览；完整清单见仓库 README。</p>
           </div>
-          <div class="feature-copy">
-            <h3>SSH 与 SFTP</h3>
-            <ul>
-              <li>ssh2 实现：密码、私钥（文件或粘贴内容）、SSH Agent 三种认证</li>
-              <li>多路分屏与广播输入，一次操作下发到多台主机</li>
-              <li>SFTP 文件面板：上传下载、同名覆盖确认、chmod / chown 权限编辑</li>
-              <li>ZMODEM 传输支持；主机指纹校验与首次连接确认</li>
-              <li>目录记忆：OSC 7 上报工作目录，新会话按上次位置恢复</li>
-            </ul>
+          <div class="cap-controls">
+            <button class="track-btn" type="button" data-dir="-1" aria-label="向左浏览能力卡片">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+            </button>
+            <button class="track-btn" type="button" data-dir="1" aria-label="向右浏览能力卡片">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+            </button>
           </div>
         </div>
 
-        <div class="feature-row media-row">
-          <figure class="feature-shot">
+        <div class="cap-track" id="cap-track" tabindex="0" aria-label="核心能力，可横向滚动">
+          <article class="cap-card">
+            <p class="cap-num">01</p>
+            <h3>终端核心</h3>
+            <ul>
+              <li>node-pty 本地会话，自动探测 PowerShell / zsh / bash</li>
+              <li>xterm.js WebGL 渲染，声明 256 色与真彩，异常自动降级</li>
+              <li>内嵌搜索（Ctrl+F）、命令历史、粘贴风险确认</li>
+              <li>关键词高亮 22 条内置规则，支持自定义正则与三档强度</li>
+              <li>字体、字重、字距、行高、光标样式实时生效</li>
+            </ul>
+          </article>
+
+          <article class="cap-card">
+            <p class="cap-num">02</p>
+            <h3>SSH 会话</h3>
+            <ul>
+              <li>ssh2 实现：密码、私钥（文件或粘贴内容）、SSH Agent</li>
+              <li>多路分屏与广播输入，一次操作下发到多台主机</li>
+              <li>主机指纹校验、首次连接确认、变更告警</li>
+              <li>ZMODEM 传输支持（sz / rz）</li>
+              <li>OSC 7 上报工作目录，新会话按上次位置恢复</li>
+            </ul>
+          </article>
+
+          <article class="cap-card">
+            <p class="cap-num">03</p>
+            <h3>SFTP 文件面板</h3>
+            <ul>
+              <li>列表头列分明：名称、大小、修改时间、权限、用户/组</li>
+              <li>点击列头排序；文件名解析为真实用户与组名</li>
+              <li>字体缩放 80%–180%，Ctrl+滚轮或工具栏按钮</li>
+              <li>上传下载、同名覆盖确认、chmod / chown 编辑</li>
+              <li>大目录虚拟滚动，上万条目不卡窗口</li>
+            </ul>
+          </article>
+
+          <article class="cap-card">
+            <p class="cap-num">04</p>
+            <h3>工作区与布局</h3>
+            <ul>
+              <li>dockview 分屏：任意拆分、拖拽、合并与浮动</li>
+              <li>布局模板保存与一键套用</li>
+              <li>启动恢复上次会话布局</li>
+              <li>界面缩放 50% 至 150%</li>
+            </ul>
+          </article>
+
+          <article class="cap-card">
+            <p class="cap-num">05</p>
+            <h3>主题与外观</h3>
+            <ul>
+              <li>主题编辑器：22 个颜色位逐项调整，实时预览</li>
+              <li>内置 11 套主题，跟随系统明暗自动切换</li>
+              <li>自定义背景图片、不透明度与压暗层</li>
+              <li>标签强调色、高亮配色跟随主题</li>
+            </ul>
+          </article>
+
+          <article class="cap-card">
+            <p class="cap-num">06</p>
+            <h3>效率工具</h3>
+            <ul>
+              <li>命令库：保存常用命令片段，跨会话发送到指定终端</li>
+              <li>高亮规则集按主机绑定，不同服务器不同配色</li>
+              <li>规则导入导出、实时预览与命中统计</li>
+              <li>会话快照与恢复、终端标签自动命名</li>
+            </ul>
+          </article>
+
+          <article class="cap-card">
+            <p class="cap-num">07</p>
+            <h3>系统监控</h3>
+            <ul>
+              <li>CPU、负载、内存、磁盘、网络实时面板</li>
+              <li>每核占用与磁盘分区明细</li>
+              <li>运行时长与网络速率曲线</li>
+              <li>随会话打开，不额外占用通道</li>
+            </ul>
+          </article>
+
+          <article class="cap-card">
+            <p class="cap-num">08</p>
+            <h3>锁屏与安全</h3>
+            <ul>
+              <li>Ctrl+L 一键锁屏，支持闲置自动锁定与启动即锁</li>
+              <li>密码经 scrypt 加盐哈希存储，不落盘明文</li>
+              <li>输错触发递增冷却；锁定期间禁用菜单与刷新快捷键</li>
+              <li>锁屏只是遮罩：背后会话与传输不中断</li>
+            </ul>
+          </article>
+        </div>
+        <p class="cap-hint">← 拖动浏览 · 共 8 组能力</p>
+
+        <div class="feature-row">
+          <figure class="feature-shot reveal">
             <img src="assets/shot-agents.png" alt="OpenTerminal 多路分屏运行 Kimi Code、Claude Code、Codex 等 AI 编程 Agent" width="1296" height="870" />
           </figure>
-          <div class="feature-copy">
+          <div class="feature-copy reveal">
+            <p class="eyebrow">Workbench</p>
             <h3>AI Agent 工作台</h3>
             <ul>
               <li>多路分屏并行运行 Kimi Code、Claude Code、Codex 等 AI 编程工具</li>
@@ -102,11 +216,31 @@
           </div>
         </div>
 
-        <div class="feature-row media-row">
-          <figure class="feature-shot">
+        <div class="feature-row">
+          <figure class="feature-shot reveal">
+            <img src="assets/shot-sftp.png" alt="OpenTerminal SFTP 文件面板：列表头、可排序列、完整修改时间与用户/组" width="1282" height="801" />
+            <img class="narrow" src="assets/shot-sftp-menu.png" alt="OpenTerminal 在文件列表空白处右键弹出同款文件菜单" width="1282" height="801" />
+            <figcaption>列表空白处右键同样是完整文件菜单，行内右键则作用于所选条目</figcaption>
+          </figure>
+          <div class="feature-copy reveal">
+            <p class="eyebrow">SFTP</p>
+            <h3>远程文件面板</h3>
+            <ul>
+              <li>列表头列分明：名称、大小、修改时间、权限、用户/组，点击列头排序</li>
+              <li>文件名解析为真实用户与组名（root/root、eveuser/eveuser），不再只有数字</li>
+              <li>字体缩放 80%–180%：Ctrl+滚轮或工具栏按钮，行高与字号联动并记忆</li>
+              <li>上传 / 下载、同名覆盖确认、chmod 权限与 chown 属主编辑</li>
+              <li>大目录虚拟滚动，上万条目不卡窗口</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="feature-row">
+          <figure class="feature-shot reveal">
             <img src="assets/shot-themes.jpg" alt="OpenTerminal 主题设置：背景图片、不透明度、压暗层与主题画廊" width="1739" height="870" />
           </figure>
-          <div class="feature-copy">
+          <div class="feature-copy reveal">
+            <p class="eyebrow">Customize</p>
             <h3>定制与效率</h3>
             <ul>
               <li>主题编辑器：22 个颜色位逐项调整，实时预览；支持自定义背景图片、不透明度与压暗层</li>
@@ -118,11 +252,12 @@
           </div>
         </div>
 
-        <div class="feature-row media-row">
-          <figure class="feature-shot">
+        <div class="feature-row">
+          <figure class="feature-shot reveal">
             <img src="assets/shot-lock.png" alt="OpenTerminal 锁屏界面：不透明遮罩与密码解锁" width="1739" height="870" />
           </figure>
-          <div class="feature-copy">
+          <div class="feature-copy reveal">
+            <p class="eyebrow">Security</p>
             <h3>锁屏与安全</h3>
             <ul>
               <li>Ctrl+L 一键锁屏，支持闲置自动锁定与启动即锁</li>
@@ -137,6 +272,7 @@
 
     <section class="download" id="download">
       <div class="container">
+        <p class="section-eyebrow">Download</p>
         <h2>下载</h2>
         <p class="section-sub">
           从 GitHub Releases 下载；全部历史版本在同一页面。
@@ -179,10 +315,11 @@
 
     <section class="changelog" id="changelog">
       <div class="container">
+        <p class="section-eyebrow">Changelog</p>
         <h2>近期更新</h2>
         <div class="changelog-list">
           <article>
-            <h3><span class="mono">1.0.22</span> 2026-10-08</h3>
+            <h3><span class="mono">1.0.22</span><span class="rel-date">2026-10-08</span></h3>
             <ul>
               <li>修复中文输入法候选窗不跟随光标（v1.0.21 回归）</li>
               <li>不再提供 MSI 安装包，统一使用 NSIS exe</li>
@@ -190,7 +327,7 @@
             </ul>
           </article>
           <article>
-            <h3><span class="mono">1.0.21</span> 2026-10-07</h3>
+            <h3><span class="mono">1.0.21</span><span class="rel-date">2026-10-07</span></h3>
             <ul>
               <li>背景图体验：任意主题下调透明度均为压暗、文字自动提亮到 WCAG AA、新增背景压暗滑杆</li>
               <li>性能：设置热更不再触发全窗格重排，SFTP 大目录虚拟滚动，面板独立错误边界</li>
@@ -198,7 +335,7 @@
             </ul>
           </article>
           <article>
-            <h3><span class="mono">1.0.20</span> 2026-10-01</h3>
+            <h3><span class="mono">1.0.20</span><span class="rel-date">2026-10-01</span></h3>
             <ul>
               <li>修复中文输入法候选窗不跟随光标</li>
               <li>锁屏加固：锁定期间移除应用菜单，Ctrl+L 按键判定重构并补测试</li>
@@ -219,6 +356,117 @@
       <span class="mono">更新通道：git.codingplan.site</span>
     </div>
   </footer>
+
+  <script>
+    (function () {
+      var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      // 滚动进场
+      var revealables = document.querySelectorAll('.reveal');
+      if (reduce || !('IntersectionObserver' in window)) {
+        revealables.forEach(function (el) { el.classList.add('is-in'); });
+      } else {
+        var io = new IntersectionObserver(function (entries) {
+          entries.forEach(function (e) {
+            if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+          });
+        }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
+        revealables.forEach(function (el) { io.observe(el); });
+      }
+
+      // 导航当前位置
+      var links = Array.prototype.slice.call(document.querySelectorAll('.nav-links a[href^="#"]'));
+      var sections = links
+        .map(function (a) { return document.querySelector(a.getAttribute('href')); })
+        .filter(Boolean);
+      function syncNav() {
+        var pos = scrollY + 130;
+        var current = null;
+        sections.forEach(function (s) { if (s.offsetTop <= pos) current = s; });
+        links.forEach(function (a) {
+          a.classList.toggle('is-current', !!current && a.getAttribute('href') === '#' + current.id);
+        });
+      }
+      addEventListener('scroll', syncNav, { passive: true });
+      syncNav();
+
+      // 能力卡片横向轨道：箭头翻页 + 按住拖动
+      var track = document.getElementById('cap-track');
+      if (!track) return;
+      var buttons = document.querySelectorAll('.track-btn');
+
+      function step() {
+        var card = track.querySelector('.cap-card');
+        return card ? card.getBoundingClientRect().width + 20 : track.clientWidth * 0.8;
+      }
+      function syncButtons() {
+        var max = track.scrollWidth - track.clientWidth - 1;
+        buttons.forEach(function (b) {
+          var dir = Number(b.getAttribute('data-dir'));
+          b.disabled = dir < 0 ? track.scrollLeft <= 0 : track.scrollLeft >= max;
+        });
+      }
+      buttons.forEach(function (b) {
+        b.addEventListener('click', function () {
+          track.scrollBy({ left: Number(b.getAttribute('data-dir')) * step(), behavior: reduce ? 'auto' : 'smooth' });
+        });
+      });
+      track.addEventListener('scroll', syncButtons, { passive: true });
+      addEventListener('resize', syncButtons);
+      syncButtons();
+
+      var dragging = false;
+      var startX = 0;
+      var startScroll = 0;
+      track.addEventListener('pointerdown', function (e) {
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        dragging = true;
+        startX = e.clientX;
+        startScroll = track.scrollLeft;
+        track.classList.add('is-dragging');
+        track.setPointerCapture(e.pointerId);
+      });
+      track.addEventListener('pointermove', function (e) {
+        if (!dragging) return;
+        var delta = e.clientX - startX;
+        if (Math.abs(delta) > 3) e.preventDefault();
+        track.scrollLeft = startScroll - delta;
+      });
+      function endDrag(e) {
+        if (!dragging) return;
+        dragging = false;
+        track.classList.remove('is-dragging');
+        if (e && e.pointerId !== undefined && track.hasPointerCapture(e.pointerId)) {
+          track.releasePointerCapture(e.pointerId);
+        }
+        syncButtons();
+      }
+      track.addEventListener('pointerup', endDrag);
+      track.addEventListener('pointercancel', endDrag);
+      track.addEventListener('dragstart', function (e) { e.preventDefault(); });
+      track.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowRight') { track.scrollBy({ left: step(), behavior: 'smooth' }); e.preventDefault(); }
+        if (e.key === 'ArrowLeft') { track.scrollBy({ left: -step(), behavior: 'smooth' }); e.preventDefault(); }
+      });
+
+      // 明暗主题切换
+      var toggle = document.getElementById('theme-toggle');
+      var meta = document.querySelector('meta[name="theme-color"]');
+      function applyTheme(theme) {
+        document.documentElement.dataset.theme = theme;
+        if (meta) meta.setAttribute('content', theme === 'light' ? '#fafbf9' : '#0b0e12');
+        if (toggle) toggle.setAttribute('aria-label', theme === 'light' ? '切换到深色主题' : '切换到浅色主题');
+      }
+      if (toggle) {
+        toggle.addEventListener('click', function () {
+          var next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+          applyTheme(next);
+          try { localStorage.setItem('openterminal.theme', next); } catch (e) {}
+        });
+      }
+      applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+    })();
+  </script>
 
 </body>
 </html>
