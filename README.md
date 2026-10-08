@@ -4,6 +4,25 @@
 
 > 产品官网（GitHub Pages）：<https://billowliu2.github.io/OpenTerminal/>，源码在 [`website/`](website/)。
 
+## 截图
+
+| 多路分屏并行 AI 编程 Agent | 无背景图的干净分屏 |
+| --- | --- |
+| ![主界面：三路分屏并行运行 AI 编程 Agent，自定义背景图](website/assets/shot-terminal.jpg) | ![多路分屏运行 Kimi Code / Claude Code / Codex](website/assets/shot-agents.png) |
+
+| 主题与个性化（背景图 / 不透明度 / 压暗层） | 锁屏（Ctrl+L，遮罩下会话不断线） |
+| --- | --- |
+| ![主题设置：背景图片、不透明度、压暗层与主题画廊](website/assets/shot-themes.jpg) | ![锁屏界面：不透明遮罩与密码解锁](website/assets/shot-lock.png) |
+
+## 优势
+
+- **轻量**：渲染层依赖全量打包进 bundle、不重复进安装包，应用本体 asar 仅 8.1MB，NSIS 安装包约 109MB；单一 exe 安装包，应用内自动更新
+- **隐私与安全**：SSH 凭据经 DPAPI 加密落盘、渲染层接触不到明文；锁屏密码只存 scrypt 派生值；SFTP/ZMODEM 的本地路径必须经系统对话框授权，阻断构造路径读写
+- **性能**：xterm.js WebGL 渲染；关键词高亮引擎实测 0.02–0.05ms/KB（200KB 混合输出 4–9ms）；SFTP 大目录虚拟滚动；分屏尺寸去抖同步，TUI 不反复重绘
+- **AI 编程友好**：为 Kimi Code / Claude Code / Codex 等高频刷新 TUI 优化；中文输入法候选窗紧贴光标
+- **国内可用**：更新检查 GitHub 优先（跟随系统代理），失败自动回退国内直连通道，两边都拿不到时 30s 整体超时兜底
+- **开源可审计**：MIT 协议；主/预载/渲染三端契约集中在 `src/shared/`，模块间零横向依赖；19 个离线测试覆盖存储、锁屏、高亮、传输与更新回退
+
 ## 快速开始
 
 ```bash
@@ -11,7 +30,7 @@ npm install        # 已安装可跳过
 npm run dev        # 开发模式（热更新）
 npm run build      # 生产构建到 out/
 npm run typecheck  # 全量类型检查
-npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 12 个离线测试（详见「测试」）
+npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 19 个离线测试（详见「测试」）
 ```
 
 > Electron 二进制下载失败时：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`
@@ -60,12 +79,12 @@ npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 12 �
 - 锁定期间吞掉 F5 / Ctrl+R / Ctrl+±0 / Ctrl+Shift+I/J/C，并整块摘除应用菜单，防止菜单键绕过遮罩
 
 **外观与窗口**
-- 12 款内置主题（Dracula / One Half / Solarized / Gruvbox / Nord / Monokai / GitHub 等）
+- 11 款内置主题（Dracula / One Half / Solarized / Gruvbox / Nord / Monokai / GitHub 等）
 - 自定义主题编辑器：16 色 ANSI 调色板 + 前景/背景/光标/选区色，实时预览
 - 窗口标题栏与背景跟随终端主题
 - 系统托盘：关闭按钮可设「每次询问 / 最小化到托盘 / 直接退出」，托盘菜单可切换
 - 单实例运行：重复启动唤出已有窗口
-- 自动更新：GitHub 优先（走系统代理），失败回退国内 Gitea 更新通道（强制直连）；单次检查 30s 整体超时，MSI 仅分发、自动更新走 NSIS 安装包
+- 自动更新：GitHub 优先（走系统代理），失败回退国内 Gitea 更新通道（强制直连）；单次检查 30s 整体超时；统一使用 NSIS exe 安装包（自 v1.0.22 起不再提供 MSI）
 - 设置持久化（userData/settings.json，原子写入）+ 多窗口实时同步
 
 **界面与语言**
@@ -74,15 +93,22 @@ npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 12 �
 
 **测试**
 
-`npm test` 会先跑 `pretest`（= `npm run typecheck`），再重建 esbuild bundle，最后依次跑下列 12 个测试（全部离线，无需服务器与凭据）：
+`npm test` 会先跑 `pretest`（= `npm run typecheck`），再重建 esbuild bundle，最后依次跑下列 19 个测试（全部离线，无需服务器与凭据）：
 
 - `node tests/ssh-loopback.mjs` — ssh2 客户端/服务端回环（认证、shell、数据、resize、指纹）
 - `node tests/commands-store.mjs` — 命令库 / 历史 / 会话日志存储
 - `node tests/connections-store.mjs` — SSH 书签 CRUD、公开/密文字段切分、损坏文件备份
 - `node tests/settings-store.mjs` — 设置清洗器（closeAction/高亮规则修复/旧预设升级/告警日志）
+- `node tests/local-path-grants.mjs` — 本地路径准入（对话框授权、realpath+stat 双重校验、大小写折叠）
 - `node tests/lock-store.mjs` — 锁屏密码校验器（scrypt 往返、文件损坏处理）
 - `node tests/lock-controller.mjs` — 锁屏控制器（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）
 - `node tests/lock-shortcuts.mjs` — 锁屏快捷键分类器（表驱动：Ctrl+L 恐慌锁 / 锁定时禁用的组合键）
+- `node tests/reserved-accelerators.mjs` — 保留快捷键表（设置录制器与全局注册共用同一张表）
+- `node tests/.terminal-title.cjs` — 终端标签自动标题（四语言反解与重渲染）
+- `node tests/ipc-guard.mjs` — IPC 发送方守卫（仅信任本应用渲染帧）
+- `node tests/updater-fallback.mjs` — 更新通道回退（GitHub 优先 / Gitea 兜底、超时、防降级）
+- `node tests/log-sanitizer.mjs` — 会话日志脱敏（原始 PTY 字节流转可读文本）
+- `node tests/sftp-timeout.mjs` — SFTP 操作超时（半死通道驱逐与重试）
 - `node tests/.hl-split-smoke.cjs` — 关键词高亮流分块回归（bundle 由 `node tests/build-bundles.cjs` 生成）
 - `node tests/.hl-rules.cjs` — 内置高亮预设（词边界、大小写、负向词、危险命令）
 - `node tests/zmodem-e2e.mjs` — ZMODEM 双向传输（与第二个 zmodem.js Sentry 对接，内容一致性）
