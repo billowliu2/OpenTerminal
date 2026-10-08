@@ -13,6 +13,9 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 18 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
+- 依赖一致性闸门：`predist` 开头跑 `node scripts/verify-deps.cjs`（逐条比对 `node_modules` 与 `package-lock.json` 的版本，跨平台 optional 依赖缺失跳过；不一致就 exit 1）——`npm install --package-lock-only` **只重算 lockfile、不碰 node_modules**（本版 npm 还会把 `node_modules/.package-lock.json` 一并重写成理想树，制造「已经装好了」的假象），所以**改动依赖版本后必须真实 `npm install` 或 `npm ci` 再构建**，别指望 lockfile 对齐就等于树里换了包；v1.0.21 的中文输入法回归正是这个坑（`@xterm/xterm` 锁 6.1.0-beta.304，树里还是 6.0.0，打进去的是旧代码）
+- **换机/重装环境后第一次打包前必须先跑 `npm ci`**（verify-deps 会兜底拦截，但别浪费一次构建）；在任何机器上都先 `node scripts/verify-deps.cjs` 确认再 `npm run dist`
+- electron-builder `rename win-unpacked.tmp` 撞 EPERM = 安全软件实时扫描新解压文件短暂持锁（实测约 4s，进程退出后数秒即可手动重命名）。应对：`NODE_OPTIONS="--require $(pwd -W)/scripts/rename-retry-shim.cjs" npm run dist`（注入重试垫片，stderr 会打印每次重试）；根治是把仓库目录加进安全软件信任区
 
 ## 仓库与远程
 

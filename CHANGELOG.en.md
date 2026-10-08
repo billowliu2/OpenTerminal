@@ -1,5 +1,13 @@
 # OpenTerminal Changelog
 
+## v1.0.22 - 2026-10-08
+
+### IME
+- **Fixed: Chinese IME candidate window not following the caret** (regression in v1.0.21): the v1.0.21 build environment had a terminal component dependency that did not match the locked version, so the installer shipped an older build without the upstream IME fix; this release restores the terminal component version used by v1.0.20, and the candidate window follows the caret again.
+
+### Internal
+- The packaging pipeline now verifies dependency consistency before building: installed dependencies are compared against the lockfile and the build aborts on any mismatch, preventing this class of issue from recurring.
+
 ## v1.0.21 - 2026-10-07
 
 ### Background image experience
