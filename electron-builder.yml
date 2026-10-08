@@ -16,22 +16,11 @@ asarUnpack:
 # @lydell/node-pty ships prebuilt binaries; do not trigger a rebuild.
 npmRebuild: false
 
-# Electron-updater only supports NSIS auto-updates (MSI has no update channel).
-# The NSIS .exe + latest.yml get uploaded together; MSI is manual/enterprise only.
+# NSIS exe is the only installer: electron-updater only supports NSIS
+# auto-updates, so the MSI (no update channel) was dropped in v1.0.22.
 win:
   target:
-    - target: msi
     - target: nsis
-
-msi:
-  oneClick: false
-  # Fixed upgrade code keeps the upgrade chain consistent across releases.
-  upgradeCode: "{5ab9f79e-e4eb-4052-9df6-3af3a301ab0a}"
-  artifactName: ${productName}-${version}-setup.${ext}
-  # Shortcuts need an <Icon>; build/icon.png (auto-converted to .ico) provides it.
-  # Without an icon the WiX shortcut Icon reference fails to link (LGHT0094).
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
 
 nsis:
   oneClick: false

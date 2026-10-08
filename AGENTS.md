@@ -10,7 +10,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 18 个测试：ssh-loopback、commands-store、connections-store、settings-store、local-path-grants、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、reserved-accelerators、ipc-guard、updater-fallback、log-sanitizer、sftp-timeout、terminal-title、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
 - 依赖分类规则：**只有 `src/main/`/`src/preload/` 实际 import 的包才能进 `dependencies`**（node-pty/ssh2/zmodem.js/font-list/electron-updater）；纯渲染层依赖一律 devDependencies（Vite 全量打包进 out/renderer，`externalizeDepsPlugin` 不作用渲染层）——这条让 asar 从 98MB 瘦到 8.1MB，加新依赖时别放错边
 - 下载量统计：`node scripts/download-stats.cjs`（Gitea + GitHub release 资产的 download_count 汇总；GitHub 优先直连、失败自动回退 `HTTPS_PROXY`/本地 7897；更新通道无计数接口不计入）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 18 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（msi + exe + latest.yml + blockmap）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 18 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 - 依赖一致性闸门：`predist` 开头跑 `node scripts/verify-deps.cjs`（逐条比对 `node_modules` 与 `package-lock.json` 的版本，跨平台 optional 依赖缺失跳过；不一致就 exit 1）——`npm install --package-lock-only` **只重算 lockfile、不碰 node_modules**（本版 npm 还会把 `node_modules/.package-lock.json` 一并重写成理想树，制造「已经装好了」的假象），所以**改动依赖版本后必须真实 `npm install` 或 `npm ci` 再构建**，别指望 lockfile 对齐就等于树里换了包；v1.0.21 的中文输入法回归正是这个坑（`@xterm/xterm` 锁 6.1.0-beta.304，树里还是 6.0.0，打进去的是旧代码）
@@ -34,7 +34,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 2. `node scripts/sync-changelog.cjs` 把发布说明并入 `CHANGELOG*.md` —— **必须在 `npm run dist` 之前**：更新日志以 `?raw` 打进安装包（「关于」页离线读），`release.cjs` 也校验 `CHANGELOG.md` 已含该版本号
 3. `npm run dist` 构建
 4. `node scripts/release.cjs <版本号>`，例如 `node scripts/release.cjs 1.0.14`（**不带 skip 参数**，Gitea 与 GitHub 一起发）
-   - Gitea：release（msi + exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`：exe.blockmap → exe → release-notes.md → **latest.yml 最后**）
+   - Gitea：release（exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`：exe.blockmap → exe → release-notes.md → **latest.yml 最后**）
    - GitHub：release 资产再次随版本同步发布（exe + exe.blockmap + latest.yml），electron-updater 标准 GitHub provider 直接吃 release 资产
    - 通道不再先删旧版：新版本文件全部传完、latest.yml 生效后才清掉上一版 exe/blockmap，中途失败不会把通道打空；同一版本可重复运行（release 复用、已传资产跳过）
    - 上传前先比通道版本：`assertNoDowngrade()` 读通道 latest.yml，若线上版本**高于**待发布版本就直接拒绝——三条本地护栏只比本地产物，旧分支发旧版本号会一路通过，覆盖 latest.yml 之后 `pruneChannel` 会把线上新版本的 exe/blockmap 删掉
@@ -47,7 +47,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 
 - 检查更新：**GitHub 优先**（走系统代理；前置 20 秒连通性探测 `probeGithub`——探测失败/超时直接兜底 Gitea，不给 electron-updater 挂起的机会），失败回退国内 Gitea 通用包通道（强制直连，不走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
 - 更新日志：Gitea 仓库是私有的（匿名 API 404），改为从更新通道的 `release-notes.md` 读取（直连 session `openterminal-update-direct`），再回退 Gitea/GitHub releases API
-- electron-updater 不支持 MSI 自动更新，自动更新只走 NSIS exe
+- 自动更新只走 NSIS exe；自 v1.0.22 起不再构建 MSI 安装包（electron-updater 本就不支持 MSI 自动更新）
 - 每次 checkForUpdates 都被 **30s 整体超时**包住（`withTimeout`）：electron-updater 自带的 60s 只是 socket 空闲超时，慢滴流响应能一直占住它。超时按普通失败走 GitHub→Gitea 回退，但**被放弃的检查取消不掉**，而 electron-updater 对并发检查去重（返回同一个 in-flight promise），所以兜底那次共用被放弃的 promise——它同样被超时兜住，最终落到错误态，不会永远停在「检查中」
 - 更新日志 / releases API 的 fetch 都带 `AbortSignal.timeout(15s)`（`directFetch` 与 `fetchChangelog` 里的 `net.fetch`）：卡住的通道必须让位给下一个来源，不能把「关于」页吊住
 

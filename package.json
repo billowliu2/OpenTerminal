@@ -15,7 +15,7 @@
     "pretest": "npm run typecheck",
     "test": "node tests/build-bundles.cjs && node tests/ssh-loopback.mjs && node tests/commands-store.mjs && node tests/connections-store.mjs && node tests/settings-store.mjs && node tests/local-path-grants.mjs && node tests/lock-store.mjs && node tests/lock-controller.mjs && node tests/lock-shortcuts.mjs && node tests/reserved-accelerators.mjs && node tests/.terminal-title.cjs && node tests/ipc-guard.mjs && node tests/updater-fallback.mjs && node tests/log-sanitizer.mjs && node tests/sftp-timeout.mjs && node tests/.hl-split-smoke.cjs && node tests/.hl-rules.cjs && node tests/zmodem-e2e.mjs && node tests/ssh-session-e2e.mjs && node tests/sysinfo-e2e.mjs",
     "predist": "node scripts/verify-deps.cjs && npm test && npm install --package-lock-only",
-    "dist": "electron-vite build && electron-builder --win msi nsis",
+    "dist": "electron-vite build && electron-builder --win nsis",
     "dist:dir": "electron-vite build && electron-builder --win --dir"
   },
   "dependencies": {

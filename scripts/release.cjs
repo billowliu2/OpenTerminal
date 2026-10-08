@@ -42,14 +42,12 @@ const env = Object.fromEntries(
 )
 const notes = fs.readFileSync(path.join(ROOT, 'RELEASE_NOTES.md'), 'utf8')
 const R = path.join(ROOT, 'release')
-const msi = path.join(R, `OpenTerminal-${V}-setup.msi`)
 const exe = path.join(R, `OpenTerminal-${V}-setup.exe`)
-const files = [msi, exe]
-// --channel-only republishes the update channel, which carries the NSIS exe and
-// its blockmap (electron-updater cannot consume an MSI) — the msi is a release
-// asset only, so demanding it here would block the repair path this mode exists
-// for. The channel's own file list is validated in giteaChannel().
-for (const f of CHANNEL_ONLY ? [exe] : files) {
+const files = [exe]
+// Only the NSIS exe is built (the MSI was dropped in v1.0.22 — electron-updater
+// never supported it). The channel's own file list is validated in
+// giteaChannel().
+for (const f of files) {
   if (!fs.existsSync(f)) { console.error('missing build artifact:', f); process.exit(1) }
 }
 // Guard rails: the artifacts must belong to the version being published —
