@@ -37,22 +37,22 @@
             内置 SFTP 文件管理与广播输入。安装即用，支持自动更新。
           </p>
           <div class="hero-actions">
-            <a class="btn btn-primary" id="dl-exe" href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.15/OpenTerminal-1.0.15-setup.exe">
+            <a class="btn btn-primary" id="dl-exe" href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.22/OpenTerminal-1.0.22-setup.exe">
               下载 Windows 安装包
             </a>
             <a class="btn btn-ghost" href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener">
               查看源码
             </a>
           </div>
-          <p class="hero-note">当前版本 v1.0.15 · 提供 exe 与 msi 安装包。</p>
+          <p class="hero-note">当前版本 v1.0.22 · NSIS exe 安装包，支持应用内自动更新。</p>
         </div>
         <figure class="hero-shot">
-          <img src="assets/shot-terminal.png" alt="OpenTerminal 主界面：四个分屏终端会话" width="1282" height="801" />
-          <figcaption>四路分屏会话，每路独立连接本地或远程主机</figcaption>
+          <img src="assets/shot-terminal.jpg" alt="OpenTerminal 主界面：三路分屏并行运行 Kimi Code、Claude Code 与 Codex" width="1739" height="870" />
+          <figcaption>三路分屏并行运行 AI 编程 Agent，背景图与压暗层可自定义</figcaption>
         </figure>
       </div>
       <div class="container spec-strip">
-        <span>当前版本 <strong class="mono">1.0.15</strong></span>
+        <span>当前版本 <strong class="mono">1.0.22</strong></span>
         <span>Windows 10 / 11 · x64</span>
         <span>MIT 开源协议</span>
         <span>exe 支持应用内自动更新</span>
@@ -71,7 +71,7 @@
               <li>node-pty 本地会话，自动探测 PowerShell / zsh / bash</li>
               <li>xterm.js WebGL 渲染，声明 256 色与真彩能力，异常时自动降级</li>
               <li>内嵌搜索（Ctrl+F）、命令历史、粘贴风险确认</li>
-              <li>关键词高亮：内置 11 条规则（错误状态、路径、IP、URL 等），支持自定义正则</li>
+              <li>关键词高亮：22 条内置规则（错误状态、路径、IP、URL 等），支持自定义正则与三档强度</li>
               <li>字体、字重、字距、行高、光标样式实时生效</li>
             </ul>
           </div>
@@ -89,16 +89,46 @@
 
         <div class="feature-row media-row">
           <figure class="feature-shot">
-            <img src="assets/shot-themes.png" alt="OpenTerminal 主题设置：主题画廊与背景图片配置" width="1282" height="801" />
+            <img src="assets/shot-agents.png" alt="OpenTerminal 多路分屏运行 Kimi Code、Claude Code、Codex 等 AI 编程 Agent" width="1296" height="870" />
+          </figure>
+          <div class="feature-copy">
+            <h3>AI Agent 工作台</h3>
+            <ul>
+              <li>多路分屏并行运行 Kimi Code、Claude Code、Codex 等 AI 编程工具</li>
+              <li>为高频刷新的 TUI 界面优化：终端尺寸去抖同步，避免反复重绘</li>
+              <li>中文输入法候选窗紧贴光标，TUI 内输入中文不再漂移</li>
+              <li>关键词高亮自动标出错误、警告、HTTP 状态码与百分比</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="feature-row media-row">
+          <figure class="feature-shot">
+            <img src="assets/shot-themes.jpg" alt="OpenTerminal 主题设置：背景图片、不透明度、压暗层与主题画廊" width="1739" height="870" />
           </figure>
           <div class="feature-copy">
             <h3>定制与效率</h3>
             <ul>
-              <li>主题编辑器：22 个颜色位逐项调整，实时预览；支持自定义背景图片与不透明度</li>
-              <li>内置 13 套主题，跟随系统明暗自动切换</li>
+              <li>主题编辑器：22 个颜色位逐项调整，实时预览；支持自定义背景图片、不透明度与压暗层</li>
+              <li>内置 11 套主题，跟随系统明暗自动切换</li>
               <li>命令库：保存常用命令片段，跨会话发送到指定终端</li>
               <li>启动恢复上次会话布局；界面缩放 50% 至 150%</li>
               <li>四语言界面：简体中文、繁体中文、English、日本語</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="feature-row media-row">
+          <figure class="feature-shot">
+            <img src="assets/shot-lock.png" alt="OpenTerminal 锁屏界面：不透明遮罩与密码解锁" width="1739" height="870" />
+          </figure>
+          <div class="feature-copy">
+            <h3>锁屏与安全</h3>
+            <ul>
+              <li>Ctrl+L 一键锁屏，支持闲置自动锁定与启动即锁</li>
+              <li>锁定期间禁用应用菜单、页面刷新与开发者工具快捷键</li>
+              <li>密码经 scrypt 加盐哈希存储，不落盘明文；输错触发递增冷却</li>
+              <li>锁屏只是遮罩：背后的终端会话与文件传输保持运行不中断</li>
             </ul>
           </div>
         </div>
@@ -110,7 +140,7 @@
         <h2>下载</h2>
         <p class="section-sub">
           从 GitHub Releases 下载；全部历史版本在同一页面。
-          <!-- 发新版本时更新下方两条直链与 hero 的 id=dl-exe 链接 -->
+          <!-- 发新版本时更新下方 exe 直链与 hero 的 id=dl-exe 链接 -->
         </p>
         <table class="dl-table">
           <thead>
@@ -118,19 +148,11 @@
           </thead>
           <tbody>
             <tr>
-              <td class="mono">OpenTerminal-1.0.15-setup.exe</td>
-              <td>常规安装，支持应用内自动更新（推荐）</td>
-              <td class="mono">122 MB</td>
+              <td class="mono">OpenTerminal-1.0.22-setup.exe</td>
+              <td>NSIS 安装包，支持应用内自动更新（推荐）</td>
+              <td class="mono">109 MB</td>
               <td>
-                <a href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.15/OpenTerminal-1.0.15-setup.exe">下载</a>
-              </td>
-            </tr>
-            <tr>
-              <td class="mono">OpenTerminal-1.0.15-setup.msi</td>
-              <td>企业批量部署（MSI 无自动更新，需手动升级）</td>
-              <td class="mono">135 MB</td>
-              <td>
-                <a href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.15/OpenTerminal-1.0.15-setup.msi">下载</a>
+                <a href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.22/OpenTerminal-1.0.22-setup.exe">下载</a>
               </td>
             </tr>
             <tr>
@@ -147,8 +169,9 @@
         <div class="update-note">
           <h3>自动更新说明</h3>
           <p>
-            应用内检查更新优先访问 git.codingplan.site 更新通道，失败时回退 GitHub Releases。
+            应用内检查更新优先访问 GitHub Releases（跟随系统代理），失败时自动回退国内 git.codingplan.site 更新通道（直连）。
             更新包经 SHA-512 校验后安装。更新说明文字从发布通道的 release-notes.md 读取，与每次发布同步更新。
+            自 v1.0.22 起不再提供 MSI 安装包，统一使用 NSIS exe。
           </p>
         </div>
       </div>
@@ -159,26 +182,26 @@
         <h2>近期更新</h2>
         <div class="changelog-list">
           <article>
-            <h3><span class="mono">1.0.15</span> 2026-09-20</h3>
+            <h3><span class="mono">1.0.22</span> 2026-10-08</h3>
             <ul>
-              <li>新增自定义终端背景图片与图片不透明度设置</li>
-              <li>主题编辑器重名提醒与颜色值校验</li>
-              <li>设置导航选中项文字对比度修复</li>
+              <li>修复中文输入法候选窗不跟随光标（v1.0.21 回归）</li>
+              <li>不再提供 MSI 安装包，统一使用 NSIS exe</li>
+              <li>打包流程新增依赖一致性校验，防止旧依赖混入安装包</li>
             </ul>
           </article>
           <article>
-            <h3><span class="mono">1.0.14</span> 2026-09-20</h3>
+            <h3><span class="mono">1.0.21</span> 2026-10-07</h3>
             <ul>
-              <li>修复大文件（约 250KB 以上）上传损坏与 SFTP 句柄泄漏</li>
-              <li>SSH 中文乱码、命令历史错乱等终端修复</li>
-              <li>权限编辑、连接错误提示等 20 余项修复</li>
+              <li>背景图体验：任意主题下调透明度均为压暗、文字自动提亮到 WCAG AA、新增背景压暗滑杆</li>
+              <li>性能：设置热更不再触发全窗格重排，SFTP 大目录虚拟滚动，面板独立错误边界</li>
+              <li>安装包精简约 90MB；SFTP/ZMODEM 本地路径准入与多处安全加固</li>
             </ul>
           </article>
           <article>
-            <h3><span class="mono">1.0.13</span> 2026-09-20</h3>
+            <h3><span class="mono">1.0.20</span> 2026-10-01</h3>
             <ul>
-              <li>命令片段库与广播输入改进</li>
-              <li>监控面板历史曲线实时重绘</li>
+              <li>修复中文输入法候选窗不跟随光标</li>
+              <li>锁屏加固：锁定期间移除应用菜单，Ctrl+L 按键判定重构并补测试</li>
             </ul>
           </article>
         </div>

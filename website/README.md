@@ -15,19 +15,20 @@ website/
 ├── .nojekyll           # 让 GitHub Pages 原样托管（跳过 Jekyll 处理）
 └── assets/
     ├── style.css       # 全部样式（企业风浅色主题，单一强调色）
-    ├── shot-terminal.png   # 主界面截图（四路分屏）
-    ├── shot-themes.png     # 主题设置页截图
+    ├── shot-terminal.jpg   # 主界面截图（三路分屏并行 AI 编程 Agent，含背景图个性化）
+    ├── shot-agents.png     # 多路 AI Agent 分屏截图（无背景图版）
+    ├── shot-themes.jpg     # 主题设置页截图（背景图/不透明度/压暗层）
+    ├── shot-lock.png       # 锁屏界面截图
     └── icon.png            # 应用图标（来自仓库 build/icon.png）
 ```
 
 ## 发新版本时需要更新的地方
 
-`index.html` 中搜索 `1.0.15`，共 3 处下载链接（hero 主按钮、下载表格 exe、msi）。
-下载链接使用 GitHub Releases 原生地址：
+`index.html` 中搜索当前版本号，共 2 处下载链接（hero 主按钮、下载表格 exe）。
+自 v1.0.22 起不再提供 MSI，只有 NSIS exe 一条直链：
 
 ```
 https://github.com/billowliu2/OpenTerminal/releases/download/v<版本>/OpenTerminal-<版本>-setup.exe
-https://github.com/billowliu2/OpenTerminal/releases/download/v<版本>/OpenTerminal-<版本>-setup.msi
 ```
 
 注意：发布新版本时需同时把安装包资产上传到 GitHub release
