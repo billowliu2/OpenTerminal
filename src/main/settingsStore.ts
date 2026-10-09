@@ -202,11 +202,23 @@ function refreshBuiltinRules(rules: HighlightRule[], warnings: Warnings): Highli
   return [...refreshed, ...missing.map((rule) => ({ ...rule }))].sort((a, b) => a.priority - b.priority)
 }
 
+/**
+ * Fresh copies of the preset rules for a caller that may mutate what it gets
+ * back. Handing out the module-level array (or its objects) would let one
+ * store's edit leak into every later load in the process.
+ */
+function copyDefaultRules(): HighlightRule[] {
+  return DEFAULT_HIGHLIGHT_RULES.map((rule) => ({ ...rule }))
+}
+
 function sanitizeRules(value: unknown, warnings: Warnings): HighlightRule[] {
   // An explicit empty array is a valid choice ("no highlighting"); only
   // malformed data falls back to the built-in rules. Returning the defaults for
   // [] made deleting the last rule look like it silently failed.
-  if (!Array.isArray(value)) return DEFAULT_HIGHLIGHT_RULES
+  if (!Array.isArray(value)) {
+    warnings.push('highlightRules: not an array — built-in rules restored')
+    return copyDefaultRules()
+  }
   const rules: HighlightRule[] = []
   value.forEach((entry, index) => {
     const rule = coerceRule(entry, index, warnings)
@@ -457,22 +469,47 @@ function backupUnparseableSettings(err: unknown): void {
   }
 }
 
+/**
+ * The defaults loadSettings falls back to. Fresh objects every call so a caller
+ * mutating what it got back cannot poison the module-level presets.
+ */
+function defaultSettings(): AppSettings {
+  return {
+    terminal: { ...DEFAULT_SETTINGS.terminal },
+    customThemes: [...DEFAULT_SETTINGS.customThemes],
+    highlightRules: copyDefaultRules(),
+    highlightProfiles: [],
+    system: { ...DEFAULT_SYSTEM },
+    lock: { ...DEFAULT_SETTINGS.lock }
+  }
+}
+
+/**
+ * The single exit for an unusable settings.json — parse failure and wrong shape
+ * both end here, so neither can quietly skip the backup.
+ */
+function discardUnparseableSettings(err: unknown): AppSettings {
+  backupUnparseableSettings(err)
+  return defaultSettings()
+}
+
 export function loadSettings(): AppSettings {
   try {
     const raw: unknown = JSON.parse(readFileSync(settingsPath(), 'utf8'))
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+      // Valid JSON of the wrong shape (`[1,2,3]`, `"text"`, `null`) is not "no
+      // settings": it is a file we cannot read, and the next mutation would
+      // rewrite it from the defaults — taking the custom themes and highlight
+      // rules with it. Per-field repair below only applies to a real object.
+      return discardUnparseableSettings(
+        new Error('settings.json shape mismatch: expected an object')
+      )
+    }
     const { settings, errors } = deepMerge(raw)
     reportWarnings(errors)
     return settings
   } catch (err) {
-    backupUnparseableSettings(err)
-    return {
-      terminal: { ...DEFAULT_SETTINGS.terminal },
-      customThemes: [...DEFAULT_SETTINGS.customThemes],
-      highlightRules: DEFAULT_HIGHLIGHT_RULES.map((rule) => ({ ...rule })),
-      highlightProfiles: [],
-      system: { ...DEFAULT_SYSTEM },
-      lock: { ...DEFAULT_SETTINGS.lock }
-    }
+    return discardUnparseableSettings(err)
   }
 }
 

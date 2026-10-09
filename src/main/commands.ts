@@ -20,7 +20,16 @@
 
 import { app, shell } from 'electron'
 import { randomUUID } from 'crypto'
-import { mkdirSync, readFileSync, writeFileSync, existsSync, realpathSync, statSync, copyFileSync } from 'fs'
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  realpathSync,
+  statSync,
+  copyFileSync
+} from 'fs'
 import { appendFile } from 'fs/promises'
 import { basename, dirname, join, resolve, sep } from 'path'
 import type { CommandItem, SessionLogMeta } from '../shared/commands'
@@ -83,6 +92,15 @@ function backupUnparseableCommands(file: string, err: unknown): void {
   }
 }
 
+/**
+ * The single exit for an unusable commands.json — parse failure and wrong
+ * shape both end here, so neither can quietly skip the backup.
+ */
+function discardCommandsFile(file: string, err: unknown): CommandsFile {
+  backupUnparseableCommands(file, err)
+  return emptyFile()
+}
+
 export class CommandsStore {
   /** <userData>/commands.json */
   private readonly file: string
@@ -106,6 +124,17 @@ export class CommandsStore {
   private readonly logBuffers = new Map<string, string>()
   /** In-flight drain loop per log file; absent when the file is settled. */
   private readonly logDrains = new Map<string, Promise<void>>()
+  /**
+   * Log files with an appendFile actually in flight. logStop reads this to tell
+   * whether a synchronous final flush can race an issued write (see logStop).
+   */
+  private readonly logInFlight = new Set<string>()
+  /**
+   * Files whose session stopped while a write was in flight: the drain loop
+   * flushes what is left synchronously instead of issuing another async round,
+   * which at quit would not land. Cleared when the loop settles.
+   */
+  private readonly logFinalFlush = new Set<string>()
   /** Plain-text transformer per actively-logged session (see logSanitizer). */
   private readonly sanitizers = new Map<string, LogSanitizer>()
 
@@ -130,11 +159,17 @@ export class CommandsStore {
           library: Array.isArray(data.library) ? data.library : []
         }
       }
+      // Valid JSON of the wrong shape (`[1,2,3]`, `{}`) is not "no commands":
+      // it is a file we cannot read, and the next write would rewrite it from
+      // an empty history. Same exit as the parse failure below.
+      return discardCommandsFile(
+        this.file,
+        new Error('commands.json shape mismatch: expected {history,library}')
+      )
     } catch (err) {
       // missing -> start fresh; unreadable / corrupt -> keep the original first
-      backupUnparseableCommands(this.file, err)
+      return discardCommandsFile(this.file, err)
     }
-    return emptyFile()
   }
 
   private saveCommands(data: CommandsFile): void {
@@ -412,15 +447,34 @@ export class CommandsStore {
         const chunk = this.logBuffers.get(file)
         if (chunk === undefined) break
         this.logBuffers.delete(file)
+        if (this.logFinalFlush.has(file)) {
+          // The session is gone, so this is the file's last flush and it has to
+          // be durable when this turn ends: at quit the process can be gone
+          // before a second async round lands. Reached only after the in-flight
+          // append above completed, so the order is still the write order.
+          try {
+            appendFileSync(file, chunk, 'utf8')
+          } catch {
+            // file may have been removed after stop -> ignore
+          }
+          continue
+        }
+        // Marked around the append itself: logStop's synchronous flush must not
+        // slip in between an issued write and its landing.
+        this.logInFlight.add(file)
         try {
           await appendFile(file, chunk, 'utf8')
         } catch {
           // file may have been removed after stop -> ignore
         }
+        this.logInFlight.delete(file)
       }
     })()
     run.finally(() => {
       if (this.logDrains.get(file) === run) this.logDrains.delete(file)
+      // The loop only stops once the buffer is empty, so nothing more can arrive
+      // for a stopped file: the flag must not outlive the drain.
+      this.logFinalFlush.delete(file)
     })
     this.logDrains.set(file, run)
     return run
@@ -432,10 +486,36 @@ export class CommandsStore {
     if (!meta) return
     const tail = this.sanitizers.get(sessionId)?.flush() ?? ''
     this.sanitizers.delete(sessionId)
-    if (tail) {
-      // Best effort: the trailing partial line belongs in the file too.
-      this.logBuffers.set(meta.file, (this.logBuffers.get(meta.file) ?? '') + tail)
-      this.drainLog(meta.file)
+    const pending = (this.logBuffers.get(meta.file) ?? '') + tail
+    if (pending) {
+      if (this.logInFlight.has(meta.file)) {
+        // An appendFile for this file is already issued and cannot be
+        // cancelled, so a synchronous write now would land *before* it and swap
+        // the last two pieces of the log. Put the tail back in the buffer
+        // instead and mark the file: the running loop re-reads the buffer after
+        // that append lands and flushes it synchronously (see drainLog), so the
+        // tail is durable and still in write order.
+        this.logBuffers.set(meta.file, pending)
+        this.logFinalFlush.add(meta.file)
+        this.drainLog(meta.file)
+      } else {
+        // No async write is in flight, so this one cannot race anything. It
+        // must be synchronous: the quit path (killAllPtys -> safeStopLog ->
+        // logStop) has no later sync point, and a fresh appendFile chain may
+        // never get to run.
+        //
+        // Bounded by construction: with nothing in flight the buffer is empty
+        // (the loop only stops looking once it is), so this is just the
+        // sanitizer tail — one partial line, plus at most one marker line. The
+        // sanitizer's only other buffer (a CSI sequence) is capped at 1KB and
+        // never reaches the output. One line's worth of text, once per stop.
+        this.logBuffers.delete(meta.file)
+        try {
+          appendFileSync(meta.file, pending, 'utf8')
+        } catch {
+          // file may have been removed after stop -> ignore
+        }
+      }
     }
     this.finishLog(meta)
   }

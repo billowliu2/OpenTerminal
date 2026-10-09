@@ -236,6 +236,21 @@ const expected =
   'partial-tail'
 ok(readFileSync(startB.file, 'utf8') === expected, 'burst writes + stop tail land in order')
 
+// The stop tail is flushed *synchronously* when no async append is in flight:
+// the quit path (killAllPtys → safeStopLog → logStop) has no later sync point,
+// so a fresh appendFile chain may never run and the tail would be lost. The
+// drain for the committed line below has long settled, so nothing can race it.
+const sid3 = 'cccccccc-dddd-eeee-ffff-000000000000'
+const startC = store.logStart(sid3)
+store.logWrite(sid3, 'settled line\n')
+await wait(100)
+store.logWrite(sid3, 'no trailing newline')
+store.logStop(sid3)
+ok(
+  readFileSync(startC.file, 'utf8') === 'settled line\nno trailing newline',
+  'the stop tail is on disk when logStop returns (sync flush when the drain is idle)'
+)
+
 // ---- 7. index.json path containment (hydrateIndex) -----------------------------
 // index.json is data, not trust: a tampered `file` value must never turn
 // logWrite into an arbitrary-path append. Only entries that resolve inside
@@ -365,6 +380,36 @@ store4.recordCommand('first-ever')
 ok(!existsSync(join(freshDir, 'commands.json.bak')), 'a missing file (ENOENT) is not backed up')
 ok(existsSync(join(freshDir, 'commands.json')), 'and the first write lands normally')
 rmSync(freshDir, { recursive: true, force: true })
+
+// ---- 10. Valid JSON of the wrong shape is backed up too -------------------------
+// `[1,2,3]` parses fine, so the parse-catch never saw it: the file used to be
+// treated exactly like a missing one and the next recordCommand replaced it with
+// an empty history. A file that is not the store we wrote is unreadable, not
+// empty — same backup + empty-state exit as the corrupt case above.
+const shapeDir = mkdtempSync(join(tmpdir(), 'm5-cmd-shape-'))
+const shapeFile = join(shapeDir, 'commands.json')
+const shapeStore = new commandsMod.CommandsStore(shapeDir)
+const wrongShape = '[1,2,3]'
+writeFileSync(shapeFile, wrongShape, 'utf8')
+ok(shapeStore.listHistory().length === 0, 'a wrong-shaped commands.json loads as an empty history')
+const shapeBak = `${shapeFile}.bak`
+ok(existsSync(shapeBak), 'a wrong-shaped commands.json is backed up to .bak')
+ok(readFileSync(shapeBak, 'utf8') === wrongShape, '.bak holds the wrong-shaped original byte for byte')
+writeSettings({ historyLimit: 50, historyEnabled: true })
+shapeStore.recordCommand('after-shape-mismatch')
+const rewrittenShape = JSON.parse(readFileSync(shapeFile, 'utf8'))
+ok(
+  Array.isArray(rewrittenShape.history) &&
+    rewrittenShape.history.some((h) => h.command === 'after-shape-mismatch'),
+  'the store recovers with a well-formed file after the backup'
+)
+
+// An object without the expected keys is the same class of problem, and a second
+// episode must not overwrite the first backup.
+writeFileSync(shapeFile, '{"library":[]}', 'utf8')
+shapeStore.listHistory()
+ok(readFileSync(shapeBak, 'utf8') === wrongShape, 'an existing .bak is kept for a wrong shape too (earliest evidence wins)')
+rmSync(shapeDir, { recursive: true, force: true })
 
 // All stores wrote into temp dirs; drop them so repeated runs do not litter.
 rmSync(userData, { recursive: true, force: true })

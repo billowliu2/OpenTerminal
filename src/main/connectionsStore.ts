@@ -167,6 +167,15 @@ function backupUnparseableConnections(file: string, err: unknown): void {
   }
 }
 
+/**
+ * The single exit for an unusable connections.json — parse failure and wrong
+ * shape both end here, so neither can quietly skip the backup.
+ */
+function discardConnectionsFile(file: string, err: unknown): StoredConnection[] {
+  backupUnparseableConnections(file, err)
+  return []
+}
+
 export class ConnectionsStore {
   constructor(private readonly filePath: string) {}
 
@@ -182,11 +191,17 @@ export class ConnectionsStore {
             typeof (x as StoredConnection).host === 'string'
         )
       }
+      // Valid JSON of the wrong shape (`{}`) is not "no bookmarks": it is a file
+      // we cannot read, and the next write would rewrite it from an empty list.
+      // Same exit as the parse failure below.
+      return discardConnectionsFile(
+        this.filePath,
+        new Error('connections.json shape mismatch: expected an array')
+      )
     } catch (err) {
       // missing -> start fresh; unreadable / corrupt -> keep the original first
-      backupUnparseableConnections(this.filePath, err)
+      return discardConnectionsFile(this.filePath, err)
     }
-    return []
   }
 
   private save(list: StoredConnection[]): void {

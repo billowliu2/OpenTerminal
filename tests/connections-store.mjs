@@ -205,6 +205,42 @@ ok(!existsSync(join(freshDir, 'connections.json.bak')), 'a missing file (ENOENT)
 ok(existsSync(join(freshDir, 'connections.json')), 'and the first write lands normally')
 rmSync(freshDir, { recursive: true, force: true })
 
+// ---- 7b. Valid JSON of the wrong shape is backed up too --------------------------
+// `{}` parses fine, so the parse-catch never saw it: the file used to be treated
+// exactly like a missing one and the next write replaced every bookmark with an
+// empty list. A file that is not the array we wrote is unreadable, not empty —
+// same backup + empty-state exit as the corrupt case above.
+const shapeDir = mkdtempSync(join(tmpdir(), 'm-conn-shape-'))
+const shapeFile = join(shapeDir, 'connections.json')
+const shapeStore = new mod.ConnectionsStore(shapeFile)
+const wrongShape = '{"connections":[]}'
+writeFileSync(shapeFile, wrongShape, 'utf8')
+ok(shapeStore.listConnections().length === 0, 'a wrong-shaped connections.json loads as an empty list')
+const shapeBak = `${shapeFile}.bak`
+ok(existsSync(shapeBak), 'a wrong-shaped connections.json is backed up to .bak')
+ok(readFileSync(shapeBak, 'utf8') === wrongShape, '.bak holds the wrong-shaped original byte for byte')
+const shapeSaved = shapeStore.saveConnection({
+  name: 'after-shape-mismatch',
+  host: 'h',
+  port: 22,
+  username: 'u',
+  auth: 'password',
+  askPasswordAtConnect: false,
+  askPassphraseAtConnect: false,
+  keepaliveIntervalSec: 0
+})
+const shapeList = JSON.parse(readFileSync(shapeFile, 'utf8'))
+ok(
+  Array.isArray(shapeList) && shapeList.length === 1 && shapeList[0].id === shapeSaved.id,
+  'the new bookmark is written normally after the backup'
+)
+
+// A second wrong-shape episode must not overwrite the first backup.
+writeFileSync(shapeFile, '{"nope":true}', 'utf8')
+shapeStore.listConnections()
+ok(readFileSync(shapeBak, 'utf8') === wrongShape, 'an existing .bak is kept (earliest evidence wins)')
+rmSync(shapeDir, { recursive: true, force: true })
+
 // An unreadable path (here: a directory) must still load as empty and never
 // throw — the backup is best effort and may itself fail.
 const dirCase = mkdtempSync(join(tmpdir(), 'm-conn-dir-'))

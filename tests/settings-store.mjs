@@ -94,6 +94,27 @@ console.log('[highlight rules]')
   const out = (await roundTrip({ highlightRules: [] })).highlightRules
   ok(out.length === 0, 'an explicitly empty rule list stays empty')
 }
+{
+  // A non-array highlightRules is a shape error, not "no rules": the built-in
+  // rules come back as copies (mutating a loaded list must not poison the
+  // module-level preset table) and the fallback is recorded in the warnings log.
+  writeFileSync(
+    join(userData, 'settings.json'),
+    JSON.stringify({ highlightRules: { nope: true } }),
+    'utf8'
+  )
+  const first = store.loadSettings().highlightRules
+  ok(first.length > 0, `a non-array highlightRules loads the built-in rules (got ${first.length})`)
+  const second = store.loadSettings().highlightRules
+  ok(first !== second, 'each load hands out its own array, not the shared preset list')
+  first.length = 0
+  const afterMutation = store.loadSettings().highlightRules
+  ok(afterMutation.length > 0, 'emptying a loaded rule list does not affect the next load')
+  const log = existsSync(join(userData, 'settings-warnings.log'))
+    ? readFileSync(join(userData, 'settings-warnings.log'), 'utf8')
+    : ''
+  ok(log.includes('highlightRules: not an array'), 'the fallback is recorded in settings-warnings.log')
+}
 
 // ---- 3. value bands ---------------------------------------------------------
 console.log('[value bands]')
