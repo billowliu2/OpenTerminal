@@ -256,30 +256,51 @@ export function closeSftp(sessionId: string): void {
 const FAKE_FS = new Set(['tmpfs', 'overlay', 'udev', 'devtmpfs', 'none', 'squashfs', 'shm'])
 
 /** readdir, both shapes ssh2 can yield (plain names or `{filename}` objects). */
-function readdir(sftp: SFTPWrapper, dir: string): Promise<string[]> {
-  return p<Array<string | { filename: string }>>(cb => sftp.readdir(dir, cb)).then(raw =>
-    raw.map(n => (typeof n === 'string' ? n : n.filename))
+function readdirDetailed(sftp: SFTPWrapper, dir: string): Promise<Array<{ name: string; longname?: string }>> {
+  return p<Array<string | { filename: string; longname?: string }>>(cb => sftp.readdir(dir, cb)).then(raw =>
+    raw.map(n => (typeof n === 'string' ? { name: n } : { name: n.filename, longname: n.longname }))
   )
+}
+
+function readdir(sftp: SFTPWrapper, dir: string): Promise<string[]> {
+  return readdirDetailed(sftp, dir).then(list => list.map(e => e.name))
+}
+
+/**
+ * Owner/group names off an OpenSSH longname, e.g.
+ * `-rw-r--r--    1 eveuser  eveuser      231 Apr  1  2020 .bashrc`.
+ * The mode string is required before we trust the field positions — some
+ * servers put a different listing format in `longname` and the columns then
+ * mean nothing. Best effort: any surprise yields `{}`, never a throw.
+ */
+function parseLongnameOwner(longname: string | undefined): { owner?: string; group?: string } {
+  if (!longname) return {}
+  const fields = longname.trim().split(/\s+/)
+  if (fields.length < 4) return {}
+  if (!/^[bcdlps-][rwxstST-]{9}$/.test(fields[0])) return {}
+  return { owner: fields[2], group: fields[3] }
 }
 
 export function listRemote(sessionId: string, dir: string): Promise<SftpEntry[]> {
   return withSftp(sessionId, async sftp => {
-    const names = await readdir(sftp, dir)
+    const names = await readdirDetailed(sftp, dir)
     const entries: SftpEntry[] = []
     const queue = [...names]
     const base = dir.replace(/\/+$/, '') || '/'
     const workers = Array.from({ length: Math.min(8, Math.max(queue.length, 1)) }, async () => {
       for (;;) {
-        const name = queue.shift()
-        if (name === undefined) return
+        const item = queue.shift()
+        if (item === undefined) return
+        const { name, longname } = item
         const path = `${base}/${name}`
         try {
           const st = await lstat(sftp, path)
           entries.push({
             name, path, isDir: st.isDirectory(), size: st.size, mtime: st.mtime * 1000,
-            uid: st.uid, gid: st.gid, mode: formatMode(st.mode)
+            uid: st.uid, gid: st.gid, mode: formatMode(st.mode), ...parseLongnameOwner(longname)
           })
         } catch {
+          // no longname data here — the namespace listing is all we have
           entries.push({ name, path, isDir: false, size: 0, mtime: 0 })
         }
       }

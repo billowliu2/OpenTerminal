@@ -16,6 +16,11 @@
   border-bottom: 1px solid var(--chrome-border);
 }
 
+/* Pushes the zoom controls to the far end of the toolbar. */
+.sftp-toolbar-gap {
+  flex: 1;
+}
+
 .sftp-breadcrumb {
   padding: 3px 8px;
   font-size: 12px;
@@ -42,6 +47,79 @@
   position: relative;
 }
 
+/* ---- header + rows ----------------------------------------------------------
+
+   The header and every row share one grid template, so the columns always line
+   up. Column widths and the header height scale with --sftp-scale; the row
+   height and font sizes come from FilePanel.tsx (--sftp-row-h / --sftp-fs /
+   --sftp-fs-meta). Every px below is therefore a scale-1 baseline only. */
+
+.sftp-head,
+.sftp-row {
+  display: grid;
+  grid-template-columns:
+    calc(22px * var(--sftp-scale, 1)) minmax(0, 1fr) calc(78px * var(--sftp-scale, 1))
+    calc(104px * var(--sftp-scale, 1)) calc(88px * var(--sftp-scale, 1))
+    calc(84px * var(--sftp-scale, 1));
+  align-items: center;
+  column-gap: calc(8px * var(--sftp-scale, 1));
+  padding-inline: calc(8px * var(--sftp-scale, 1));
+}
+
+.sftp-head {
+  position: sticky;
+  top: 0;
+  /* Above the rows, including the absolutely positioned windowed slice. */
+  z-index: 2;
+  height: var(--sftp-row-h, 26px);
+  box-sizing: border-box;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  font-size: var(--sftp-fs-meta, 12px);
+  color: color-mix(in srgb, var(--chrome-fg, #cccccc) 55%, transparent);
+  /* Header labels must never end up in a text selection with the listing. */
+  user-select: none;
+}
+
+.sftp-head-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: var(--sftp-fs-meta, 12px);
+}
+
+.sftp-head-cell.sftp-col-mode {
+  justify-content: center;
+}
+
+.sftp-head-cell.sftp-col-size,
+.sftp-head-cell.sftp-col-time,
+.sftp-head-cell.sftp-col-owner {
+  justify-content: flex-end;
+}
+
+.sftp-head-cell.sftp-col-name,
+.sftp-head-cell.sftp-col-size,
+.sftp-head-cell.sftp-col-time {
+  cursor: pointer;
+}
+
+.sftp-head-cell.sftp-col-name:hover,
+.sftp-head-cell.sftp-col-size:hover,
+.sftp-head-cell.sftp-col-time:hover,
+.sftp-head-cell.sftp-head-on {
+  color: var(--chrome-fg);
+}
+
+.sftp-head-arrow {
+  flex: 0 0 auto;
+  font-size: calc(9px * var(--sftp-scale, 1));
+  line-height: 1;
+}
+
 /* Windowed list (node_modules-sized directories). Only the visible slice of
    rows plus the overscan is mounted; the spacer carries the full scroll height. */
 .sftp-list-virtual {
@@ -57,25 +135,14 @@
   will-change: transform;
 }
 
-/* Right-click menu wrapper: antd wraps each row in a span by default;
-   force block so rows keep full-width hover/selection and normal flow. */
-.sftp-list .ant-dropdown-trigger {
-  display: block;
-}
-
 .sftp-row {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 96px 74px 66px 96px;
-  align-items: center;
-  column-gap: 8px;
-  padding: 3px 8px;
   /* Fixed outer height so the windowed list can offset rows arithmetically.
      border-box is required — there is no global reset, so content-box would
-     add the 6px of vertical padding on top. Keep in sync with ROW_HEIGHT in
-     FilePanel.tsx. */
+     add any padding on top of the height. The height itself is driven by
+     --sftp-row-h so row geometry has one source of truth (FilePanel.tsx). */
   box-sizing: border-box;
-  height: 24px;
-  font-size: 13px;
+  height: var(--sftp-row-h, 26px);
+  font-size: var(--sftp-fs, 13px);
   color: var(--chrome-fg);
   cursor: pointer;
 }
@@ -91,7 +158,7 @@
 .sftp-icon {
   display: inline-flex;
   color: #8a8a8a;
-  font-size: 14px;
+  font-size: calc(14px * var(--sftp-scale, 1));
 }
 
 .sftp-icon-dir {
@@ -103,14 +170,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13.5px;
+  font-size: var(--sftp-fs, 13px);
 }
 
 .sftp-mode {
   text-align: center;
   color: #9a9a9a;
   font-family: Consolas, 'Courier New', monospace;
-  font-size: 11px;
+  font-size: var(--sftp-fs-meta, 12px);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -118,7 +185,7 @@
 .sftp-owner {
   text-align: right;
   color: #8a8a8a;
-  font-size: 11px;
+  font-size: var(--sftp-fs-meta, 12px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -126,7 +193,7 @@
 .sftp-size {
   text-align: right;
   color: #8a8a8a;
-  font-size: 11px;
+  font-size: var(--sftp-fs-meta, 12px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -134,7 +201,7 @@
 .sftp-time {
   text-align: right;
   color: #8a8a8a;
-  font-size: 11px;
+  font-size: var(--sftp-fs-meta, 12px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

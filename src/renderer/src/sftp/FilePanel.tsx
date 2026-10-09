@@ -12,7 +12,9 @@ import {
   FormOutlined,
   ReloadOutlined,
   SafetyOutlined,
-  UploadOutlined
+  UploadOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined
 } from '@ant-design/icons'
 import { App, Button, Checkbox, Dropdown, Input, Modal, Popconfirm, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
@@ -93,16 +95,34 @@ function tOr(key: string, fallback: string): string {
   return value === key ? fallback : value
 }
 
+/** FinalShell-style size: a unit at every magnitude, one decimal from KB up. */
 function fmtSize(bytes: number): string {
-  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024 / 1024).toFixed(1)}G`
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)}K`
-  return String(bytes)
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
 }
 
+/** e.g. "2023/8/10 17:24" — a full year, unpadded month/day, padded clock. */
 function fmtTime(ms: number): string {
   if (!ms) return ''
   const d = new Date(ms)
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * Owner column: names parsed from the OpenSSH longname when available, numeric
+ * uid/gid otherwise. The numeric form is what the permission dialog edits, so
+ * it stays reachable through the cell's title tooltip.
+ */
+function ownerLabel(e: SftpEntry): string {
+  if (e.owner && e.group) return `${e.owner}/${e.group}`
+  if (e.owner) return e.owner
+  if (e.group) return `/${e.group}`
+  if (e.uid != null && e.gid != null) return `${e.uid}/${e.gid}`
+  if (e.uid != null) return String(e.uid)
+  if (e.gid != null) return String(e.gid)
+  return '—'
 }
 
 /** Permission-grid labels are resolved per render so they follow the language. */
@@ -114,8 +134,12 @@ function permColLabels(): string[] {
   return [t('ssh.file.permColRead'), t('ssh.file.permColWrite'), t('ssh.file.permColExec')]
 }
 
-/** Row height in px — must match `.sftp-row` in sftp.css. */
-const ROW_HEIGHT = 24
+/**
+ * Row height at scale 1, in px — the single source of truth for the list's
+ * geometry. The actual height is `BASE_ROW_HEIGHT * scale` and reaches CSS as
+ * the `--sftp-row-h` variable, so `.sftp-row` must never hard-code a height.
+ */
+const BASE_ROW_HEIGHT = 26
 /** Rows rendered above and below the viewport so a fast scroll never blanks. */
 const OVERSCAN = 8
 /**
@@ -126,15 +150,44 @@ const OVERSCAN = 8
  */
 const VIRTUALIZE_THRESHOLD = 200
 
+const FONT_SCALE_KEY = 'openterminal.sftpFontScale'
+const MIN_FONT_SCALE = 0.8
+const MAX_FONT_SCALE = 1.8
+const FONT_SCALE_STEP = 0.1
+
+/** Clamped scale with a tolerance for float drift across 0.1 steps. */
+function normalizeScale(value: number): number {
+  const clamped = Math.min(MAX_FONT_SCALE, Math.max(MIN_FONT_SCALE, value))
+  // 0.8 + 0.1 * 3 = 1.1000000000000001, so round to the step's precision.
+  return Math.round(clamped * 10) / 10
+}
+
+/** Persisted zoom level; anything unreadable or out of range falls back to 1. */
+function readStoredScale(): number {
+  try {
+    const raw = window.localStorage.getItem(FONT_SCALE_KEY)
+    if (raw == null) return 1
+    const parsed = Number(raw)
+    if (!Number.isFinite(parsed) || parsed < MIN_FONT_SCALE || parsed > MAX_FONT_SCALE) return 1
+    return normalizeScale(parsed)
+  } catch {
+    return 1
+  }
+}
+
+/** Sortable columns. Directories always lead, whatever the key. */
+type SortKey = 'name' | 'size' | 'mtime'
+type SortDir = 'asc' | 'desc'
+
 /** Slice of the entry list to mount for the current scroll position. */
 interface WindowSlice {
   start: number
   end: number
 }
 
-/** First index to render for a given scroll offset and viewport height. */
-function windowStart(scrollTop: number): number {
-  return Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+/** First index to render for a given scroll offset, row height and viewport. */
+function windowStart(scrollTop: number, rowHeight: number): number {
+  return Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN)
 }
 
 interface PermissionModalProps {
@@ -357,14 +410,59 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
   const [renameOpen, setRenameOpen] = useState(false)
   const [permOpen, setPermOpen] = useState(false)
   const [inputValue, setInputValue] = useState('')
+  /** Sort column + direction; directories always lead regardless of the key. */
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  /** Font zoom, persisted per user rather than per session. */
+  const [scale, setScale] = useState(readStoredScale)
+
+  const rowHeight = Math.round(BASE_ROW_HEIGHT * scale)
+  const scaleVars = {
+    '--sftp-scale': scale,
+    '--sftp-row-h': `${rowHeight}px`,
+    '--sftp-fs': `${13 * scale}px`,
+    '--sftp-fs-meta': `${12 * scale}px`
+  } as React.CSSProperties
+
+  const entriesSorted = useMemo((): SftpEntry[] => {
+    const mul = sortDir === 'asc' ? 1 : -1
+    return entries.slice().sort((a, b) => {
+      // Grouping beats the chosen key: directories always lead.
+      if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+      if (sortKey === 'size') return (a.size - b.size) * mul
+      if (sortKey === 'mtime') return (a.mtime - b.mtime) * mul
+      return a.name.localeCompare(b.name) * mul
+    })
+  }, [entries, sortKey, sortDir])
+
+  const toggleSort = (key: SortKey): void => {
+    if (key === sortKey) {
+      setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+      return
+    }
+    setSortKey(key)
+    setSortDir('asc')
+  }
+
+  const adjustScale = useCallback((delta: number): void => {
+    setScale((prev) => {
+      const next = normalizeScale(prev + delta)
+      try {
+        window.localStorage.setItem(FONT_SCALE_KEY, String(next))
+      } catch {
+        // ignore
+      }
+      return next
+    })
+  }, [])
 
   // Windowed list state. `viewportH` is measured off the scroll container and
   // `firstVisible` only advances when the scroll offset crosses a row boundary,
-  // so dragging the scrollbar re-renders at most once per ROW_HEIGHT of travel.
+  // so dragging the scrollbar re-renders at most once per rowHeight of travel.
   const listRef = useRef<HTMLDivElement | null>(null)
   const [viewportH, setViewportH] = useState(0)
   const [firstVisible, setFirstVisible] = useState(0)
-  const virtualized = entries.length > VIRTUALIZE_THRESHOLD
+  const virtualized = entriesSorted.length > VIRTUALIZE_THRESHOLD
 
   useEffect(() => {
     const el = listRef.current
@@ -378,6 +476,22 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
     // observer has to be re-attached whenever the container is replaced.
   }, [error])
 
+  // React's onWheel is registered passively, so preventDefault() there is a
+  // no-op and Ctrl+wheel would zoom the whole window instead. An explicit
+  // non-passive listener is the only way to swallow it.
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      if (!e.ctrlKey) return
+      e.preventDefault()
+      adjustScale(e.deltaY < 0 ? FONT_SCALE_STEP : -FONT_SCALE_STEP)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+    // `error` swaps the scroll container, so the listener has to move with it.
+  }, [error, adjustScale])
+
   // A new directory starts at the top; the stale scroll offset would otherwise
   // leave the window slice pointing past the (now shorter) listing.
   useEffect(() => {
@@ -386,20 +500,37 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
     setFirstVisible(0)
   }, [dir])
 
+  // Zooming changes the row height, so the offset that used to be row N now
+  // points at a different row — realign the window with what the viewport shows.
+  useEffect(() => {
+    const el = listRef.current
+    if (!el) return
+    setFirstVisible(windowStart(el.scrollTop, rowHeight))
+  }, [rowHeight])
+
   const onListScroll = useCallback(() => {
     const el = listRef.current
     if (!el) return
-    const start = windowStart(el.scrollTop)
+    const start = windowStart(el.scrollTop, rowHeight)
     setFirstVisible((prev) => (prev === start ? prev : start))
-  }, [])
+  }, [rowHeight])
 
   const slice = useMemo((): WindowSlice => {
-    const visible = Math.ceil(viewportH / ROW_HEIGHT) + OVERSCAN * 2
-    return { start: firstVisible, end: Math.min(entries.length, firstVisible + visible) }
-  }, [viewportH, firstVisible, entries.length])
+    const visible = Math.ceil(viewportH / rowHeight) + OVERSCAN * 2
+    return { start: firstVisible, end: Math.min(entriesSorted.length, firstVisible + visible) }
+  }, [viewportH, firstVisible, rowHeight, entriesSorted.length])
 
   /** the entry the context menu is operating on (selected when right-clicked) */
   const menuTarget = menuEntry ?? selected
+
+  /**
+   * The rows carry their own context-menu Dropdown, so a right click on one
+   * bubbles up to the container's trigger too and both menus would open. antd
+   * installs its trigger in the bubble phase, so the flag is recorded in the
+   * capture phase (which React dispatches first) and read by `onOpenChange`.
+   */
+  const contextMenuInRowRef = useRef(false)
+  const [blankMenuOpen, setBlankMenuOpen] = useState(false)
 
   /** Monotonic token: only the most recently issued listing may paint state. */
   const refreshSeqRef = useRef(0)
@@ -693,7 +824,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [menuTarget, dir, entries, refresh, language])
 
-  /** One directory entry: icon, name, permissions, owner, size, mtime + menu. */
+  /** One directory entry: icon+name, size, mtime, permissions, owner + menu. */
   const renderRow = (e: SftpEntry): React.JSX.Element => (
     <Dropdown
       key={e.path}
@@ -717,22 +848,33 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
         <span className="sftp-name" title={e.name}>
           {e.name}
         </span>
-        <span className="sftp-mode" title={e.mode ?? t('ssh.file.modeUnavailable')}>
-          {e.mode ?? '----------'}
-        </span>
-        <span className="sftp-owner" title={`UID ${e.uid ?? '—'} / GID ${e.gid ?? '—'}`}>
-          {e.uid != null && e.gid != null ? `${e.uid}/${e.gid}` : '—'}
-        </span>
         <span className="sftp-size" title={e.isDir ? '' : `${e.size} bytes`}>
           {e.isDir ? '' : fmtSize(e.size)}
         </span>
         <span className="sftp-time">{fmtTime(e.mtime)}</span>
+        <span className="sftp-mode" title={e.mode ?? t('ssh.file.modeUnavailable')}>
+          {e.mode ?? '----------'}
+        </span>
+        <span className="sftp-owner" title={`UID ${e.uid ?? '—'} / GID ${e.gid ?? '—'}`}>
+          {ownerLabel(e)}
+        </span>
       </div>
     </Dropdown>
   )
 
+  /** Sortable header cell; the arrow only shows on the active column. */
+  const headCell = (key: SortKey, colClass: string, label: string): React.JSX.Element => (
+    <span
+      className={`sftp-head-cell ${colClass}${sortKey === key ? ' sftp-head-on' : ''}`}
+      onClick={() => toggleSort(key)}
+    >
+      {label}
+      <span className="sftp-head-arrow">{sortKey === key ? (sortDir === 'asc' ? '▲' : '▼') : ''}</span>
+    </span>
+  )
+
   return (
-    <div className="sftp-panel">
+    <div className="sftp-panel" style={scaleVars}>
       <div className="sftp-toolbar">
         <Tooltip title={t('ssh.file.up')}>
           <Button
@@ -798,6 +940,25 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
         >
           <Button type="text" size="small" icon={<DeleteOutlined />} disabled={!selected} danger />
         </Popconfirm>
+        <span className="sftp-toolbar-gap" />
+        <Tooltip title={t('ssh.file.zoomOut')}>
+          <Button
+            type="text"
+            size="small"
+            icon={<ZoomOutOutlined />}
+            disabled={scale <= MIN_FONT_SCALE}
+            onClick={() => adjustScale(-FONT_SCALE_STEP)}
+          />
+        </Tooltip>
+        <Tooltip title={t('ssh.file.zoomIn')}>
+          <Button
+            type="text"
+            size="small"
+            icon={<ZoomInOutlined />}
+            disabled={scale >= MAX_FONT_SCALE}
+            onClick={() => adjustScale(FONT_SCALE_STEP)}
+          />
+        </Tooltip>
       </div>
 
       <div className="sftp-breadcrumb">
@@ -814,22 +975,67 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
       {error ? (
         <div className="sftp-error">{error}</div>
       ) : (
-        <div className="sftp-list" ref={listRef} onScroll={onListScroll}>
-          {loading && entries.length === 0 && <div className="sftp-empty">{t('ssh.file.loading')}</div>}
-          {!loading && entries.length === 0 && <div className="sftp-empty">{t('ssh.file.empty')}</div>}
-          {virtualized ? (
-            <div className="sftp-list-virtual" style={{ height: entries.length * ROW_HEIGHT }}>
-              <div
-                className="sftp-list-window"
-                style={{ transform: `translateY(${slice.start * ROW_HEIGHT}px)` }}
-              >
-                {entries.slice(slice.start, slice.end).map(renderRow)}
-              </div>
+        <Dropdown
+          menu={menu}
+          trigger={['contextMenu']}
+          getPopupContainer={() => document.body}
+          open={blankMenuOpen}
+          onOpenChange={(open) => {
+            // The rows carry their own Dropdown; a right click on one bubbles up
+            // here too and would open both menus. The row's handler flags the
+            // click (in the capture phase, which runs first), so this trigger
+            // refuses to open for it.
+            if (open && contextMenuInRowRef.current) return
+            setBlankMenuOpen(open)
+            if (!open) setMenuEntry(null)
+          }}
+        >
+          <div
+            className="sftp-list"
+            ref={listRef}
+            onScroll={onListScroll}
+            onContextMenuCapture={(e) => {
+              const inRow = (e.target as HTMLElement).closest('.sftp-row') != null
+              contextMenuInRowRef.current = inRow
+              if (inRow) {
+                // A row click must not leave a blank-area menu behind; the row
+                // opens its own. (Re-opening is refused above, so this only ever
+                // closes.)
+                setBlankMenuOpen(false)
+                return
+              }
+              // Blank space (or the empty/loading hint): the menu keeps only the
+              // target-less entries, every row action disables itself.
+              setSelected(null)
+              setMenuEntry(null)
+            }}
+          >
+            <div className="sftp-head">
+              <span className="sftp-head-cell" />
+              {headCell('name', 'sftp-col-name', t('ssh.file.colName'))}
+              {headCell('size', 'sftp-col-size', t('ssh.file.colSize'))}
+              {headCell('mtime', 'sftp-col-time', t('ssh.file.colModified'))}
+              <span className="sftp-head-cell sftp-col-mode">{t('ssh.file.colPerm')}</span>
+              <span className="sftp-head-cell sftp-col-owner">{t('ssh.file.colOwner')}</span>
             </div>
-          ) : (
-            entries.map(renderRow)
-          )}
-        </div>
+            {loading && entriesSorted.length === 0 && (
+              <div className="sftp-empty">{t('ssh.file.loading')}</div>
+            )}
+            {!loading && entriesSorted.length === 0 && <div className="sftp-empty">{t('ssh.file.empty')}</div>}
+            {virtualized ? (
+              <div className="sftp-list-virtual" style={{ height: entriesSorted.length * rowHeight }}>
+                <div
+                  className="sftp-list-window"
+                  style={{ transform: `translateY(${slice.start * rowHeight}px)` }}
+                >
+                  {entriesSorted.slice(slice.start, slice.end).map(renderRow)}
+                </div>
+              </div>
+            ) : (
+              entriesSorted.map(renderRow)
+            )}
+          </div>
+        </Dropdown>
       )}
 
       <PermissionModal

@@ -129,6 +129,13 @@ const ssh: Record<string, string> = {
   'ssh.file.permColRead': '读',
   'ssh.file.permColWrite': '写',
   'ssh.file.permColExec': '执行',
+  'ssh.file.colName': '名称',
+  'ssh.file.colSize': '大小',
+  'ssh.file.colModified': '修改时间',
+  'ssh.file.colPerm': '权限',
+  'ssh.file.colOwner': '用户/组',
+  'ssh.file.zoomIn': '放大字体',
+  'ssh.file.zoomOut': '缩小字体',
 
   // 系统监控
   'ssh.monitor.collecting': '采集中…',

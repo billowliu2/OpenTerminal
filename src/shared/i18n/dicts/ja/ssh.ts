@@ -137,6 +137,13 @@ const ssh: Record<string, string> = {
   'ssh.file.permColRead': '読み取り',
   'ssh.file.permColWrite': '書き込み',
   'ssh.file.permColExec': '実行',
+  'ssh.file.colName': '名前',
+  'ssh.file.colSize': 'サイズ',
+  'ssh.file.colModified': '更新日時',
+  'ssh.file.colPerm': 'パーミッション',
+  'ssh.file.colOwner': '所有者',
+  'ssh.file.zoomIn': 'フォント拡大',
+  'ssh.file.zoomOut': 'フォント縮小',
 
   // システム監視
   'ssh.monitor.collecting': '取得中…',

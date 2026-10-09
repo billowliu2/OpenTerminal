@@ -135,6 +135,13 @@ const ssh: Record<string, string> = {
   'ssh.file.permColRead': 'Read',
   'ssh.file.permColWrite': 'Write',
   'ssh.file.permColExec': 'Execute',
+  'ssh.file.colName': 'Name',
+  'ssh.file.colSize': 'Size',
+  'ssh.file.colModified': 'Modified',
+  'ssh.file.colPerm': 'Permissions',
+  'ssh.file.colOwner': 'Owner',
+  'ssh.file.zoomIn': 'Zoom in',
+  'ssh.file.zoomOut': 'Zoom out',
 
   // System monitor
   'ssh.monitor.collecting': 'Collecting…',

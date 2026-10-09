@@ -14,6 +14,9 @@ export interface SftpEntry {
   /** numeric uid/gid (best effort) */
   uid?: number
   gid?: number
+  /** owner/group names parsed from readdir longname (best effort) */
+  owner?: string
+  group?: string
 }
 
 export type TransferKind = 'upload' | 'download' | 'zmodem-upload' | 'zmodem-download'
