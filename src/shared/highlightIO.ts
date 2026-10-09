@@ -5,10 +5,11 @@ import { isHighlightCategory, type HighlightRule } from './settings'
  * a copy before experimenting.
  *
  * The envelope carries a kind + version so pasting the wrong JSON (a layout, a
- * connection list) fails loudly instead of importing nonsense. Validation here
- * stays deliberately light: it only rejects what cannot be a rule at all
- * (unparseable JSON, no `rules` array, an unusable regex). Everything else is
- * repaired by the settings store on save, which already owns that job.
+ * connection list, a file from a future format) fails loudly instead of
+ * importing nonsense. Validation here stays deliberately light: past that
+ * envelope it only rejects what cannot be a rule at all (no `rules` array, an
+ * unusable regex). Everything else is repaired by the settings store on save,
+ * which already owns that job.
  */
 
 export const HIGHLIGHT_FILE_KIND = 'openterminal.highlight-rules'
@@ -27,7 +28,7 @@ export interface HighlightFile {
 }
 
 /** Reasons a paste can be refused, as codes the UI turns into a message. */
-export type ImportError = 'not-json' | 'no-rules' | 'wrong-kind'
+export type ImportError = 'not-json' | 'no-rules' | 'wrong-kind' | 'wrong-version'
 
 export interface ParsedHighlightFile {
   rules: HighlightRule[]
@@ -68,9 +69,15 @@ export function parseHighlightRules(text: string): ParsedHighlightFile {
   if (Array.isArray(raw)) {
     list = raw
   } else if (raw !== null && typeof raw === 'object' && Array.isArray((raw as { rules?: unknown }).rules)) {
-    const kind = (raw as { kind?: unknown }).kind
-    if (typeof kind === 'string' && kind !== HIGHLIGHT_FILE_KIND) {
+    // An envelope is only trusted when both stamps match: a missing `kind`
+    // means the JSON is not ours, and a foreign `version` means it was written
+    // by a format this build does not know how to read.
+    const { kind, version } = raw as { kind?: unknown; version?: unknown }
+    if (kind !== HIGHLIGHT_FILE_KIND) {
       return { rules: [], warnings: [], error: 'wrong-kind' }
+    }
+    if (version !== HIGHLIGHT_FILE_VERSION) {
+      return { rules: [], warnings: [], error: 'wrong-version' }
     }
     list = (raw as { rules: unknown[] }).rules
   } else {

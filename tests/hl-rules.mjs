@@ -15,7 +15,13 @@
 import { compileRules, applyHighlights, __testHooks as hooks } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { previewSpans } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { DEFAULT_HIGHLIGHT_RULES } from '../src/shared/settings.ts'
-import { exportHighlightRules, mergeRules, parseHighlightRules } from '../src/shared/highlightIO.ts'
+import {
+  exportHighlightRules,
+  HIGHLIGHT_FILE_KIND,
+  HIGHLIGHT_FILE_VERSION,
+  mergeRules,
+  parseHighlightRules
+} from '../src/shared/highlightIO.ts'
 import {
   excludedByProfile,
   rulesForProfile,
@@ -549,11 +555,26 @@ console.log('[import / export]')
     parseHighlightRules('{"kind":"openterminal.layout","rules":[]}').error === 'wrong-kind',
     'a foreign envelope is refused'
   )
+  ok(
+    parseHighlightRules('{"rules":[]}').error === 'wrong-kind',
+    'an envelope with no kind at all is refused'
+  )
+  ok(
+    parseHighlightRules(JSON.stringify({ kind: HIGHLIGHT_FILE_KIND, version: HIGHLIGHT_FILE_VERSION + 1, rules: [] }))
+      .error === 'wrong-version',
+    'an envelope from another version is refused'
+  )
+  ok(
+    parseHighlightRules(JSON.stringify({ kind: HIGHLIGHT_FILE_KIND, rules: [] })).error === 'wrong-version',
+    'an envelope with no version at all is refused'
+  )
   ok(parseHighlightRules('{"nope":1}').error === 'no-rules', 'JSON without a rules array is refused')
   ok(parseHighlightRules('[]').error === undefined, 'a bare empty array is accepted')
 
   const partial = parseHighlightRules(
     JSON.stringify({
+      kind: HIGHLIGHT_FILE_KIND,
+      version: HIGHLIGHT_FILE_VERSION,
       rules: [
         { pattern: '\\bOK\\b', priority: 500, color: { fg: 'red' } },
         { pattern: '[' },

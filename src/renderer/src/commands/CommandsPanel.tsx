@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Modal, Popconfirm, Tabs } from 'antd'
+import { App, Button, Modal, Popconfirm, Tabs } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import type { CommandItem } from '@shared/commands'
 import { t } from '@shared/i18n'
@@ -24,6 +24,7 @@ export function formatClock(ts: number): string {
  * runs the command via the parent workspace's `onRun`.
  */
 export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element {
+  const { message } = App.useApp()
   const [history, setHistory] = useState<CommandItem[]>([])
   const [library, setLibrary] = useState<CommandItem[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -54,16 +55,27 @@ export function CommandsPanel({ onRun }: CommandsPanelProps): React.JSX.Element 
   }, [refresh])
 
   const handleClearHistory = useCallback(async (): Promise<void> => {
-    await window.api.clearHistory()
+    try {
+      await window.api.clearHistory()
+    } catch (err) {
+      // Nothing was removed, so a refresh would repaint the same rows.
+      message.error((err as Error)?.message || t('common.saveFailed'))
+      return
+    }
     refresh()
-  }, [refresh])
+  }, [refresh, message])
 
   const handleDeleteLibrary = useCallback(
     async (id: string): Promise<void> => {
-      await window.api.deleteLibraryItem(id)
+      try {
+        await window.api.deleteLibraryItem(id)
+      } catch (err) {
+        message.error((err as Error)?.message || t('common.saveFailed'))
+        return
+      }
       refresh()
     },
-    [refresh]
+    [refresh, message]
   )
 
   const handleAdd = useCallback((): void => {

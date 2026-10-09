@@ -182,6 +182,16 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
   }, [sessionId, workspaceMode])
 
   if (!meta || !sample) {
+    // `meta` is only broadcast after a first sample succeeds, so a session that
+    // fails from the start would otherwise spin here forever with its error
+    // sample hidden behind the meta gate.
+    if (sample?.error) {
+      return (
+        <div className="mm-root mm-empty mm-failed">
+          <div className="mm-error">{t('ssh.monitor.interrupted', { error: sample.error })}</div>
+        </div>
+      )
+    }
     return (
       <div className="mm-root mm-empty">
         <span className="mm-dots"><span /> <span /> <span /></span>

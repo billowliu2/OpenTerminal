@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
-import { Button, Collapse, Popconfirm, Tooltip } from 'antd'
+import { App, Button, Collapse, Popconfirm, Tooltip } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type { SshConnection } from '@shared/connections'
 import { t } from '@shared/i18n'
@@ -61,6 +61,7 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
     }: ConnectionSidebarProps,
     ref
   ): React.JSX.Element {
+    const { message } = App.useApp()
     const mode = useWorkspaceModeStore((s) => s.mode)
     const isTerminal = mode === 'terminal'
     const [connections, setConnections] = useState<SshConnection[]>([])
@@ -117,7 +118,14 @@ export const ConnectionSidebar = forwardRef<ConnectionSidebarHandle, ConnectionS
     }
 
     const handleDelete = async (id: string): Promise<void> => {
-      await window.api.deleteConnection(id)
+      try {
+        await window.api.deleteConnection(id)
+      } catch (err) {
+        // The row is still there, so a refresh would just re-render the same
+        // list — report the failure and leave it alone.
+        message.error((err as Error)?.message || t('common.saveFailed'))
+        return
+      }
       await refresh()
     }
 

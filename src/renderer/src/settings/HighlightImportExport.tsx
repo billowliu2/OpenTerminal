@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Input, Modal, Popconfirm, Radio, Space } from 'antd'
+import { Alert, App, Button, Input, Modal, Popconfirm, Radio, Space } from 'antd'
 import { t } from '@shared/i18n'
 import { exportHighlightRules, mergeRules, parseHighlightRules } from '@shared/highlightIO'
 import type { ImportError } from '@shared/highlightIO'
@@ -24,6 +24,7 @@ export function HighlightImportExport({
   open: boolean
   onClose: () => void
 }): React.JSX.Element {
+  const { message } = App.useApp()
   const highlightRules = useSettingsStore((s) => s.settings.highlightRules)
   const setHighlightRules = useSettingsStore((s) => s.setHighlightRules)
 
@@ -59,18 +60,22 @@ export function HighlightImportExport({
     link.href = url
     link.download = 'openterminal-highlight-rules.json'
     link.click()
-    URL.revokeObjectURL(url)
+    // Chromium reads the blob asynchronously after the click, so revoking the
+    // URL synchronously aborts the download before it can start.
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
   }
 
   const handleFile = (file: File): void => {
     const reader = new FileReader()
     reader.onload = () => setDraft(typeof reader.result === 'string' ? reader.result : '')
+    reader.onerror = () => message.error(t('settings.highlight.importReadFailed'))
     reader.readAsText(file)
   }
 
   const errorText = (error: ImportError): string => {
     if (error === 'not-json') return t('settings.highlight.importBadJson')
     if (error === 'wrong-kind') return t('settings.highlight.importWrongKind')
+    if (error === 'wrong-version') return t('settings.highlight.importWrongVersion')
     return t('settings.highlight.importEmpty')
   }
 

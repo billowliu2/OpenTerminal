@@ -536,6 +536,17 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
   const refreshSeqRef = useRef(0)
   /** Mirrors `dir` for callbacks created before a navigation (upload finish). */
   const dirRef = useRef(dir)
+  /** Unsubscribe for the transfer listener the in-flight upload registered. */
+  const uploadOffRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    return () => {
+      // An upload can still be running — or never deliver a terminal event —
+      // when the panel unmounts; without this its IPC listener outlives it.
+      uploadOffRef.current?.()
+      uploadOffRef.current = null
+    }
+  }, [])
 
   const refresh = useCallback(
     async (target: string): Promise<void> => {
@@ -602,6 +613,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
       }
       if (e.transferId === targetId) finish()
     })
+    uploadOffRef.current = off
     window.api.uploadRemote(sessionId, files, dir).then(
       (id: string) => {
         targetId = id

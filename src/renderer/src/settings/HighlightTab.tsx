@@ -549,7 +549,10 @@ function HighlightEditor({
           ...(draft.basic ? { basic: true as const } : {}),
           note: draft.note?.trim() ? draft.note.trim() : undefined
         }
-        await setHighlightRules([...highlightRules, rule])
+        // read at call time: the render-scoped array goes stale inside a React
+        // batch, and another write in the same batch would silently drop the first
+        const current = useSettingsStore.getState().settings.highlightRules
+        await setHighlightRules([...current, rule])
       } else if (editing !== undefined) {
         const rule: HighlightRule = {
           ...editing,
