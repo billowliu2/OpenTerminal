@@ -1042,6 +1042,13 @@ export function TerminalView({
     // Live data is queued until the replay lands so output keeps its order.
     let replayDone = false
     const pending: string[] = []
+    // Death state, shared by the PTY_EXIT subscription and the SESSION_STATE
+    // query below: the two paths must land identically.
+    const markDead = (code: number): void => {
+      deadRef.current = true
+      setExitCode(code)
+      setDead(true)
+    }
     const unsubscribes: (() => void)[] = [
       // Routed via the shared dispatcher (one IPC listener for all panes)
       // instead of a per-pane global listener.
@@ -1053,11 +1060,7 @@ export function TerminalView({
         }
         writeHighlighted(data)
       }),
-      subscribePtyExit(sessionId, (code: number) => {
-        deadRef.current = true
-        setExitCode(code)
-        setDead(true)
-      })
+      subscribePtyExit(sessionId, markDead)
     ]
     // Late-subscriber catch-up: output emitted before this subscription
     // (shell banner, template-apply rebind) replays from the main buffer.
@@ -1072,6 +1075,21 @@ export function TerminalView({
         if (!deadRef.current) for (const chunk of pending) writeHighlighted(chunk)
         pending.length = 0
       })
+
+    // PTY_EXIT is broadcast once and never replayed, so a shell that died in
+    // the gap between openSession and this subscription (or before the pane was
+    // rebound to it) would leave the pane blank forever. Ask once, now that the
+    // subscription can no longer miss it. `disposed` rather than deadRef: the
+    // cleanup below also runs on a rebind, where the pane is alive again under
+    // another session and this answer is stale.
+    let disposed = false
+    void window.api
+      .getSessionLiveState(sessionId)
+      .then((state) => {
+        if (disposed || !state.exited) return
+        markDead(state.exitCode ?? 0)
+      })
+      .catch(() => undefined)
 
     let observer: ResizeObserver | undefined
     if (hostRef.current) {
@@ -1114,6 +1132,9 @@ export function TerminalView({
       for (const disposable of disposables) disposable.dispose()
       observer?.disconnect()
       observerRef.current = null
+      // The pane is unmounted or rebinding to another session: an in-flight
+      // SESSION_STATE answer must not mark the next session dead.
+      disposed = true
       deadRef.current = true
       webglRef.current?.dispose()
       webglRef.current = null

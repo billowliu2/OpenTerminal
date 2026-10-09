@@ -52,6 +52,7 @@ if (typeof window !== 'undefined' && !window.api) {
     createPty: async () => ({ id: stubId(), shell: 'stub', cwd: '' }),
     openSession: async () => ({ id: stubId() }),
     getSessionReplay: async () => '',
+    getSessionLiveState: async () => ({ exists: false, exited: false, exitCode: null }),
     writePty: noop,
     resizePty: noop,
     killPty: noop,

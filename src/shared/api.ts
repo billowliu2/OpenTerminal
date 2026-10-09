@@ -6,7 +6,8 @@ import type {
   PtyDataEvent,
   PtyExitEvent,
   SessionOpenResult,
-  SessionSnapshot
+  SessionSnapshot,
+  SessionStateResult
 } from './ipc'
 import type { AppSettings } from './settings'
 import type { ReleaseNote, UpdateState } from './ipc'
@@ -36,6 +37,13 @@ export interface AppApi {
   openSession(opts: SessionOpenOptions): Promise<SessionOpenResult>
   /** output a session produced before this renderer subscribed (capped ring buffer) */
   getSessionReplay(id: string): Promise<string>
+  /**
+   * Compensating query for a missed PTY_EXIT: that broadcast fires exactly once
+   * and is never replayed, so a pane subscribing after its shell died would
+   * wait forever. `exited` (with `exitCode`) is the death state PTY_EXIT would
+   * have set.
+   */
+  getSessionLiveState(id: string): Promise<SessionStateResult>
   writePty(id: string, data: string): void
   resizePty(id: string, cols: number, rows: number): void
   killPty(id: string): void

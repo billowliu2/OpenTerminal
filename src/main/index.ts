@@ -100,7 +100,10 @@ if (!gotSingleInstanceLock) {
       // so the menu teardown is applied here from the flag itself.
       const lock = initLockController()
       applyMenuLockState(lock.isLocked())
-      createWindow()
+      // A second launch that raced this startup already created (or surfaced) a
+      // window from its `second-instance` handler; creating another here would
+      // leave two. Same guard the activate handler below uses.
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
       initTray(showOrCreate)
       // Tray labels are resolved from the dictionary at build time, so the menu has
       // to be rebuilt whenever the interface language changes.

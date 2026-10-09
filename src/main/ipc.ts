@@ -34,7 +34,7 @@ import {
 import { broadcast } from './broadcast'
 import { CommandsStore, defaultCommandsPath } from './commands'
 import type { CommandItem } from '../shared/commands'
-import { createPty, killPty, resizePty, writePty, openSession, configureSessionRuntime, getSessionReplay, registerLogHooks } from './pty'
+import { createPty, killPty, resizePty, writePty, openSession, configureSessionRuntime, getSessionReplay, sessionState, registerLogHooks } from './pty'
 import { respondZmodem } from './zmodem'
 import type { ZmodemResponse } from '../shared/ipc'
 
@@ -153,6 +153,9 @@ export function registerIpc(): void {
   ipcMain.handle(Ipc.PTY_CREATE, (event, opts?: PtyCreateOptions) => createPty(opts, event.sender.id))
   ipcMain.handle(Ipc.SESSION_OPEN, (event, opts: SessionOpenOptions) => openSession(opts, event.sender.id))
   ipcMain.handle(Ipc.SESSION_REPLAY, (_event, id: string) => getSessionReplay(id))
+  // Compensates the one-shot PTY_EXIT broadcast: a pane that subscribed after
+  // its shell died asks here instead of waiting forever.
+  ipcMain.handle(Ipc.SESSION_STATE, (_event, id: string) => sessionState(id))
   ipcMain.on(Ipc.PTY_WRITE, (_event, id: string, data: string) => writePty(id, data))
   ipcMain.on(Ipc.PTY_RESIZE, (_event, id: string, cols: number, rows: number) =>
     resizePty(id, cols, rows)

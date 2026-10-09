@@ -19,6 +19,7 @@ const api: AppApi = {
   createPty: (opts?: PtyCreateOptions) => ipcRenderer.invoke(Ipc.PTY_CREATE, opts),
   openSession: (opts: SessionOpenOptions) => ipcRenderer.invoke(Ipc.SESSION_OPEN, opts),
   getSessionReplay: (id: string) => ipcRenderer.invoke(Ipc.SESSION_REPLAY, id),
+  getSessionLiveState: (id: string) => ipcRenderer.invoke(Ipc.SESSION_STATE, id),
   writePty: (id: string, data: string) => ipcRenderer.send(Ipc.PTY_WRITE, id, data),
   resizePty: (id: string, cols: number, rows: number) =>
     ipcRenderer.send(Ipc.PTY_RESIZE, id, cols, rows),

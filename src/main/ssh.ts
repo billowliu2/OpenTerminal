@@ -64,6 +64,13 @@ export interface SshServiceDeps {
     fingerprint: string
     reason: 'new' | 'changed'
   }): void
+  /**
+   * Called with the ssh2 client as soon as it exists — the earliest moment it
+   * can be ended. pty.ts keeps the reference so an owner crash / app quit
+   * during the handshake can abort the connect instead of letting it finish and
+   * register a session nobody owns.
+   */
+  onClient?: (client: Client) => void
   timeoutMs?: { prompt: number; connect: number }
 }
 
@@ -187,6 +194,12 @@ export async function connectSsh(
 
     // failure paths before resolution: `fail` and the connect timer
     armConnectTimer()
+
+    // Hand out the client before anything is dialled, so an abort during the
+    // handshake has a reference to end(). end() is a no-op until connect()
+    // created the socket, but the executor runs synchronously, so connect()
+    // below is already under way before openSession regains control.
+    deps.onClient?.(handshake)
 
     handshake.on('error', (err: Error) => {
       console.error(`[ssh] client error: ${err.message}`)
@@ -315,7 +328,7 @@ const pendingPrompts = new Map<string, PendingPrompt>()
 
 /**
  * Ask the renderer to approve / reject a host key. Resolves `true`/`false`.
- * Times out (default 30s) -> treated as reject.
+ * Times out (default 120s) -> treated as reject.
  */
 function promptUser(
   host: string,

@@ -3,7 +3,7 @@ import { spawn, type IPty } from '@lydell/node-pty'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
 import { StringDecoder } from 'string_decoder'
-import { Ipc, type PtyCreateOptions, type PtyCreateResult } from '../shared/ipc'
+import { Ipc, type PtyCreateOptions, type PtyCreateResult, type SessionStateResult } from '../shared/ipc'
 import type { SessionOpenOptions, HostKeyPromptEvent, SshConnection } from '../shared/connections'
 import { broadcast } from './broadcast'
 import { connectSsh, type SshSessionHandle } from './ssh'
@@ -102,6 +102,68 @@ function appendReplay(id: string, data: string): void {
 /** Recent output of a session ('' when unknown). */
 export function getSessionReplay(id: string): string {
   return replayBuffers.get(id) ?? ''
+}
+
+/**
+ * Exit codes of sessions that are already gone. PTY_EXIT is broadcast exactly
+ * once and never replayed, so a pane that subscribes after its shell died
+ * would sit blank forever — the renderer compensates by querying SESSION_STATE
+ * once its subscription is in place. Insertion-ordered: the oldest entry is
+ * evicted first, and the cap only has to cover the panes that are still
+ * catching up.
+ */
+const MAX_SESSION_EXITS = 512
+const sessionExits = new Map<string, number>()
+
+function rememberSessionExit(id: string, exitCode: number): void {
+  // Re-inserting keeps the map in "most recently exited last" order.
+  sessionExits.delete(id)
+  sessionExits.set(id, exitCode)
+  while (sessionExits.size > MAX_SESSION_EXITS) {
+    const oldest = sessionExits.keys().next().value
+    if (oldest === undefined) break
+    sessionExits.delete(oldest)
+  }
+}
+
+/**
+ * What the main process knows about a session id: alive, exited (with its code),
+ * or unknown — a temp id from an aborted connect, or an evicted exit record.
+ */
+export function sessionState(id: string): SessionStateResult {
+  if (sessions.has(id)) return { exists: true, exited: false, exitCode: null }
+  const exitCode = sessionExits.get(id)
+  if (exitCode === undefined) return { exists: false, exited: false, exitCode: null }
+  return { exists: false, exited: true, exitCode }
+}
+
+/**
+ * In-flight ssh connects, keyed by a temp id. Until `connectSsh` resolves there
+ * is no entry in `sessions`, so an owner that vanished during the handshake
+ * (renderer crash) or an app quit used to leave the connect running: it
+ * completed later and registered a session nobody owns. The attempt is
+ * registered up front so killPtysByOwner / killAllPtys can abort it — the
+ * client is ended, and openSession tears down whatever still comes back
+ * instead of adopting it.
+ */
+interface PendingOpen {
+  owner?: number
+  client?: SshSessionHandle['client']
+  aborted: boolean
+}
+
+const pendingOpens = new Map<string, PendingOpen>()
+
+function abortPendingOpens(matches: (pending: PendingOpen) => boolean): void {
+  for (const pending of pendingOpens.values()) {
+    if (!matches(pending)) continue
+    pending.aborted = true
+    try {
+      pending.client?.end()
+    } catch {
+      // best effort
+    }
+  }
 }
 
 /**
@@ -230,6 +292,8 @@ export function createPty(opts: PtyCreateOptions = {}, owner?: number): PtyCreat
       // The session is gone: drop its replay buffer too (killPty was the only
       // path that did, so naturally-exiting shells leaked up to 64KB each).
       replayBuffers.delete(id)
+      // Remember the code for panes that subscribe after this broadcast.
+      rememberSessionExit(id, exitCode)
       safeStopLog(id)
       broadcast(Ipc.PTY_EXIT, { id, exitCode })
     } catch {
@@ -258,22 +322,61 @@ export async function openSession(opts: SessionOpenOptions, owner?: number): Pro
   }
 
   const conn = deps.getConnection(opts.connectionId)
-  const handle = await connectSsh(conn, opts.secretOverride, {
-    connections: {
-      getSecret: (c, field) => deps.getSecret(c, field),
-      touch: (id: string) => {
-        // Successful connect: record lastConnectedAt on the bookmark.
-        try {
-          deps.touch(id)
-        } catch {
-          // store write failure must not break the session
+  // Register the attempt before the handshake: until it resolves there is no
+  // session entry, so this is the only handle an owner-based kill has on it.
+  const tempId = randomUUID()
+  const pending: PendingOpen = { owner, aborted: false }
+  pendingOpens.set(tempId, pending)
+
+  let handle: SshSessionHandle
+  try {
+    handle = await connectSsh(conn, opts.secretOverride, {
+      connections: {
+        getSecret: (c, field) => deps.getSecret(c, field),
+        touch: (id: string) => {
+          // Successful connect: record lastConnectedAt on the bookmark.
+          try {
+            deps.touch(id)
+          } catch {
+            // store write failure must not break the session
+          }
         }
+      },
+      knownHosts: deps.knownHosts,
+      broadcast: deps.broadcast,
+      promptHostKey: deps.promptHostKey,
+      // Earliest reference to the client, so an abort can end it mid-handshake.
+      onClient: (client) => {
+        pending.client = client
       }
-    },
-    knownHosts: deps.knownHosts,
-    broadcast: deps.broadcast,
-    promptHostKey: deps.promptHostKey
-  })
+    })
+  } catch (err) {
+    // An aborted attempt is our own teardown, not a connect failure: whoever
+    // asked for the session is already gone (owner crash / app quit), so the
+    // answer is the temp id — nothing was ever registered under it.
+    if (!pending.aborted) throw err
+    return { id: tempId }
+  } finally {
+    pendingOpens.delete(tempId)
+  }
+
+  // The owner died while the handshake was in flight. Nothing has been
+  // registered yet, so the teardown is the transport alone — same order as
+  // killSession (stream first, then client) and no session-scoped cleanups.
+  if (pending.aborted) {
+    try {
+      handle.stream.close()
+    } catch {
+      // best effort
+    }
+    try {
+      handle.client.end()
+    } catch {
+      // best effort
+    }
+    return { id: tempId }
+  }
+
   sessions.set(handle.id, { kind: 'ssh', ssh: handle, owner })
   sshDecoders.set(handle.id, new StringDecoder('utf8'))
 
@@ -297,6 +400,29 @@ export async function openSession(opts: SessionOpenOptions, owner?: number): Pro
       if (s?.kind === 'ssh') {
         try {
           s.ssh.stream.write(data)
+        } catch {
+          // stream may already be dead
+        }
+      }
+    },
+    // Receive-side backpressure: pausing the ssh stream stops the bytes that
+    // feed the zmodem sentry, so a slow local disk cannot pile the whole
+    // transfer up in the fs WriteStream's unbounded buffer.
+    pauseSource: (id) => {
+      const s = sessions.get(id)
+      if (s?.kind === 'ssh') {
+        try {
+          s.ssh.stream.pause()
+        } catch {
+          // stream may already be dead
+        }
+      }
+    },
+    resumeSource: (id) => {
+      const s = sessions.get(id)
+      if (s?.kind === 'ssh') {
+        try {
+          s.ssh.stream.resume()
         } catch {
           // stream may already be dead
         }
@@ -333,6 +459,7 @@ export async function openSession(opts: SessionOpenOptions, owner?: number): Pro
       sessions.delete(handle.id)
       replayBuffers.delete(handle.id)
       sshDecoders.delete(handle.id)
+      rememberSessionExit(handle.id, exitCode)
       deps.broadcast(Ipc.PTY_EXIT, { id: handle.id, exitCode })
     } catch {
       // never crash the event loop
@@ -428,9 +555,13 @@ export function killPtysByOwner(owner: number): void {
     if (sessions.get(id)?.owner !== owner) continue
     killSession(id)
   }
+  // A connect that has not resolved yet has no session entry to match on, so it
+  // would finish later and register an orphan.
+  abortPendingOpens((pending) => pending.owner === owner)
 }
 
 export function killAllPtys(): void {
+  abortPendingOpens(() => true)
   for (const id of sessions.keys()) {
     forceStopPolling(id)
     closeSftp(id)
@@ -458,5 +589,6 @@ export function killAllPtys(): void {
     }
   }
   sessions.clear()
+  replayBuffers.clear()
   sshDecoders.clear()
 }

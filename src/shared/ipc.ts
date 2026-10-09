@@ -35,6 +35,13 @@ export const Ipc = {
   SESSION_OPEN: 'session:open',
   /** main keeps a short replay buffer per session so late subscribers catch up */
   SESSION_REPLAY: 'session:replay',
+  /**
+   * Compensating query for a missed PTY_EXIT: that broadcast fires exactly once
+   * and is never replayed, so a pane bound to a shell that died before it
+   * subscribed would wait forever. Distinct from SESSION_STATE_GET/SET, which
+   * carry the layout snapshot.
+   */
+  SESSION_STATE: 'session:state',
 
   // ---- ssh connections (bookmarks) ----
   CONNECTIONS_LIST: 'connections:list',
@@ -214,6 +221,16 @@ export interface PtyDataEvent {
 export interface PtyExitEvent {
   id: string
   exitCode: number
+}
+
+/** Answer to SESSION_STATE: what the main process still knows about a session. */
+export interface SessionStateResult {
+  /** the session is alive and still accepts data */
+  exists: boolean
+  /** the session exited; `exitCode` then carries the status it died with */
+  exited: boolean
+  /** null unless `exited` */
+  exitCode: number | null
 }
 
 export interface AppInfo {
