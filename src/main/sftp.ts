@@ -325,12 +325,58 @@ export function renameRemote(sessionId: string, from: string, to: string): Promi
   return withSftp(sessionId, sftp => pVoid(cb => sftp.rename(from, to, cb)))
 }
 
+/**
+ * "The file is already gone" — the one server-side failure a delete may treat
+ * as success. ssh2 reports the SFTP status both ways: `code` carries the numeric
+ * status (2 = SSH_FX_NO_SUCH_FILE) and `message` the library's own English text,
+ * so both are checked (builds fill one or the other). Our own translated errors
+ * never reach this check — they arrive as OperationError, which the caller
+ * passes through untouched.
+ */
+function isNoSuchFile(err: unknown): boolean {
+  if ((err as { code?: unknown } | undefined)?.code === 2) return true
+  return /no such file/i.test((err as Error | undefined)?.message ?? '')
+}
+
+/**
+ * unlink/rmdir where "already gone" counts as success.
+ *
+ * Deleting is not idempotent by nature: the entry may have been removed by
+ * someone else between the listing and the click, or the same delete may be run
+ * again after an earlier pass already removed it. Reporting a path that is
+ * verifiably gone as "delete failed" is a fake error — the end state the user
+ * asked for already holds.
+ */
+async function unlinkIfPresent(sftp: SFTPWrapper, path: string): Promise<void> {
+  try {
+    await pVoid(cb => sftp.unlink(path, cb))
+  } catch (err) {
+    if (!isNoSuchFile(err)) throw err
+  }
+}
+
+async function rmdirIfPresent(sftp: SFTPWrapper, path: string): Promise<void> {
+  try {
+    await pVoid(cb => sftp.rmdir(path, cb))
+  } catch (err) {
+    if (!isNoSuchFile(err)) throw err
+  }
+}
+
 async function deleteRecursive(sftp: SFTPWrapper, path: string, isDir: boolean): Promise<void> {
   if (!isDir) {
-    await pVoid(cb => sftp.unlink(path, cb))
+    await unlinkIfPresent(sftp, path)
     return
   }
-  const names = await readdir(sftp, path)
+  let names: string[]
+  try {
+    names = await readdir(sftp, path)
+  } catch (err) {
+    // The directory is gone (removed by someone else, or by an earlier pass of
+    // this same delete): everything inside went with it, so the intent holds.
+    if (isNoSuchFile(err)) return
+    throw err
+  }
   const base = path.replace(/\/+$/, '') || '/'
   for (const name of names) {
     const child = `${base}/${name}`
@@ -342,7 +388,7 @@ async function deleteRecursive(sftp: SFTPWrapper, path: string, isDir: boolean):
     }
     await deleteRecursive(sftp, child, childIsDir)
   }
-  await pVoid(cb => sftp.rmdir(path, cb))
+  await rmdirIfPresent(sftp, path)
 }
 
 export function deleteRemote(sessionId: string, paths: string[]): Promise<void> {
@@ -354,7 +400,7 @@ export function deleteRemote(sessionId: string, paths: string[]): Promise<void> 
         try {
           isDir = (await lstat(sftp, path)).isDirectory()
         } catch {
-          // stat failed — fall through to unlink
+          // stat failed — fall through to unlink, which tolerates "already gone"
         }
         await deleteRecursive(sftp, path, isDir)
       } catch (err) {

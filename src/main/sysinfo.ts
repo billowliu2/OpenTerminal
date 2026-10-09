@@ -157,7 +157,17 @@ function pollOnce(id: string, state: PollState): void {
 
   try {
     client.exec(COLLECT_CMD, (err: Error | undefined, stream) => {
-      if (state.stopped) return
+      if (state.stopped) {
+        // Polling stopped while this exec was in flight: the channel is already
+        // open, so simply dropping the stream would leak it for the rest of the
+        // ssh session. Close it (best effort — it may be dead already) and go.
+        try {
+          stream?.close()
+        } catch {
+          // best effort
+        }
+        return
+      }
       if (err || !stream) {
         handleError(id, state, err?.message || t('main.sysinfo.execFailed'))
         return

@@ -65,6 +65,19 @@ export interface ZmodemDeps {
   toTerminal(sessionId: string, data: Buffer): void
   /** Write bytes out to the ssh stream (zmodem frames + CAN abort sequence). */
   writeStream(sessionId: string, data: Buffer): void
+  /**
+   * Backpressure over the ssh stream that FEEDS this session's sentry. pty.ts
+   * owns that channel and injects these two, mirroring writeStream: the engine
+   * has no handle on it, and pausing the source is the only thing that bounds
+   * how much a peer can push into a file sink that is over its highWaterMark.
+   *
+   * Optional so a harness with no real stream still runs (and so an injector
+   * that predates this hook keeps working): without it a backed-up sink still
+   * stops counting progress, which turns a wedged disk into a stall-watchdog
+   * failure instead of an unbounded queue — but the queue itself stays.
+   */
+  pauseSource?(sessionId: string): void
+  resumeSource?(sessionId: string): void
 }
 
 interface Engine {
@@ -94,7 +107,18 @@ interface Engine {
   offerTimer: NodeJS.Timeout | null
   stallTimer: NodeJS.Timeout | null
   receiveStream: Writable | null
+  /**
+   * Octets the current file's sink ACCEPTED. A write that only landed in the
+   * WriteStream's own queue (write() returned false) is not counted here until
+   * the queue drains — see pendingBytes and the receive on_input.
+   */
   bytes: number
+  /** Octets handed to a backed-up sink; folded into `bytes` on drain/teardown. */
+  pendingBytes: number
+  /** True while the source is paused because the sink is over its highWaterMark. */
+  sourcePaused: boolean
+  /** One-shot: the injector supplied no pauseSource, so the pause is a no-op. */
+  warnedNoSource: boolean
   totalBytes: number
 }
 
@@ -176,6 +200,9 @@ function finalize(
   // mistaken for a clean finish.
   engine.ending = true
   cancelTimers(engine)
+  // A pause must never outlive its transfer: the 'drain' that would lift it may
+  // still be queued, or may never come at all once the sink is ending here.
+  releaseSource(engine)
   const stream = engine.receiveStream
   engine.receiveStream = null
   // Clear the slot *before* end(): an errored/destroyed sink must not be ended
@@ -233,6 +260,58 @@ function touchActivity(engine: Engine): void {
     finalize(engine, false, t('main.zmodem.transferTimeout'))
   }, STALL_TIMEOUT_MS)
   engine.stallTimer = timer
+}
+
+/**
+ * Stop the ssh stream that feeds this engine (receive path only: the send path
+ * pushes into the sink instead of pulling from the peer).
+ *
+ * Idempotent — every subpacket of a blocked window arrives through the same
+ * on_input, and pausing an already-paused channel is pointless work on the hot
+ * path. The flag is set even when the injector supplied no hook, so the
+ * accounting below stays consistent either way.
+ */
+function pauseSource(engine: Engine): void {
+  if (engine.sourcePaused) return
+  engine.sourcePaused = true
+  if (!engine.deps.pauseSource) {
+    // Say it once per transfer instead of silently doing nothing: the hook is
+    // the whole mechanism, so an injector that forgot it still has an unbounded
+    // sink queue (only the progress accounting below improves).
+    if (!engine.warnedNoSource) {
+      engine.warnedNoSource = true
+      console.warn('[zmodem] receive sink is over its highWaterMark but no pauseSource hook was injected')
+    }
+    return
+  }
+  try {
+    engine.deps.pauseSource(engine.id)
+  } catch {
+    // the stream may already be gone
+  }
+}
+
+/**
+ * Undo a backpressure pause, folding the octets that only ever reached the
+ * sink's queue into the received count.
+ *
+ * Called from the sink's 'drain' AND from every teardown path: a pause that
+ * outlived its transfer would leave the session's ssh stream stopped for good
+ * (terminal output and the peer both look frozen, with no way back), and
+ * waiting for a 'drain' that never comes — dead disk, destroyed stream — is
+ * exactly how that happens. Returns whether a pause was actually outstanding.
+ */
+function releaseSource(engine: Engine): boolean {
+  if (!engine.sourcePaused) return false
+  engine.sourcePaused = false
+  engine.bytes += engine.pendingBytes
+  engine.pendingBytes = 0
+  try {
+    engine.deps.resumeSource?.(engine.id)
+  } catch {
+    // the stream may already be gone
+  }
+  return true
 }
 
 function wireSession(engine: Engine): void {
@@ -383,23 +462,40 @@ function handleOffer(engine: Engine, offer: Zmodem.Offer): void {
     finalize(engine, false, err instanceof Error ? err.message : t('main.zmodem.receiveFailed'))
   })
 
+  // Backpressure release. The sink's queue is empty again, so the octets that
+  // were parked there are really written, the peer may push more, and this is
+  // the ONLY progress signal while blocked — it must therefore also reset the
+  // stall watchdog (a slow but working disk is not a stalled transfer).
+  stream.on('drain', () => {
+    if (engine.receiveStream !== stream) return
+    if (releaseSource(engine)) touchActivity(engine)
+  })
+
   offer
     .accept({
       on_input: (payload: Uint8Array | number[]) => {
         // zmodem.js delivers the payload as a plain octet Array (not a
         // Uint8Array); coerce defensively to a Buffer before writing.
         const buf = Array.isArray(payload) ? Buffer.from(payload) : Buffer.from(payload.buffer, payload.byteOffset, payload.byteLength)
-        if (!stream.destroyed && !stream.closed) {
-          stream.write(buf)
+        const writable = !stream.destroyed && !stream.closed
+        if (writable && stream.write(buf)) {
+          engine.bytes += buf.byteLength
+          // Not throttled: the stall watchdog measures byte progress, not UI events.
+          touchActivity(engine)
+        } else if (writable) {
+          // write() === false: the sink is over its highWaterMark, so these
+          // octets only sit in Node's queue — for a 100MB file into a slow disk
+          // the whole file would end up there. Pausing the ssh stream makes the
+          // peer wait instead; counting the bytes or touching the watchdog now
+          // would report progress for data that has not reached the disk yet.
+          engine.pendingBytes += buf.byteLength
+          pauseSource(engine)
         }
-        engine.bytes += buf.byteLength
         emitProgressThrottled(engine, {
           file: name,
           bytes: engine.bytes,
           totalBytes: engine.totalBytes
         })
-        // Not throttled: the stall watchdog measures byte progress, not UI events.
-        touchActivity(engine)
       }
     })
     .then(() => {
@@ -521,6 +617,9 @@ export function attachZmodem(sessionId: string, deps: ZmodemDeps): void {
     stallTimer: null,
     receiveStream: null,
     bytes: 0,
+    pendingBytes: 0,
+    sourcePaused: false,
+    warnedNoSource: false,
     totalBytes: 0
   }
   engines.set(sessionId, engine)
@@ -683,6 +782,10 @@ export function detachZmodem(sessionId: string): void {
   if (engine.active) {
     finalize(engine, false, t('main.zmodem.sessionClosed'), 'cancelled')
   }
+  // The engine is about to be dropped: a pause still outstanding here would
+  // never be lifted (finalize already released the active one; this covers the
+  // path where it was not active).
+  releaseSource(engine)
   engine.active = false
   cancelTimers(engine)
   const stream = engine.receiveStream

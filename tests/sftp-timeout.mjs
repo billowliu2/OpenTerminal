@@ -51,8 +51,9 @@ sftp.setLocalPathPolicy({
 /**
  * A fake ssh2 SFTPWrapper whose per-call behavior is scripted.
  * `behaviour(op, args)` returns `'silent'` (never calls back — the dead-channel
- * case), `'error'` (calls back with an error), or `'ok'` (calls back with
- * `result`). Every call is recorded so the test can assert on what was opened.
+ * case), `'enoent'` (calls back with the server's "no such file"), `'error'`
+ * (calls back with a generic error), or `'ok'` (calls back with `result`). Every
+ * call is recorded so the test can assert on what was opened.
  */
 const defaultStat = () => ({
   isDirectory: () => false,
@@ -62,6 +63,9 @@ const defaultStat = () => ({
   uid: 1000,
   gid: 1000
 })
+
+/** SSH_FX_NO_SUCH_FILE as ssh2 surfaces it: a numeric status on an Error. */
+const noSuchFile = () => Object.assign(new Error('No such file'), { code: 2 })
 
 let calls
 let behaviour
@@ -101,6 +105,7 @@ const makeWrapper = () => {
     calls.push({ op, args })
     const verdict = behaviour(op, args)
     if (verdict === 'silent') return
+    if (verdict === 'enoent') return cb(noSuchFile())
     if (verdict === 'error') return cb(new Error(`${op} failed`))
     cb(null, voidResult ? undefined : result)
   }
@@ -431,6 +436,77 @@ console.log('default budgets are sane relative to each other')
   sftp.setSftpTimeouts({ op: 60, transfer: 200, open: 60 })
   const elapsed = Date.now() - started
   ok(elapsed < 3000, `the check itself was quick (${elapsed}ms)`)
+}
+
+// ---- 7. a delete is idempotent: "already gone" is success ------------------
+console.log('deleting an entry that is already gone succeeds instead of reporting a failure')
+{
+  // The file may have been removed by someone else between the listing and the
+  // click, or the same delete may be run again after an earlier pass already
+  // removed it. "No such file" means the end state the user asked for already
+  // holds, so it must not surface as "delete failed".
+  reset((op) => (op === 'lstat' || op === 'unlink' ? 'enoent' : 'ok'))
+  sftp.closeSftp('del-gone')
+  const missing = await expectReject(sftp.deleteRemote('del-gone', ['/remote/gone.txt']), 'deleteRemote')
+  ok(!missing.rejected, `a missing file is not a delete failure (${missing.message})`)
+
+  // The tolerance is for that one status only: a real unlink failure still has
+  // to reach the user.
+  reset((op) => (op === 'unlink' ? 'error' : 'ok'))
+  sftp.closeSftp('del-denied')
+  const denied = await expectReject(sftp.deleteRemote('del-denied', ['/remote/x.txt']), 'deleteRemote')
+  ok(denied.rejected, 'a genuine unlink failure is still reported')
+
+  // The other shape of the same status: no numeric code, only the library's
+  // English message.
+  reset(() => 'ok')
+  sftp.registerSftpClientProvider(() => ({
+    sftp: (cb) => {
+      const w = makeWrapper()
+      w.unlink = (p, cb) => {
+        calls.push({ op: 'unlink', args: [p] })
+        cb(new Error('No such file'))
+      }
+      openedChannels.push(w)
+      cb(null, w)
+    }
+  }))
+  sftp.closeSftp('del-gone-msg')
+  const byMessage = await expectReject(sftp.deleteRemote('del-gone-msg', ['/remote/gone.txt']), 'deleteRemote')
+  ok(!byMessage.rejected, `the message-only form is tolerated too (${byMessage.message})`)
+
+  // The recursive shapes: the directory itself is gone, and a tree whose entries
+  // were already removed reports the same status from unlink and rmdir.
+  reset((op, args) => (op === 'readdir' && args[0] === '/remote/dir' ? 'enoent' : 'ok'))
+  sftp.registerSftpClientProvider(() => ({
+    sftp: (cb) => {
+      const w = makeWrapper()
+      // Only the top-level path is a directory, or the children would recurse.
+      w.lstat = (p, cb) => {
+        calls.push({ op: 'lstat', args: [p] })
+        cb(null, { ...defaultStat(), isDirectory: () => p === '/remote/dir' })
+      }
+      openedChannels.push(w)
+      cb(null, w)
+    }
+  }))
+  sftp.closeSftp('del-dir-gone')
+  const dirGone = await expectReject(sftp.deleteRemote('del-dir-gone', ['/remote/dir']), 'deleteRemote')
+  ok(!dirGone.rejected, `a directory that no longer exists is not a failure (${dirGone.message})`)
+
+  reset((op) => (op === 'unlink' || op === 'rmdir' ? 'enoent' : 'ok'))
+  sftp.closeSftp('del-dir-partial')
+  const dirPartial = await expectReject(sftp.deleteRemote('del-dir-partial', ['/remote/dir']), 'deleteRemote')
+  ok(!dirPartial.rejected, `a tree whose entries were already removed is not a failure (${dirPartial.message})`)
+
+  // Restore the standard provider for any later section.
+  sftp.registerSftpClientProvider(() => ({
+    sftp: (cb) => {
+      const w = makeWrapper()
+      openedChannels.push(w)
+      cb(null, w)
+    }
+  }))
 }
 
 // ---- helpers ----------------------------------------------------------------
