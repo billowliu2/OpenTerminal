@@ -4,7 +4,7 @@
 
 ## 当前版本与仓库
 
-- v1.0.20，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
+- v1.0.23，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取
 - 开源协议：MIT（LICENSE）
 - 更新通道 = `https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/`（公网可读，含 latest.yml/exe/blockmap）
 - 技术栈：Electron + electron-vite + React 19 + TS strict + antd 6（全局深色）+ zustand + dockview-react 8 + @xterm/xterm 6 + @lydell/node-pty + ssh2 + zmodem.js + electron-updater + electron-builder
@@ -56,15 +56,16 @@
 - **广播输入**：渲染层 zustand（broadcastStore）维护 enabled/targets/sessions；TerminalView 全部写路径（onData/补全/粘贴/Workspace runCommand）走 writeBroadcast 扇出；目标 <2 自动禁用；tab 目标圆点 + 按钮计数徽标
 - **ZMODEM**：主进程引擎（src/main/zmodem.ts，仅 SSH 会话；本地 pty 走 ConPTY 只给 UTF-8 字符串，二进制会损坏——不支持，注释已说明）；Sentry 常驻分流非 zmodem 字节；offer→渲染层选文件/目录→respond；传输期抑制 PTY_DATA/replay/日志并丢弃用户键入；offer 120s/传输 90s 看门狗；进度复用 TransferPanel（kind=zmodem-upload/download）；测试 tests/zmodem-e2e.mjs 用第二个 zmodem.js Sentry 模拟远端，双向内容一致性断言
 - **快捷键**：Ctrl+=/-/0 字号（main.tsx capture 监听，xterm-helper-textarea 放行——隐藏 textarea 曾被误判为输入框导致终端聚焦时失效，已修）；globalShowHide accelerator（globalShortcuts.ts，设置页系统分区可配，注册失败仅 warn）；Ctrl+PgUp/PgDn 面板循环（Workspace capture 监听）
-- **打包**：electron-builder.yml（msi 固定 upgradeCode 5ab9f79e-e4eb-4052-9df6-3af3a301ab0a + nsis；asarUnpack @lydell/node-pty + ssh2；npmRebuild false）；updater.ts（仅 packaged 启用，OT_UPDATE_URL/OT_UPDATE_TOKEN env，默认 feed=上述 generic package 地址）
+- **打包**：electron-builder.yml（**NSIS x64 是唯一安装包**——v1.0.22 起不再构建 MSI，electron-updater 本就不支持 MSI 自动更新；asarUnpack @lydell/node-pty + ssh2；npmRebuild false）；updater.ts（仅 packaged 启用，OT_UPDATE_URL/OT_UPDATE_TOKEN env，默认 feed=上述 generic package 地址）
 
 ## 发布流程（下一版本照抄）
 
-1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）。`predist` 会先跑 `npm test`（typecheck + 12 个离线测试）再 `npm install --package-lock-only` 同步锁文件根版本号，**release 提交要包含 package-lock.json**（否则根版本会漂移，v1.0.15–1.0.19 曾漂了 5 个版本）
-2. `node scripts/release.cjs <版本号>`（**不带 skip 参数**，Gitea 与 GitHub 一起发）：脚本自己建 Gitea release（msi/exe 资产）→ 传更新通道 `exe.blockmap → exe → release-notes.md → latest.yml`（**latest.yml 最后**）；再把 exe/exe.blockmap/latest.yml 作为 release 资产同步发到 GitHub（electron-updater 标准 GitHub provider 直接吃 release 资产）。不再先删旧版，latest.yml 生效后才清掉上一版 exe/blockmap。上传前 `assertNoDowngrade()` 会读通道 latest.yml，线上版本更高时直接拒绝
+1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）。`predist` 会先跑 `npm test`（typecheck + 19 个离线测试）再 `npm install --package-lock-only` 同步锁文件根版本号，**release 提交要包含 package-lock.json**（否则根版本会漂移，v1.0.15–1.0.19 曾漂了 5 个版本）
+2. `node scripts/release.cjs <版本号>`（**不带 skip 参数**，Gitea 与 GitHub 一起发）：脚本自己建 Gitea release（exe 资产）→ 传更新通道 `exe.blockmap → exe → release-notes.md → latest.yml`（**latest.yml 最后**）；再把 exe/exe.blockmap/latest.yml 作为 release 资产同步发到 GitHub（electron-updater 标准 GitHub provider 直接吃 release 资产）。不再先删旧版，latest.yml 生效后才清掉上一版 exe/blockmap。上传前 `assertNoDowngrade()` 会读通道 latest.yml，线上版本更高时直接拒绝——**该探测已 fail-closed**：网络错误 / 非 404 失败 / 解析不出 version 一律抛错中止发布，只有通道真空（404）才放行；通道探测在 `pruneChannel` 前那次是 best-effort（失败只跳过清理并打日志，不中断已生效的发布）
 3. 通道传坏了只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub；同一版本可重复运行：release 复用、已传资产跳过）
-4. 校验：无 token `curl .../generic/openterminal-update/stable/latest.yml` 应 200 且 version 正确
-5. `git tag vX.Y.Z && git push origin main vX.Y.Z`（GitHub 镜像推代码/tag + release 资产，与 Gitea 保持同步）
+4. 跳过部分目标的 flag：`--skip-github` 只跳 GitHub release；`--skip-gitea-release` 只跳 Gitea release，**更新通道照常上传**；`--skip-gitea` 两者都跳（打印醒目警告——国内用户将收不到该版本，只想跳 release 请用 `--skip-gitea-release`）
+5. 校验：无 token `curl .../generic/openterminal-update/stable/latest.yml` 应 200 且 version 正确
+6. `git tag vX.Y.Z && git push origin main vX.Y.Z`（GitHub 镜像推代码/tag + release 资产，与 Gitea 保持同步）
 
 > GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub）；国内通道全程直连，不设代理
 
@@ -73,22 +74,31 @@
 ```bash
 npm run typecheck   # tsconfig.node.json + tsconfig.web.json
 npm run build
-npm test            # = pretest(typecheck) + node tests/build-bundles.cjs + 下面 12 个测试（依次，全部离线可跑）
+npm test            # = pretest(typecheck) + node tests/build-bundles.cjs + 下面 19 个测试（依次，全部离线可跑）
 node tests/ssh-loopback.mjs
 node tests/commands-store.mjs
 node tests/connections-store.mjs       # SSH 书签 CRUD / 公开-密文切分 / 损坏文件备份
 node tests/settings-store.mjs          # 设置清洗器（closeAction/高亮规则修复/旧预设升级/告警日志）
+node tests/local-path-grants.mjs       # 本地路径准入（对话框授权、realpath+stat、大小写折叠）
 node tests/lock-store.mjs              # 锁屏密码校验值（scrypt 往返、损坏文件）
 node tests/lock-controller.mjs         # 冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动
 node tests/lock-shortcuts.mjs          # 锁屏快捷键分类器（表驱动）
+node tests/reserved-accelerators.mjs   # 保留快捷键表（设置页录制器与主进程注册守卫共用一张表）
+node tests/.terminal-title.cjs         # 终端自动标题多语言反解与原地重渲染
+node tests/ipc-guard.mjs               # IPC sender guard（走真实注册路径灌伪造帧）
+node tests/updater-fallback.mjs        # 更新源回退与超时预算（GitHub→Gitea）
+node tests/log-sanitizer.mjs           # 会话日志纯文本转换（ANSI 状态机 + 字节切分 fuzz）
+node tests/sftp-timeout.mjs            # SFTP per-op 超时与半死通道驱逐
 node tests/.hl-split-smoke.cjs
 node tests/.hl-rules.cjs               # 内置高亮预设（词边界、大小写、负向词、危险命令）
 node tests/zmodem-e2e.mjs
 node tests/ssh-session-e2e.mjs
 node tests/sysinfo-e2e.mjs
 # `node tests/build-bundles.cjs` 单独重建全部 esbuild bundle（别名只存在于该脚本）：
-#   .session-e2e.cjs(pty.ts) .sftp-svc.mjs(sftp.ts，ESM) .commands-store.cjs .connections-store.cjs
-#   .known-hosts.cjs .settings-store.cjs .lock-store.cjs .lock-controller.cjs .lock-shortcuts.cjs
+#   .session-e2e.cjs(pty.ts) .ssh.cjs(ssh.ts) .sftp-svc.mjs(sftp.ts，ESM) .commands-store.cjs
+#   .connections-store.cjs .known-hosts.cjs .settings-store.cjs .local-path-grants.cjs
+#   .lock-store.cjs .lock-controller.cjs .lock-shortcuts.cjs .reserved-accelerators.cjs
+#   .terminal-title.cjs .updater.cjs .ipc.cjs .log-sanitizer.cjs .ipc-channels.cjs
 #   .zmodem-e2e.cjs .hl-split-smoke.cjs .hl-rules.cjs —— 少 --alias:@shared=./src/shared 会编译失败
 # 真实服务器测试（需 JD 环境变量凭据，旧凭据已过期，不在 npm test 内）：
 # JD_HOST=... JD_USER=root JD_PASS=... node tests/sftp-real.mjs / tests/sftp-chmod.mjs

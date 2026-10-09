@@ -4,9 +4,7 @@ node_modules/
 # build output
 out/
 dist/
-tests/.session-e2e.cjs
 tests/.sftp-svc.*
-tests/.hl-smoke.*
 
 # research artifacts (XTerminal reverse-engineering notes, not part of the app)
 research/
@@ -52,7 +50,6 @@ release/
 # stray local test artifacts
 .min-test.bin
 .min2-test.bin
-.exact-test.bin
 tests/.zm-src-*/
 tests/.zm-out-*/
 

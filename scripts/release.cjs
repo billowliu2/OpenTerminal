@@ -1,7 +1,16 @@
 // OpenTerminal release publisher
-// Usage: node scripts/release.cjs <version> [--skip-github] [--skip-gitea] [--channel-only]
+// Usage: node scripts/release.cjs <version> [--skip-github] [--skip-gitea-release] [--skip-gitea] [--channel-only]
 //   node scripts/release.cjs 1.0.2
-//   node scripts/release.cjs 1.0.2 --channel-only   # update channel only (repair)
+//   node scripts/release.cjs 1.0.2 --channel-only        # update channel only (repair)
+// Flags:
+//   --skip-github          skip the GitHub release (assets included)
+//   --skip-gitea-release   skip only the Gitea *release*; the Gitea update
+//                          channel still runs (this is what you want if the
+//                          release already exists / is not needed)
+//   --skip-gitea           skip the Gitea release AND the Gitea update channel
+//                          — Chinese users then never see this version; prefer
+//                          --skip-gitea-release unless you really mean both
+//   --channel-only         update channel only (repair); no release, no GitHub
 // Reads release notes from RELEASE_NOTES.md (repo root, gitignored).
 // Credentials from .env (repo root, gitignored): GIT_TOKEN, GH_TOKEN.
 // If HTTPS_PROXY / HTTP_PROXY (env or .env) is set, traffic goes through it
@@ -13,11 +22,16 @@ const path = require('node:path')
 const ROOT = path.join(__dirname, '..')
 const V = process.argv[2]
 if (!V || !/^\d+\.\d+\.\d+$/.test(V)) {
-  console.error('usage: node scripts/release.cjs <x.y.z> [--skip-github] [--skip-gitea] [--channel-only]')
+  console.error('usage: node scripts/release.cjs <x.y.z> [--skip-github] [--skip-gitea-release] [--skip-gitea] [--channel-only]')
+  console.error('  --skip-github          skip the GitHub release')
+  console.error('  --skip-gitea-release   skip only the Gitea release; the update channel still runs')
+  console.error('  --skip-gitea           skip the Gitea release AND the update channel (CN users get no update)')
+  console.error('  --channel-only         update channel only (repair)')
   process.exit(1)
 }
 const SKIP_GH = process.argv.includes('--skip-github')
 const SKIP_GITEA = process.argv.includes('--skip-gitea')
+const SKIP_GITEA_RELEASE = process.argv.includes('--skip-gitea-release')
 const CHANNEL_ONLY = process.argv.includes('--channel-only')
 
 /** Strip one pair of matching quotes. A .env quotes its values for the shell
@@ -179,16 +193,24 @@ async function assertNoDowngrade() {
   console.log(`channel currently serves v${live}`)
 }
 
-/** Version the update channel serves right now (read from its latest.yml), or
-    undefined when the channel is empty/unreachable. */
+/** Version the update channel serves right now (read from its latest.yml).
+    Fail-closed: only an *empty* channel (HTTP 404) reports "unknown". A network
+    error, a non-404 failure or a body without a version all throw — otherwise a
+    probe that fails for any reason would read as "no live version" and let a
+    downgrade through the guard below. */
 async function channelVersion(base) {
+  let resp
   try {
-    const resp = await fetch(`${base}/latest.yml`)
-    if (!resp.ok) return undefined
-    return (await resp.text()).match(/^version:\s*(\S+)/m)?.[1]
-  } catch {
-    return undefined
+    resp = await fetch(`${base}/latest.yml`)
+  } catch (e) {
+    throw new Error(`cannot reach update channel (${e.message})`)
   }
+  // 404 = nothing published yet; that is a legal empty channel, not an error.
+  if (resp.status === 404) return undefined
+  if (!resp.ok) throw new Error(`update channel latest.yml returned HTTP ${resp.status}`)
+  const version = (await resp.text()).match(/^version:\s*(\S+)/m)?.[1]
+  if (!version) throw new Error('update channel latest.yml carries no version field')
+  return version
 }
 
 /** Size of a channel file, or -1 when it is not there. */
@@ -264,7 +286,17 @@ async function giteaChannel() {
   // (ECONNRESET) can no longer leave the channel empty and unrepairable.
   const isLatest = ([f]) => path.basename(f) === 'latest.yml'
   const ordered = [...channelFiles.filter((e) => !isLatest(e)), ...channelFiles.filter(isLatest)]
-  const previous = await channelVersion(base)
+  // Best effort by design: this probe only decides whether the previous
+  // version's binaries get pruned afterwards. It now throws on a failed probe
+  // (fail-closed for the downgrade guard), and by the time we are here the new
+  // latest.yml is about to be live — a hiccup in a cleanup helper must never
+  // abort the tail of the publish.
+  let previous
+  try {
+    previous = await channelVersion(base)
+  } catch (e) {
+    console.log(`  cannot read the live channel version (${e.message}) — skipping prune of the previous release`)
+  }
   for (const [f, name] of ordered) {
     const stat = fs.statSync(f)
     const url = `${base}/${encodeURIComponent(name)}`
@@ -407,7 +439,15 @@ async function main() {
     console.log('done (channel only)')
     return
   }
-  if (!SKIP_GITEA) { await gitea(); await giteaChannel() }
+  if (SKIP_GITEA) {
+    console.warn('*** WARNING: --skip-gitea skips the Gitea release AND the Gitea update channel. ***')
+    console.warn('*** Domestic users will NOT receive this version — it is only on GitHub, which most ***')
+    console.warn('*** of them cannot reach. To skip just the release, use --skip-gitea-release. ***')
+  }
+  // --skip-gitea-release: the release object already exists (or is not wanted),
+  // but the channel still has to be fed — that is the whole update path at home.
+  if (!SKIP_GITEA && !SKIP_GITEA_RELEASE) await gitea()
+  if (!SKIP_GITEA) await giteaChannel()
   if (!SKIP_GH) await github()
   console.log('done')
 }

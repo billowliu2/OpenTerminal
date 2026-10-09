@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # npm test 会先自动跑 pretest（typecheck），再重建 esbuild bundle 并跑 13 个离线测试
+      # npm test 会先自动跑 pretest（typecheck），再重建 esbuild bundle 并跑 19 个离线测试
       - name: Test
         run: npm test
 

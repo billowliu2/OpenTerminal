@@ -7,10 +7,10 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 开发：`npm run dev`（主进程改动不热重建，需重启）
 - dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
 - 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
-- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 18 个测试：ssh-loopback、commands-store、connections-store、settings-store、local-path-grants、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、reserved-accelerators、ipc-guard、updater-fallback、log-sanitizer、sftp-timeout、terminal-title、zmodem-e2e、ssh-session-e2e、sysinfo-e2e；真实服务器测试需 JD_* 凭据，不在此列）
+- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 22 个测试：ssh-loopback、commands-store、connections-store、settings-store、local-path-grants、lock-store、lock-controller、lock-shortcuts、hl-split-smoke、hl-rules、reserved-accelerators、ipc-guard、updater-fallback、log-sanitizer、sftp-timeout、terminal-title、zmodem-e2e、ssh-session-e2e、sysinfo-e2e、terminal-cwd、terminal-links、broadcast-store；真实服务器测试需 JD_* 凭据，不在此列）。后三个渲染层纯函数测试用 Node 22.18+ 的原生 TS 类型剥离**直接 import `.ts` 源文件**（不经 esbuild bundle），Node 20/22.17 以下会 `ERR_UNKNOWN_FILE_EXTENSION`
 - 依赖分类规则：**只有 `src/main/`/`src/preload/` 实际 import 的包才能进 `dependencies`**（node-pty/ssh2/zmodem.js/font-list/electron-updater）；纯渲染层依赖一律 devDependencies（Vite 全量打包进 out/renderer，`externalizeDepsPlugin` 不作用渲染层）——这条让 asar 从 98MB 瘦到 8.1MB，加新依赖时别放错边
 - 下载量统计：`node scripts/download-stats.cjs`（Gitea + GitHub release 资产的 download_count 汇总；GitHub 优先直连、失败自动回退 `HTTPS_PROXY`/本地 7897；更新通道无计数接口不计入）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 18 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（exe + latest.yml + blockmap）
+- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 22 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（exe + latest.yml + blockmap）
   - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
   - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
 - 依赖一致性闸门：`predist` 开头跑 `node scripts/verify-deps.cjs`（逐条比对 `node_modules` 与 `package-lock.json` 的版本，跨平台 optional 依赖缺失跳过；不一致就 exit 1）——`npm install --package-lock-only` **只重算 lockfile、不碰 node_modules**（本版 npm 还会把 `node_modules/.package-lock.json` 一并重写成理想树，制造「已经装好了」的假象），所以**改动依赖版本后必须真实 `npm install` 或 `npm ci` 再构建**，别指望 lockfile 对齐就等于树里换了包；v1.0.21 的中文输入法回归正是这个坑（`@xterm/xterm` 锁 6.1.0-beta.304，树里还是 6.0.0，打进去的是旧代码）
@@ -37,8 +37,9 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
    - Gitea：release（exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`：exe.blockmap → exe → release-notes.md → **latest.yml 最后**）
    - GitHub：release 资产再次随版本同步发布（exe + exe.blockmap + latest.yml），electron-updater 标准 GitHub provider 直接吃 release 资产
    - 通道不再先删旧版：新版本文件全部传完、latest.yml 生效后才清掉上一版 exe/blockmap，中途失败不会把通道打空；同一版本可重复运行（release 复用、已传资产跳过）
-   - 上传前先比通道版本：`assertNoDowngrade()` 读通道 latest.yml，若线上版本**高于**待发布版本就直接拒绝——三条本地护栏只比本地产物，旧分支发旧版本号会一路通过，覆盖 latest.yml 之后 `pruneChannel` 会把线上新版本的 exe/blockmap 删掉
+   - 上传前先比通道版本：`assertNoDowngrade()` 读通道 latest.yml，若线上版本**高于**待发布版本就直接拒绝——三条本地护栏只比本地产物，旧分支发旧版本号会一路通过，覆盖 latest.yml 之后 `pruneChannel` 会把线上新版本的 exe/blockmap 删掉。该探测**fail-closed**：网络错误 / 非 404 失败 / 解析不出 version 一律抛错中止发布，只有通道真空（404）才放行；`pruneChannel` 前那次探测是 best-effort（失败只跳过清理并打日志）
    - 只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub）
+   - 跳过部分目标：`--skip-github` 只跳 GitHub release；`--skip-gitea-release` **只跳 Gitea release、更新通道照常上传**；`--skip-gitea` 两者都跳（会打印醒目警告——国内用户将收不到该版本，只想跳 release 请用 `--skip-gitea-release`）
    - 国内通道全程直连，**不需要设代理**；GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub 请求）
 5. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
 6. `git tag v<版本号>` 并推送两个远程（代码/tag 与 release 资产的镜像保持同步）。注意顺序坑：release.cjs 创建 release 时若远端尚无该 tag,Gitea/GitHub 会在**默认分支 HEAD** 自动建一个指向错误 commit 的 tag，第 6 步推送会被拒——要么先建 tag 推上去再跑 release.cjs，要么事后 `git push -f <远端> v<版本号>` 强制修正到 release commit(v1.0.22 即踩过）
@@ -72,6 +73,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - `keyPath`（SSH 私钥）：realpath → stat → 普通文件且 ≤1MB 才读（防设备文件永久阻塞 UI 线程/符号链接逃逸）
 - `src/shared/reservedAccelerators.ts`：设置页录制器与主进程 `applyGlobalShortcut` **共用同一张保留键表**（Ctrl+L、Ctrl+=/-/0/PgUp/PgDn），两处分表曾漂移出洞，加新全局快捷键时两边自动一致
 - SFTP 操作有 per-op 超时（`sftp.ts` 的 `bounded()`：元数据 30s / 传输块 60s / open 10s），超时按 transport 错误驱逐半死通道并重试一次；`setSftpTimeouts`/`setUpdateTimeouts` 是**测试缝**，生产无调用者，别接设置项
+- **PTY_EXIT 是一次性广播、不做重放**：绑定晚于退出的窗格靠 `SESSION_STATE` 查询通道（`sessionState()` + 退出码登记表 `sessionExits`，上限 512 条 FIFO）补偿，`TerminalView` 订阅完成后查一次。同理，SSH **飞行中连接**（`connectSsh` 未返回）登记在 `pendingOpens`（带 owner 与 `onClient` 最早引用），`killPtysByOwner`/`killAllPtys` 靠它中止握手，否则 renderer 崩溃后会留下无主孤儿会话
+- **zmodem 接收路径的背压靠 `pauseSource`/`resumeSource` 钩子**（`pty.ts` 注入，暂停喂入 sentry 的 ssh 流）：fs WriteStream 缓冲无上限，慢盘 + 快对端会 OOM；`touchActivity` 只在写入被接受或 drain 恢复时计数，否则 stall 看门狗会把「堆在缓冲里」当进展。删除路径的 ENOENT 一律视为已删成功（`withSftp` 会整函数重跑，非幂等操作必须自己容忍「目标已消失」）
 - `webPreferences` 显式写死 `contextIsolation: true / nodeIntegration: false / webSecurity: true`（`index.ts` 唯一窗口创建点），防默认值被将来改动
 - 终端标签自动标题（「终端 N」）是**存储的显示文本**（进布局模板/会话快照/广播注册），`src/shared/terminalTitle.ts` 负责两个方向：反解用**全部 4 语言**的 pattern（任何语言生成的都能认出编号），渲染用当前语言；语言切换/快照恢复/模板应用时 `retitleAutoTitles` 原地重渲染（SSH 面板标题是用户起的连接名，永不动）。需要指定语言渲染时用 i18n 的 `tFor(lang, key, vars)`
 
@@ -94,6 +97,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 应用模板（`Workspace.handleApplyTemplate`）读的是**外来 JSON**。`fromJSON` 一旦中途失败（别的版本写的模板、面板组件已不存在），dockview 会**先把目标 dockview 清空再抛错**（`failed to deserialize layout. Reverting changes`）。清空是逐面板走 `onDidRemovePanel` 的，所以**旧会话在抛错之前就已经被 `killSession` 杀掉了**——恢复出来的面板接不回它们，必须换新会话
 - 失败路径：应用前 `toJSON()` 快照两个 dockview → 抛错时只对**这次真的调用过 `fromJSON` 的** dockview 回灌快照（回灌本身会清空该 dockview；把快照灌进没被碰过的那个会连带杀掉它活着的会话）→ 对恢复出来的面板跑 `rebindRestoredPanels` → 再把「没有任何面板引用的 `previousSessions`」kill 掉 → `message.error`。`JSON.parse` 失败同样要提示，不能静默 return
 - 会话计数不靠累加器：`releaseSession` 直接扫 `api.panels` 判断还有没有面板在显示该会话——累加器与「`updateParameters` 原地换会话」「整块布局替换」这类无事件变化脱节，会漏杀或误杀
+- **旧版（M6.1 前单 dockview）模板只喂 terminal dockview**：成功路径的 rebind 与收尾 kill 都必须按 `sshTouched` / `live` 集合门控——rebind 会把面板参数改写成新**本地**会话，对没被 fromJSON 触碰的 ssh dockview 跑一遍等于把活 SSH 面板降级成终端再杀会话
+- 主机密钥队列只渲染队头，且主进程 `DEFAULT_TIMEOUTS.prompt`（120s）超时后**不再广播**：渲染层用同 TTL 的定时清扫（`HOST_KEY_PROMPT_TTL_MS`）移除过期条目，否则陈旧弹窗永远占住队头挡住后续主机；两处 TTL 必须同步改。`respondHostKey` 等 IPC 调用**不得写进 setState 的 updater**（React 可能重放 updater）
 
 ## 关键词高亮
 
