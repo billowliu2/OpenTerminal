@@ -1,5 +1,33 @@
 # OpenTerminal Changelog
 
+## v1.0.25 - 2026-10-10
+
+## v1.0.23
+
+### SFTP file management
+- **The list is now a real table**: Name / Size / Modified / Permissions / Owner / Group are aligned in six columns, with a sticky header that stays visible while scrolling long listings.
+- **Click-to-sort headers**: all six columns sort, with arrow indicators for ascending/descending; directories always come before files.
+- **Adjustable font size**: use the A- / A+ toolbar buttons or Ctrl+mouse wheel to scale between 0.8x and 1.8x. Row height follows the font size, and the setting is remembered locally, so it survives reopening the panel.
+- **Real owner / group names**: previously only numeric UID / GID were shown; the client now parses the real names (`eveuser`, `root`, ...) out of the data returned by the SSH server.
+- **Context menu on empty space**: right-click anywhere in the blank area of the list to get New Folder, Upload, Refresh and friends without having to select a row first.
+- The modified column now reads `2026/10/08 15:23`, and sizes read `30.7 KB`.
+
+### Fixes
+- Fixed the file panel's six columns not actually aligning to the grid (the sort icon's style class was being cloned onto the row element, overriding the row's grid layout).
+
+## v1.0.23
+
+### SFTP file management
+- **The list is now a real table**: Name / Size / Modified / Permissions / Owner / Group are aligned in six columns, with a sticky header that stays visible while scrolling long listings.
+- **Click-to-sort headers**: all six columns sort, with arrow indicators for ascending/descending; directories always come before files.
+- **Adjustable font size**: use the A- / A+ toolbar buttons or Ctrl+mouse wheel to scale between 0.8x and 1.8x. Row height follows the font size, and the setting is remembered locally, so it survives reopening the panel.
+- **Real owner / group names**: previously only numeric UID / GID were shown; the client now parses the real names (`eveuser`, `root`, ...) out of the data returned by the SSH server.
+- **Context menu on empty space**: right-click anywhere in the blank area of the list to get New Folder, Upload, Refresh and friends without having to select a row first.
+- The modified column now reads `2026/10/08 15:23`, and sizes read `30.7 KB`.
+
+### Fixes
+- Fixed the file panel's six columns not actually aligning to the grid (the sort icon's style class was being cloned onto the row element, overriding the row's grid layout).
+
 ## v1.0.24 - 2026-10-09
 
 ## v1.0.23
