@@ -161,6 +161,24 @@ export interface LockSettings {
   lockAtStartup: boolean
 }
 
+/**
+ * The intervals offered for the periodic update check, in hours. A closed set
+ * rather than a free number, for the same reason as LOCK_AUTO_DELAYS: `0` means
+ * "never" — the startup and the manual check still work — and the updater's
+ * timer, the sanitizer and the settings UI all read this one list, so they cannot
+ * disagree. Without the whitelist a hand-edited settings.json could put the app
+ * on an arbitrary schedule (a check every minute, or a fractional interval the
+ * timer would round unpredictably).
+ */
+export type UpdateCheckInterval = 0 | 4 | 12 | 24
+
+export const UPDATE_CHECK_INTERVALS: UpdateCheckInterval[] = [0, 4, 12, 24]
+
+/** Only a whitelisted interval survives a stored value; callers fall back themselves. */
+export function isUpdateCheckInterval(value: unknown): value is UpdateCheckInterval {
+  return UPDATE_CHECK_INTERVALS.includes(value as UpdateCheckInterval)
+}
+
 export interface SystemSettings {
   /** register the app to launch at OS login */
   launchAtLogin: boolean
@@ -172,6 +190,10 @@ export interface SystemSettings {
   closeAction?: 'ask' | 'tray' | 'exit'
   /** check for updates shortly after startup (manual check always available) */
   autoCheckUpdate?: boolean
+  /** periodic background update check; 0 = never (startup + manual always work) */
+  updateCheckIntervalHours?: UpdateCheckInterval
+  /** silently download a found update in the background (installing stays manual) */
+  autoDownloadUpdate?: boolean
   /**
    * Restore the previous layout and each pane's working directory on launch
    * (see the session snapshot). On by default — that is the point of it.
@@ -467,7 +489,20 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
   highlightProfiles: [],
-  system: { launchAtLogin: false, preventSleep: false, globalShowHide: '', closeAction: 'tray', autoCheckUpdate: true, restoreSession: true, shellIntegration: false, language: 'zh-CN' },
+  // Every 4 hours by default: often enough for a terminal app that runs all day,
+  // and the download stays manual (autoDownloadUpdate) until the user opts in.
+  system: {
+    launchAtLogin: false,
+    preventSleep: false,
+    globalShowHide: '',
+    closeAction: 'tray',
+    autoCheckUpdate: true,
+    updateCheckIntervalHours: 4,
+    autoDownloadUpdate: false,
+    restoreSession: true,
+    shellIntegration: false,
+    language: 'zh-CN'
+  },
   // Off until the user sets a password and turns it on: an app that locks
   // itself out of the box would be a support ticket, not a feature.
   lock: { enabled: false, autoLockMinutes: 0, lockAtStartup: false }

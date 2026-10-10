@@ -5,12 +5,12 @@ import { pathToFileURL } from 'url'
 import { devRendererUrl } from './devEnv'
 import { isTrustedRendererUrl, registerIpc } from './ipc'
 import { killAllPtys, killPtysByOwner } from './pty'
-import { applyStartupSystemSettings, loadSettings } from './settingsStore'
+import { applyStartupSystemSettings, loadSettings, setUpdateScheduleApplier } from './settingsStore'
 import { getLockController, initLockController } from './lockController'
 import { applyMenuLockState } from './lockMenu'
 import { isLockBlockedShortcut, isPanicLockChord } from './lockShortcuts'
 import { initTray, markQuitting, onMainWindowClose, refreshTrayMenu } from './tray'
-import { configureAutoUpdater, registerUpdateIpc } from './updater'
+import { applyUpdateSchedule, configureAutoUpdater, registerUpdateIpc } from './updater'
 import { applyWindowChrome } from './windowChrome'
 import { onLanguageChange, t } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
@@ -90,6 +90,11 @@ if (!gotSingleInstanceLock) {
       // Before the window exists: a renderer-triggered check must not run against
       // the updater's defaults (feed, proxy, autoDownload are set in here).
       configureAutoUpdater()
+      // Arms the startup + periodic update checks and re-arms them on every
+      // settings save. Injected rather than imported by settingsStore because
+      // updater.ts already imports settingsStore: the reverse import would be a
+      // cycle, arming the timer against a half-initialised updater.
+      setUpdateScheduleApplier(applyUpdateSchedule)
       // OS-level effects (login item, sleep blocker) must apply even if the
       // settings dialog is never opened this run.
       applyStartupSystemSettings(loadSettings())

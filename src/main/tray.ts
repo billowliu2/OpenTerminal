@@ -104,6 +104,21 @@ function hideToTray(win: BrowserWindow): void {
 }
 
 /**
+ * Balloon for background events (update available / downloaded). Windows only;
+ * silent elsewhere, and only when no window is visible — a user looking at the
+ * app already sees the state in 设置 → 关于.
+ *
+ * Deliberately not gated on `balloonShown`: that flag is the one-shot
+ * "minimized to tray" hint, while an update event may legitimately notify once
+ * per version.
+ */
+export function notifyUpdate(title: string, content: string): void {
+  if (process.platform !== 'win32' || !tray) return
+  if (BrowserWindow.getAllWindows()[0]?.isVisible()) return
+  tray.displayBalloon({ iconType: 'info', title, content })
+}
+
+/**
  * Window close interception. Must be called synchronously from the 'close'
  * event: preventDefault happens before any await on every branch.
  */

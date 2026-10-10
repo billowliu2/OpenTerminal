@@ -262,6 +262,10 @@ export interface UpdateState {
   error?: string
   /** which feed served the last check: domestic Gitea first, GitHub fallback */
   feed?: 'gitea' | 'github'
+  /** the check that produced this state was started by the periodic timer */
+  scheduled?: boolean
+  /** the in-flight/completed download was started by the auto-download setting */
+  auto?: boolean
 }
 
 export interface ReleaseNote {

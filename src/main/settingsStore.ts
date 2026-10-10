@@ -7,6 +7,7 @@ import {
   DEFAULT_SETTINGS,
   isHighlightCategory,
   isLockAutoDelay,
+  isUpdateCheckInterval,
   lockAutoDelayOf,
   type AppSettings,
   type HighlightRule,
@@ -363,6 +364,12 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         globalShowHide,
         closeAction,
         autoCheckUpdate: candidate.autoCheckUpdate !== false,
+        // The interval is a whitelist (UPDATE_CHECK_INTERVALS): an arbitrary
+        // number here would silently rewrite how often we hit the update feed.
+        updateCheckIntervalHours: isUpdateCheckInterval(candidate.updateCheckIntervalHours)
+          ? candidate.updateCheckIntervalHours
+          : DEFAULT_SYSTEM.updateCheckIntervalHours,
+        autoDownloadUpdate: candidate.autoDownloadUpdate === true,
         // Both default on/off as in DEFAULT_SETTINGS; absent means "not chosen".
         restoreSession: candidate.restoreSession !== false,
         shellIntegration: candidate.shellIntegration === true,
@@ -395,6 +402,28 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
 
 let sleepBlockerId: number | undefined
 
+/**
+ * The updater's scheduler, injected rather than imported: `updater.ts` already
+ * imports this module, so importing it back would be a cycle — the timer would be
+ * armed against a half-initialised updater (and, depending on load order, on an
+ * `undefined` binding). `index.ts` wires this once with the updater's scheduler.
+ */
+let updateScheduleApplier: ((system: SystemSettings) => void) | null = null
+
+/**
+ * Wire the updater's scheduler. The current settings are handed over immediately
+ * as well, so the schedule is armed no matter where in startup the caller wires
+ * this: `index.ts` wires the updater around `applyStartupSystemSettings`, and the
+ * order of the two is not part of the contract. `loadSettings` is a pure read — it
+ * never calls `applySystemSettings` — so applying here cannot recurse, and the
+ * extra call is idempotent: the applier is a plain "set the timer for this
+ * interval" step that already re-runs on every settings save.
+ */
+export function setUpdateScheduleApplier(fn: (system: SystemSettings) => void): void {
+  updateScheduleApplier = fn
+  fn(loadSettings().system)
+}
+
 /** Apply OS-level effects of the system settings (login item, sleep blocker). */
 function applySystemSettings(system: SystemSettings): void {
   // The main process renders its own strings (tray menu, dialogs), so it tracks
@@ -413,6 +442,9 @@ function applySystemSettings(system: SystemSettings): void {
   }
   // Re-register the global show/hide shortcut whenever system settings change.
   applyGlobalShortcut(system.globalShowHide)
+  // Re-arm (or disarm) the periodic update check the same way. Routed through the
+  // injected applier instead of importing the updater, which would be a cycle.
+  updateScheduleApplier?.(system)
 }
 
 /** Apply system side effects for the settings loaded at startup. */
