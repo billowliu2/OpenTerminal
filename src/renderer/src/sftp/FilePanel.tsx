@@ -19,7 +19,8 @@ import {
 import { App, Button, Checkbox, Dropdown, Input, Modal, Popconfirm, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import type { SftpEntry, TransferProgressEvent } from '@shared/sftp'
-import { getLanguage, t } from '@shared/i18n'
+import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
+import { useSettingsStore } from '@renderer/settings/store'
 import './sftp.css'
 
 /** Remote file browser for one SSH session (M4). */
@@ -89,9 +90,9 @@ function bitsToOctal(bits: PermBits): string {
   return special > 0 ? `${special}${perms}` : perms
 }
 
-/** t() falls back to the key itself when a translation is missing. */
-function tOr(key: string, fallback: string): string {
-  const value = t(key)
+/** tFor() falls back to the key itself when a translation is missing. */
+function tOr(lang: Language, key: string, fallback: string): string {
+  const value = tFor(lang, key)
   return value === key ? fallback : value
 }
 
@@ -126,12 +127,20 @@ function ownerLabel(e: SftpEntry): string {
 }
 
 /** Permission-grid labels are resolved per render so they follow the language. */
-function permRowLabels(): string[] {
-  return [t('ssh.file.permRowOwner'), t('ssh.file.permRowGroup'), t('ssh.file.permRowOther')]
+function permRowLabels(lang: Language): string[] {
+  return [
+    tFor(lang, 'ssh.file.permRowOwner'),
+    tFor(lang, 'ssh.file.permRowGroup'),
+    tFor(lang, 'ssh.file.permRowOther')
+  ]
 }
 
-function permColLabels(): string[] {
-  return [t('ssh.file.permColRead'), t('ssh.file.permColWrite'), t('ssh.file.permColExec')]
+function permColLabels(lang: Language): string[] {
+  return [
+    tFor(lang, 'ssh.file.permColRead'),
+    tFor(lang, 'ssh.file.permColWrite'),
+    tFor(lang, 'ssh.file.permColExec')
+  ]
 }
 
 /**
@@ -196,9 +205,11 @@ interface PermissionModalProps {
   entry: SftpEntry | null
   onClose: () => void
   onSaved: () => void
+  /** from FilePanel, which owns the language subscription — see there */
+  language: Language
 }
 
-function PermissionModal({ open, sessionId, entry, onClose, onSaved }: PermissionModalProps): React.JSX.Element {
+function PermissionModal({ open, sessionId, entry, onClose, onSaved, language }: PermissionModalProps): React.JSX.Element {
   const { message } = App.useApp()
   const [bits, setBits] = useState<PermBits>(emptyBits)
   const [octal, setOctal] = useState('')
@@ -208,8 +219,8 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
   const hasUidGid = entry != null && (entry.uid != null || entry.gid != null)
   /** lstat failed while listing → no mode to compare against or preserve. */
   const modeKnown = Boolean(entry?.mode)
-  const rowLabels = permRowLabels()
-  const colLabels = permColLabels()
+  const rowLabels = permRowLabels(language)
+  const colLabels = permColLabels(language)
 
   const modeStr = useMemo(() => {
     if (!entry) return { type: '-', str: '---------' }
@@ -302,7 +313,7 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
           await window.api.chownRemote(sessionId, entry.path, u, g)
         }
         if (modeChanged || ownerChanged) {
-          message.success(t('ssh.file.permApplied'))
+          message.success(tFor(language, 'ssh.file.permApplied'))
         }
         onClose()
         onSaved()
@@ -316,13 +327,13 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
 
   return (
     <Modal
-      title={t('ssh.file.permTitle', { name: entry?.name ?? '' })}
+      title={tFor(language, 'ssh.file.permTitle', { name: entry?.name ?? '' })}
       open={open}
       onOk={onSave}
       onCancel={onClose}
       confirmLoading={saving}
-      okText={t('common.save')}
-      cancelText={t('common.cancel')}
+      okText={tFor(language, 'common.save')}
+      cancelText={tFor(language, 'common.cancel')}
       okButtonProps={{ disabled: idInvalid(uid) || idInvalid(gid) }}
       width={380}
     >
@@ -355,11 +366,11 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
         </div>
 
         <div className="sftp-perm-octal-input">
-          <span className="sftp-perm-label">{t('ssh.file.octal')}</span>
+          <span className="sftp-perm-label">{tFor(language, 'ssh.file.octal')}</span>
           <Input
             value={octal}
             onChange={(e) => applyOctal(e.target.value)}
-            placeholder={t('ssh.file.octalPlaceholder')}
+            placeholder={tFor(language, 'ssh.file.octalPlaceholder')}
             addonAfter={bitsToModeStr(modeStr.type, bits)}
           />
         </div>
@@ -370,7 +381,7 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
             <Input
               value={uid}
               onChange={(e) => setUid(e.target.value)}
-              placeholder={hasUidGid ? t('ssh.file.keepEmpty') : '0'}
+              placeholder={hasUidGid ? tFor(language, 'ssh.file.keepEmpty') : '0'}
             />
           </div>
           <div className="sftp-perm-own-field">
@@ -378,14 +389,14 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
             <Input
               value={gid}
               onChange={(e) => setGid(e.target.value)}
-              placeholder={hasUidGid ? t('ssh.file.keepEmpty') : '0'}
+              placeholder={hasUidGid ? tFor(language, 'ssh.file.keepEmpty') : '0'}
             />
           </div>
         </div>
-        <div className="sftp-perm-hint">{t('ssh.file.ownerHint')}</div>
-        {entry && !modeKnown && <div className="sftp-perm-hint">{t('ssh.file.modeUnavailable')}</div>}
+        <div className="sftp-perm-hint">{tFor(language, 'ssh.file.ownerHint')}</div>
+        {entry && !modeKnown && <div className="sftp-perm-hint">{tFor(language, 'ssh.file.modeUnavailable')}</div>}
         {(idInvalid(uid) || idInvalid(gid)) && (
-          <div className="sftp-perm-hint">{t('main.sftp.invalidUidGid')}</div>
+          <div className="sftp-perm-hint">{tFor(language, 'main.sftp.invalidUidGid')}</div>
         )}
       </div>
     </Modal>
@@ -397,8 +408,15 @@ function PermissionModal({ open, sessionId, entry, onClose, onSaved }: Permissio
  * lifetime, so dragging the SSH divider (which re-renders SshBottomPanel on
  * every pointermove) no longer re-renders the whole file browser. Switching to
  * a different directory still works — it is internal state.
+ *
+ * The stable prop is also why the language has to be subscribed here: memo
+ * blocks the parent's re-render, and the panel lives in dockview's own render
+ * slot on top of that, so nothing else would ever re-render it. Every string
+ * below therefore goes through `tFor(language, …)` — `t()` would read the
+ * module-level language of whatever render last touched it.
  */
 export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps): React.JSX.Element {
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
   const { message, modal } = App.useApp()
   const [dir, setDir] = useState('/')
   const [entries, setEntries] = useState<SftpEntry[]>([])
@@ -640,9 +658,9 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
           startUpload(files)
           return
         }
-        const desc = tOr('ssh.file.overwriteDesc', '')
+        const desc = tOr(language, 'ssh.file.overwriteDesc', '')
         modal.confirm({
-          title: tOr('ssh.file.overwriteTitle', t('ssh.file.uploadFile')),
+          title: tOr(language, 'ssh.file.overwriteTitle', tFor(language, 'ssh.file.uploadFile')),
           content: (
             <div>
               {existing.map((name) => (
@@ -651,9 +669,9 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
               {desc && <div>{desc}</div>}
             </div>
           ),
-          okText: t('common.ok'),
+          okText: tFor(language, 'common.ok'),
           okButtonProps: { danger: true },
-          cancelText: t('common.cancel'),
+          cancelText: tFor(language, 'common.cancel'),
           onOk: () => startUpload(files)
         })
       } catch (err) {
@@ -721,15 +739,12 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
     void (async () => {
       try {
         await navigator.clipboard.writeText(entry.path)
-        message.success(t('ssh.file.pathCopied'))
+        message.success(tFor(language, 'ssh.file.pathCopied'))
       } catch {
-        message.error(t('ssh.file.copyPathFailed'))
+        message.error(tFor(language, 'ssh.file.copyPathFailed'))
       }
     })()
   }
-
-  /** Active language; a dep of the menu below so translated labels refresh. */
-  const language = getLanguage()
 
   /** opens the mkdir modal in create-a-file mode (no-op: new files unsupported) */
   const menu: MenuProps = useMemo(() => {
@@ -738,51 +753,51 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
     const canAction = target != null
     return {
       items: [
-        { key: 'refresh', label: t('ssh.file.refresh'), icon: <ReloadOutlined /> },
+        { key: 'refresh', label: tFor(language, 'ssh.file.refresh'), icon: <ReloadOutlined /> },
         { type: 'divider' },
         {
           key: 'open',
-          label: isDir ? t('ssh.file.open') : t('ssh.file.download'),
+          label: isDir ? tFor(language, 'ssh.file.open') : tFor(language, 'ssh.file.download'),
           icon: isDir ? <FolderOpenOutlined /> : <DownloadOutlined />,
           disabled: !canAction
         },
         {
           key: 'download',
-          label: t('ssh.file.download'),
+          label: tFor(language, 'ssh.file.download'),
           icon: <DownloadOutlined />,
           disabled: !canAction || Boolean(isDir)
         },
-        { key: 'upload', label: t('ssh.file.upload'), icon: <UploadOutlined /> },
+        { key: 'upload', label: tFor(language, 'ssh.file.upload'), icon: <UploadOutlined /> },
         {
           key: 'rename',
-          label: t('ssh.file.rename'),
+          label: tFor(language, 'ssh.file.rename'),
           icon: <FormOutlined />,
           disabled: !canAction
         },
         {
           type: 'submenu',
           key: 'new',
-          label: t('ssh.file.new'),
+          label: tFor(language, 'ssh.file.new'),
           icon: <FileAddOutlined />,
           children: [
-            { key: 'mkdir', label: t('ssh.file.newFolder'), icon: <FolderAddOutlined /> }
+            { key: 'mkdir', label: tFor(language, 'ssh.file.newFolder'), icon: <FolderAddOutlined /> }
             // 新建文件：无现成 SFTP 创建文件 API（main 仅 mkdir/rename/chmod/chown），不做
           ]
         },
         { type: 'divider' },
         {
           key: 'copyPath',
-          label: t('ssh.file.copyPath'),
+          label: tFor(language, 'ssh.file.copyPath'),
           icon: <CopyOutlined />,
           disabled: !canAction
         },
         {
           key: 'permission',
-          label: t('ssh.file.permission'),
+          label: tFor(language, 'ssh.file.permission'),
           icon: <SafetyOutlined />,
           disabled: !canAction
         },
-        { key: 'delete', label: t('common.delete'), icon: <DeleteOutlined />, danger: true, disabled: !canAction }
+        { key: 'delete', label: tFor(language, 'common.delete'), icon: <DeleteOutlined />, danger: true, disabled: !canAction }
       ],
       onClick: ({ key }) => {
         const entry = menuTarget
@@ -808,11 +823,11 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
           setPermOpen(true)
         } else if (key === 'delete') {
           modal.confirm({
-            title: t('ssh.file.deleteTitle'),
+            title: tFor(language, 'ssh.file.deleteTitle'),
             content: entry ? `${entry.name}（${entry.path}）` : undefined,
-            okText: t('common.delete'),
+            okText: tFor(language, 'common.delete'),
             okButtonProps: { danger: true },
-            cancelText: t('common.cancel'),
+            cancelText: tFor(language, 'common.cancel'),
             onOk: () =>
               new Promise<void>((resolve, reject) => {
                 if (!entry) {
@@ -864,7 +879,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
           {e.isDir ? '' : fmtSize(e.size)}
         </span>
         <span className="sftp-time">{fmtTime(e.mtime)}</span>
-        <span className="sftp-mode" title={e.mode ?? t('ssh.file.modeUnavailable')}>
+        <span className="sftp-mode" title={e.mode ?? tFor(language, 'ssh.file.modeUnavailable')}>
           {e.mode ?? '----------'}
         </span>
         <span className="sftp-owner" title={`UID ${e.uid ?? '—'} / GID ${e.gid ?? '—'}`}>
@@ -888,7 +903,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
   return (
     <div className="sftp-panel" style={scaleVars}>
       <div className="sftp-toolbar">
-        <Tooltip title={t('ssh.file.up')}>
+        <Tooltip title={tFor(language, 'ssh.file.up')}>
           <Button
             type="text"
             size="small"
@@ -897,10 +912,10 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
             onClick={() => void refresh(parent)}
           />
         </Tooltip>
-        <Tooltip title={t('ssh.file.refresh')}>
+        <Tooltip title={tFor(language, 'ssh.file.refresh')}>
           <Button type="text" size="small" icon={<ReloadOutlined />} onClick={() => void refresh(dir)} />
         </Tooltip>
-        <Tooltip title={t('ssh.file.newFolder')}>
+        <Tooltip title={tFor(language, 'ssh.file.newFolder')}>
           <Button
             type="text"
             size="small"
@@ -911,10 +926,10 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
             }}
           />
         </Tooltip>
-        <Tooltip title={t('ssh.file.uploadFile')}>
+        <Tooltip title={tFor(language, 'ssh.file.uploadFile')}>
           <Button type="text" size="small" icon={<UploadOutlined />} onClick={doUpload} />
         </Tooltip>
-        <Tooltip title={t('ssh.file.downloadSelected')}>
+        <Tooltip title={tFor(language, 'ssh.file.downloadSelected')}>
           <Button
             type="text"
             size="small"
@@ -923,7 +938,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
             onClick={() => selected && doDownload(selected)}
           />
         </Tooltip>
-        <Tooltip title={t('ssh.file.rename')}>
+        <Tooltip title={tFor(language, 'ssh.file.rename')}>
           <Button
             type="text"
             size="small"
@@ -935,7 +950,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
             }}
           />
         </Tooltip>
-        <Tooltip title={t('ssh.file.permOwner')}>
+        <Tooltip title={tFor(language, 'ssh.file.permOwner')}>
           <Button
             type="text"
             size="small"
@@ -945,15 +960,15 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
           />
         </Tooltip>
         <Popconfirm
-          title={t('ssh.file.deleteTitle')}
-          okText={t('common.delete')}
-          cancelText={t('common.cancel')}
+          title={tFor(language, 'ssh.file.deleteTitle')}
+          okText={tFor(language, 'common.delete')}
+          cancelText={tFor(language, 'common.cancel')}
           onConfirm={doDelete}
         >
           <Button type="text" size="small" icon={<DeleteOutlined />} disabled={!selected} danger />
         </Popconfirm>
         <span className="sftp-toolbar-gap" />
-        <Tooltip title={t('ssh.file.zoomOut')}>
+        <Tooltip title={tFor(language, 'ssh.file.zoomOut')}>
           <Button
             type="text"
             size="small"
@@ -962,7 +977,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
             onClick={() => adjustScale(-FONT_SCALE_STEP)}
           />
         </Tooltip>
-        <Tooltip title={t('ssh.file.zoomIn')}>
+        <Tooltip title={tFor(language, 'ssh.file.zoomIn')}>
           <Button
             type="text"
             size="small"
@@ -1024,16 +1039,16 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
           >
             <div className="sftp-head">
               <span className="sftp-head-cell" />
-              {headCell('name', 'sftp-col-name', t('ssh.file.colName'))}
-              {headCell('size', 'sftp-col-size', t('ssh.file.colSize'))}
-              {headCell('mtime', 'sftp-col-time', t('ssh.file.colModified'))}
-              <span className="sftp-head-cell sftp-col-mode">{t('ssh.file.colPerm')}</span>
-              <span className="sftp-head-cell sftp-col-owner">{t('ssh.file.colOwner')}</span>
+              {headCell('name', 'sftp-col-name', tFor(language, 'ssh.file.colName'))}
+              {headCell('size', 'sftp-col-size', tFor(language, 'ssh.file.colSize'))}
+              {headCell('mtime', 'sftp-col-time', tFor(language, 'ssh.file.colModified'))}
+              <span className="sftp-head-cell sftp-col-mode">{tFor(language, 'ssh.file.colPerm')}</span>
+              <span className="sftp-head-cell sftp-col-owner">{tFor(language, 'ssh.file.colOwner')}</span>
             </div>
             {loading && entriesSorted.length === 0 && (
-              <div className="sftp-empty">{t('ssh.file.loading')}</div>
+              <div className="sftp-empty">{tFor(language, 'ssh.file.loading')}</div>
             )}
-            {!loading && entriesSorted.length === 0 && <div className="sftp-empty">{t('ssh.file.empty')}</div>}
+            {!loading && entriesSorted.length === 0 && <div className="sftp-empty">{tFor(language, 'ssh.file.empty')}</div>}
             {virtualized ? (
               <div className="sftp-list-virtual" style={{ height: entriesSorted.length * rowHeight }}>
                 <div
@@ -1056,31 +1071,32 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
         entry={selected}
         onClose={() => setPermOpen(false)}
         onSaved={() => void refresh(dir)}
+        language={language}
       />
       <Modal
-        title={t('ssh.file.newFolder')}
+        title={tFor(language, 'ssh.file.newFolder')}
         open={mkdirOpen}
         onOk={doMkdir}
         onCancel={() => setMkdirOpen(false)}
-        okText={t('ssh.file.create')}
-        cancelText={t('common.cancel')}
+        okText={tFor(language, 'ssh.file.create')}
+        cancelText={tFor(language, 'common.cancel')}
         width={360}
       >
         <Input
           autoFocus
-          placeholder={t('ssh.file.folderName')}
+          placeholder={tFor(language, 'ssh.file.folderName')}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           onPressEnter={doMkdir}
         />
       </Modal>
       <Modal
-        title={t('ssh.file.renameTitle', { name: selected?.name ?? '' })}
+        title={tFor(language, 'ssh.file.renameTitle', { name: selected?.name ?? '' })}
         open={renameOpen}
         onOk={doRename}
         onCancel={() => setRenameOpen(false)}
-        okText={t('common.ok')}
-        cancelText={t('common.cancel')}
+        okText={tFor(language, 'common.ok')}
+        cancelText={tFor(language, 'common.cancel')}
         width={360}
       >
         <Input

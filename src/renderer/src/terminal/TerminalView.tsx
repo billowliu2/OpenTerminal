@@ -7,7 +7,7 @@ import { SearchAddon } from '@xterm/addon-search'
 import '@xterm/xterm/css/xterm.css'
 import { ClearOutlined, CopyOutlined, ExportOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
 import { Checkbox, Modal } from 'antd'
-import { t } from '@shared/i18n'
+import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
 import type { CommandItem } from '@shared/commands'
 import { highlightModeOf, type TerminalSettings } from '@shared/settings'
@@ -113,7 +113,25 @@ interface SearchBarProps {
   onNext: () => void
   onClose: () => void
   enabled: boolean
-  result: string
+  result: SearchResult
+  /** Subscribed in TerminalView; passed down so the bar's own labels follow a
+   *  language switch (a module-level `t()` would be read at the wrong moment). */
+  language: Language
+}
+
+/**
+ * Result slot of the search bar: the addon's match counter, or a manual find's
+ * verdict. Kept as a tag rather than as a rendered string because both
+ * producers run outside the render (a click handler and an addon event), so a
+ * stored string would keep the language it was built in for as long as it is
+ * on screen.
+ */
+type SearchResult = { index: number; count: number } | 'found' | 'notFound' | null
+
+function searchResultText(result: SearchResult, language: Language): string {
+  if (result === null) return ''
+  if (typeof result === 'object') return `${result.index}/${result.count}`
+  return tFor(language, result === 'found' ? 'terminal.search.found' : 'terminal.search.notFound')
 }
 
 /** M5: cap for the floating completion popup height in px. */
@@ -125,14 +143,14 @@ function estimatePopupHeight(itemCount: number): number {
   return Math.min(SUGGEST_POPUP_H, Math.max(70, itemCount * 22 + 28))
 }
 
-function SearchBar({ value, onChange, onPrev, onNext, onClose, enabled, result }: SearchBarProps): React.JSX.Element {
+function SearchBar({ value, onChange, onPrev, onNext, onClose, enabled, result, language }: SearchBarProps): React.JSX.Element {
   return (
     <div className="term-searchbar">
       <input
         className="term-searchbar-input"
         type="text"
         value={value}
-        placeholder={t('terminal.search.placeholder')}
+        placeholder={tFor(language, 'terminal.search.placeholder')}
         spellCheck={false}
         autoFocus
         onChange={(e) => onChange(e.target.value)}
@@ -142,10 +160,10 @@ function SearchBar({ value, onChange, onPrev, onNext, onClose, enabled, result }
           else if (e.key === 'Escape') onClose()
         }}
       />
-      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onPrev}>{t('terminal.search.prev')}</button>
-      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onNext}>{t('terminal.search.next')}</button>
-      <span className="term-searchbar-count">{result}</span>
-      <button type="button" className="term-searchbar-btn" onClick={onClose}>{t('common.close')}</button>
+      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onPrev}>{tFor(language, 'terminal.search.prev')}</button>
+      <button type="button" className="term-searchbar-btn" disabled={!enabled} onClick={onNext}>{tFor(language, 'terminal.search.next')}</button>
+      <span className="term-searchbar-count">{searchResultText(result, language)}</span>
+      <button type="button" className="term-searchbar-btn" onClick={onClose}>{tFor(language, 'common.close')}</button>
     </div>
   )
 }
@@ -299,6 +317,12 @@ export function TerminalView({
     }))
   )
   const rendererMode = useSettingsStore((s) => s.settings.terminal.rendererMode)
+  // dockview owns this component's render slot, so an App→Workspace re-render
+  // never reaches it: the language must be subscribed here and passed to
+  // `tFor` explicitly, or every label would keep the language it was first
+  // rendered with. One single-field selector — kept out of the five shallow
+  // groups below so a language write cannot re-run their work.
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
   const highlightOpts = useSettingsStore(
     useShallow((s) => ({
       mode: highlightModeOf(s.settings.terminal.highlightMode),
@@ -441,7 +465,7 @@ export function TerminalView({
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [resultInfo, setResultInfo] = useState('')
+  const [searchResult, setSearchResult] = useState<SearchResult>(null)
   // Right-click context menu: position + whether a selection existed at open
   // time (decides if 复制 is enabled).
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null)
@@ -573,7 +597,7 @@ export function TerminalView({
     searchOpenRef.current = false
     searchRef.current?.clearDecorations()
     setSearchOpen(false)
-    setResultInfo('')
+    setSearchResult(null)
     termRef.current?.focus()
   }, [])
 
@@ -585,7 +609,9 @@ export function TerminalView({
       dir === 1
         ? addon.findNext(q, { decorations: SEARCH_DECORATIONS })
         : addon.findPrevious(q, { decorations: SEARCH_DECORATIONS })
-    setResultInfo(found ? t('terminal.search.found') : t('terminal.search.notFound'))
+    // Store the verdict, not the string: this runs from a click handler, and a
+    // stored translation would stay in the language it was produced in.
+    setSearchResult(found ? 'found' : 'notFound')
   }, [])
 
   /** Record a submitted command line; cd-style lines also update cwd memory. */
@@ -837,7 +863,12 @@ export function TerminalView({
     const searchAddon = new SearchAddon()
     searchAddon.onDidChangeResults((ev) => {
       if (searchOpenRef.current && searchTermRef.current.trim()) {
-        setResultInfo(`${Math.max(ev.resultIndex + 1, 0)}/${ev.resultCount}`)
+        // Keep the identity of an unchanged counter: this fires on every search
+        // step in a busy pane, and React bails out only on an unchanged value.
+        const next = { index: Math.max(ev.resultIndex + 1, 0), count: ev.resultCount }
+        setSearchResult((prev) =>
+          typeof prev === 'object' && prev?.index === next.index && prev.count === next.count ? prev : next
+        )
       }
     })
     term.loadAddon(searchAddon)
@@ -1300,7 +1331,7 @@ export function TerminalView({
               onClick={() => runMenuAction(() => void copySelection())}
             >
               <CopyOutlined />
-              <span className="term-menu-label">{t('common.copy')}</span>
+              <span className="term-menu-label">{tFor(language, 'common.copy')}</span>
               <kbd>Ctrl+Shift+C</kbd>
             </button>
             <button
@@ -1310,23 +1341,23 @@ export function TerminalView({
               onClick={() => runMenuAction(() => void pasteFromClipboard())}
             >
               <SnippetsOutlined />
-              <span className="term-menu-label">{t('common.paste')}</span>
+              <span className="term-menu-label">{tFor(language, 'common.paste')}</span>
               <kbd>Ctrl+Shift+V</kbd>
             </button>
             <div className="term-menu-sep" />
             <button type="button" className="term-menu-item" onClick={() => runMenuAction(openSearch)}>
               <SearchOutlined />
-              <span className="term-menu-label">{t('terminal.menu.find')}</span>
+              <span className="term-menu-label">{tFor(language, 'terminal.menu.find')}</span>
               <kbd>Ctrl+F</kbd>
             </button>
             <button type="button" className="term-menu-item" onClick={() => runMenuAction(() => termRef.current?.selectAll())}>
               <SelectOutlined />
-              <span className="term-menu-label">{t('terminal.menu.selectAll')}</span>
+              <span className="term-menu-label">{tFor(language, 'terminal.menu.selectAll')}</span>
               <kbd />
             </button>
             <button type="button" className="term-menu-item" onClick={() => runMenuAction(() => termRef.current?.clear())}>
               <ClearOutlined />
-              <span className="term-menu-label">{t('terminal.menu.clear')}</span>
+              <span className="term-menu-label">{tFor(language, 'terminal.menu.clear')}</span>
               <kbd />
             </button>
           </div>
@@ -1340,7 +1371,8 @@ export function TerminalView({
           onNext={() => search(1)}
           onClose={closeSearch}
           enabled={searchTerm.trim().length > 0}
-          result={resultInfo}
+          result={searchResult}
+          language={language}
         />
       )}
       <div className="term-recbar">
@@ -1348,8 +1380,8 @@ export function TerminalView({
           <button
             type="button"
             className={`term-rec-btn${recording ? ' is-recording' : ''}`}
-            title={recording ? t('terminal.rec.stopLog') : t('terminal.rec.startLog')}
-            aria-label={recording ? t('terminal.rec.stop') : t('terminal.rec.start')}
+            title={recording ? tFor(language, 'terminal.rec.stopLog') : tFor(language, 'terminal.rec.startLog')}
+            aria-label={recording ? tFor(language, 'terminal.rec.stop') : tFor(language, 'terminal.rec.start')}
             onClick={() => {
               if (recording) void handleLogStop()
               else void handleLogStart()
@@ -1362,8 +1394,8 @@ export function TerminalView({
           <button
             type="button"
             className="term-rec-btn"
-            title={t('terminal.rec.openLogs')}
-            aria-label={t('terminal.rec.openLogs')}
+            title={tFor(language, 'terminal.rec.openLogs')}
+            aria-label={tFor(language, 'terminal.rec.openLogs')}
             onClick={() => window.api.openLogsDir()}
           >
             <FolderOpenOutlined />
@@ -1373,8 +1405,8 @@ export function TerminalView({
           <button
             type="button"
             className="term-rec-btn"
-            title={t('terminal.rec.openCwd')}
-            aria-label={t('terminal.rec.openCwd')}
+            title={tFor(language, 'terminal.rec.openCwd')}
+            aria-label={tFor(language, 'terminal.rec.openCwd')}
             onClick={() => {
               const dir = getSessionCwd(sessionId)
               if (dir) void window.api.openDirectory(dir)
@@ -1386,29 +1418,29 @@ export function TerminalView({
       </div>
       <Modal
         open={paste !== null}
-        title={t('terminal.paste.title')}
-        okText={t('common.paste')}
-        cancelText={t('common.cancel')}
+        title={tFor(language, 'terminal.paste.title')}
+        okText={tFor(language, 'common.paste')}
+        cancelText={tFor(language, 'common.cancel')}
         width={420}
         maskClosable={false}
         onOk={acceptPaste}
         onCancel={cancelPaste}
       >
         <div className="term-paste-confirm">
-          <p>{t('terminal.paste.message')}</p>
+          <p>{tFor(language, 'terminal.paste.message')}</p>
           <Checkbox
             checked={paste?.noPrompt ?? false}
             onChange={(e) => setPaste((prev) => (prev ? { ...prev, noPrompt: e.target.checked } : prev))}
           >
-            {t('terminal.paste.noPrompt')}
+            {tFor(language, 'terminal.paste.noPrompt')}
           </Checkbox>
           <Checkbox
             checked={paste?.disableDetection ?? false}
             onChange={(e) => setPaste((prev) => (prev ? { ...prev, disableDetection: e.target.checked } : prev))}
           >
-            {t('terminal.paste.disableDetection')}
+            {tFor(language, 'terminal.paste.disableDetection')}
           </Checkbox>
-          <p className="term-paste-confirm-hint">{t('terminal.paste.hint')}</p>
+          <p className="term-paste-confirm-hint">{tFor(language, 'terminal.paste.hint')}</p>
         </div>
       </Modal>
       {/* Relative-positioned wrapper around the xterm surface: the suggestion
@@ -1436,7 +1468,7 @@ export function TerminalView({
                 </button>
               ))}
             </div>
-            <div className="term-suggest-hint">{t('terminal.suggest.hint')}</div>
+            <div className="term-suggest-hint">{tFor(language, 'terminal.suggest.hint')}</div>
           </div>
         )}
         <div className="terminal-view-dock" ref={hostRef}>
@@ -1459,8 +1491,8 @@ export function TerminalView({
           )}
           {dead && (
             <div className="term-dead-mask">
-              <div>{t('terminal.dead.message', { code: exitCode })}</div>
-              <button type="button" className="term-dead-btn" onClick={() => onCloseRef.current()}>{t('common.close')}</button>
+              <div>{tFor(language, 'terminal.dead.message', { code: exitCode })}</div>
+              <button type="button" className="term-dead-btn" onClick={() => onCloseRef.current()}>{tFor(language, 'common.close')}</button>
             </div>
           )}
         </div>

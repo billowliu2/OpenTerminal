@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SysinfoMeta, SysinfoSample } from '@shared/sysinfo'
-import { t } from '@shared/i18n'
+import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
+import { useSettingsStore } from '@renderer/settings/store'
 import { useWorkspaceModeStore } from '../workspace/workspaceModeStore'
 import './monitor.css'
 
@@ -119,14 +120,14 @@ function formatSize(mb: number): string {
 }
 
 /** human-readable uptime */
-function humanizeUptime(sec: number): string {
+function humanizeUptime(lang: Language, sec: number): string {
   const s = Math.floor(sec)
-  if (s < 60) return t('ssh.monitor.uptimeSeconds', { n: s })
+  if (s < 60) return tFor(lang, 'ssh.monitor.uptimeSeconds', { n: s })
   const mins = Math.floor(s / 60)
-  if (s < 3600) return t('ssh.monitor.uptimeMinutes', { n: mins })
+  if (s < 3600) return tFor(lang, 'ssh.monitor.uptimeMinutes', { n: mins })
   const hours = Math.floor(s / 3600)
-  if (s < 86400) return t('ssh.monitor.uptimeHours', { h: hours, m: Math.floor((s % 3600) / 60) })
-  return t('ssh.monitor.uptimeDays', { n: Math.floor(s / 86400) })
+  if (s < 86400) return tFor(lang, 'ssh.monitor.uptimeHours', { h: hours, m: Math.floor((s % 3600) / 60) })
+  return tFor(lang, 'ssh.monitor.uptimeDays', { n: Math.floor(s / 86400) })
 }
 
 function Bar({ pct, color }: { pct: number; color: string }) {
@@ -142,6 +143,10 @@ function Bar({ pct, color }: { pct: number; color: string }) {
 }
 
 export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Element {
+  // Rendered inside a dockview panel, which is never re-rendered as part of the
+  // App→Workspace tree, so the language is subscribed here and every string is
+  // resolved with `tFor` instead of the module-level language `t()` reads.
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
   const [meta, setMeta] = useState<SysinfoMeta | null>(null)
   const [sample, setSample] = useState<SysinfoSample | null>(null)
   const sampleRef = useRef<SysinfoSample | null>(null)
@@ -188,14 +193,14 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
     if (sample?.error) {
       return (
         <div className="mm-root mm-empty mm-failed">
-          <div className="mm-error">{t('ssh.monitor.interrupted', { error: sample.error })}</div>
+          <div className="mm-error">{tFor(language, 'ssh.monitor.interrupted', { error: sample.error })}</div>
         </div>
       )
     }
     return (
       <div className="mm-root mm-empty">
         <span className="mm-dots"><span /> <span /> <span /></span>
-        {t('ssh.monitor.collecting')}
+        {tFor(language, 'ssh.monitor.collecting')}
       </div>
     )
   }
@@ -210,7 +215,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
   return (
     <div className={`mm-root${failed ? ' mm-failed' : ''}`}>
       {failed && (
-        <div className="mm-error">{t('ssh.monitor.interrupted', { error: sample.error ?? '' })}</div>
+        <div className="mm-error">{tFor(language, 'ssh.monitor.interrupted', { error: sample.error ?? '' })}</div>
       )}
 
       <header className="mm-header">
@@ -222,19 +227,19 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
         <div className="mm-block-row">
           <span className="mm-label">CPU</span>
           <span className="mm-value" style={{ color: cpuColor(cpu.usage) }}>
-            {cpu.usage.toFixed(0)}%<span className="mm-value-sub"> · {t('ssh.monitor.cores', { n: cpu.cores })}</span>
+            {cpu.usage.toFixed(0)}%<span className="mm-value-sub"> · {tFor(language, 'ssh.monitor.cores', { n: cpu.cores })}</span>
           </span>
         </div>
         <Bar pct={cpu.usage} color={cpuColor(cpu.usage)} />
         <div className="mm-sub mm-load">
-          {t('ssh.monitor.loadavg', { value: cpu.loadavg.map((v) => v.toFixed(1)).join(' / ') })}
+          {tFor(language, 'ssh.monitor.loadavg', { value: cpu.loadavg.map((v) => v.toFixed(1)).join(' / ') })}
         </div>
         <HistoryChart data={cpuHist} lineColor="#3fb950" fillColor="rgba(63,185,80,0.15)" height={48} maxY={100} />
       </section>
 
-      <section className="mm-block" aria-label={t('ssh.monitor.mem')}>
+      <section className="mm-block" aria-label={tFor(language, 'ssh.monitor.mem')}>
         <div className="mm-block-row">
-          <span className="mm-label">{t('ssh.monitor.mem')}</span>
+          <span className="mm-label">{tFor(language, 'ssh.monitor.mem')}</span>
           <span className="mm-mem-size">
             {formatSize(mem.usedMb)} / {formatSize(mem.totalMb)}
           </span>
@@ -248,9 +253,9 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
       </section>
 
       {disks.length > 0 && (
-        <section className="mm-block" aria-label={t('ssh.monitor.disks')}>
+        <section className="mm-block" aria-label={tFor(language, 'ssh.monitor.disks')}>
           <div className="mm-block-row">
-            <span className="mm-label">{t('ssh.monitor.disks')}</span>
+            <span className="mm-label">{tFor(language, 'ssh.monitor.disks')}</span>
           </div>
           <div className="mm-disks">
             {disks.slice(0, 6).map((d) => {
@@ -273,9 +278,9 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
         </section>
       )}
 
-      <section className="mm-block" aria-label={t('ssh.monitor.net')}>
+      <section className="mm-block" aria-label={tFor(language, 'ssh.monitor.net')}>
         <div className="mm-block-row">
-          <span className="mm-label">{t('ssh.monitor.net')}</span>
+          <span className="mm-label">{tFor(language, 'ssh.monitor.net')}</span>
           <div className="mm-net">
             <span className="mm-net-item mm-rx">
               <span className="mm-arrow mm-up">↓</span>
@@ -296,7 +301,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
       </section>
 
       <footer className="mm-footer">
-        {t('ssh.monitor.uptime')} <span className="mm-uptime">{humanizeUptime(sample.uptimeSec)}</span>
+        {tFor(language, 'ssh.monitor.uptime')} <span className="mm-uptime">{humanizeUptime(language, sample.uptimeSec)}</span>
       </footer>
     </div>
   )

@@ -27,7 +27,7 @@ import type {
 import 'dockview-react/dist/styles/dockview.css'
 
 import { connectPromptFor, type HostKeyPromptEvent, type SshConnection, type SshSecretOverride } from '@shared/connections'
-import { t } from '@shared/i18n'
+import { DEFAULT_LANGUAGE, t, tFor, type Language } from '@shared/i18n'
 import { nextTerminalTitle, retitleAutoTitles } from '@shared/terminalTitle'
 import { ConnectionSidebar } from '../connections/ConnectionSidebar'
 import type { ConnectionSidebarHandle } from '../connections/ConnectionSidebar'
@@ -248,12 +248,16 @@ function apiOfMode(mode: WorkspaceMode, terminalApi: DockviewApi | undefined, ss
  *  terminal dockview and hints from the server list in the ssh dockview). */
 function createTabActions(mode: WorkspaceMode): (props: IDockviewHeaderActionsProps) => React.JSX.Element {
   function TabActions({ containerApi, group }: IDockviewHeaderActionsProps): React.JSX.Element {
+    // dockview renders the header actions from its own slot, outside the
+    // App→Workspace re-render path, so the language is subscribed here (and
+    // passed down to the buttons) and every string goes through `tFor`.
+    const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
     // The per-group "＋" creates a local terminal — SSH sessions can only be
     // opened from the server list, so in ssh mode the button just hints.
     const { message } = App.useApp()
     const handleAdd = (): void => {
       if (mode === 'ssh') {
-        message.info(t('workspace.hint.sshFromList'))
+        message.info(tFor(language, 'workspace.hint.sshFromList'))
         return
       }
       void (async (): Promise<void> => {
@@ -272,8 +276,8 @@ function createTabActions(mode: WorkspaceMode): (props: IDockviewHeaderActionsPr
 
     return (
       <div className="workspace-tabbar-actions">
-        <AddTerminalGroupButton onClick={handleAdd} />
-        <BroadcastToggleButton />
+        <AddTerminalGroupButton language={language} onClick={handleAdd} />
+        <BroadcastToggleButton language={language} />
       </div>
     )
   }
@@ -1368,13 +1372,13 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
 }
 
 /** "＋" renders the new-terminal button (per-group tab addition). */
-function AddTerminalGroupButton({ onClick }: { onClick: () => void }): React.JSX.Element {
+function AddTerminalGroupButton({ onClick, language }: { onClick: () => void; language: Language }): React.JSX.Element {
   return (
     <button
       type="button"
       className="workspace-tabbar-add"
-      title={t('workspace.tab.addInSplit')}
-      aria-label={t('workspace.tab.addInSplit')}
+      title={tFor(language, 'workspace.tab.addInSplit')}
+      aria-label={tFor(language, 'workspace.tab.addInSplit')}
       onClick={onClick}
     >
       <PlusOutlined />
@@ -1383,7 +1387,7 @@ function AddTerminalGroupButton({ onClick }: { onClick: () => void }): React.JSX
 }
 
 /** 广播 target picker: toggle + Popover with per-session checkboxes. */
-function BroadcastToggleButton(): React.JSX.Element {
+function BroadcastToggleButton({ language }: { language: Language }): React.JSX.Element {
   const enabled = useBroadcastStore((s) => s.enabled)
   const targets = useBroadcastStore((s) => s.targets)
   const sessions = useBroadcastStore((s) => s.sessions)
@@ -1409,14 +1413,15 @@ function BroadcastToggleButton(): React.JSX.Element {
           sessions={sessions}
           onToggleTarget={toggleTarget}
           onSetEnabled={setEnabled}
+          language={language}
         />
       }
     >
       <button
         type="button"
         className={cls}
-        title={enabled ? t('workspace.broadcast.activeTitle', { count: targets.size }) : t('workspace.broadcast.toggle')}
-        aria-label={t('workspace.broadcast.toggle')}
+        title={enabled ? tFor(language, 'workspace.broadcast.activeTitle', { count: targets.size }) : tFor(language, 'workspace.broadcast.toggle')}
+        aria-label={tFor(language, 'workspace.broadcast.toggle')}
         aria-pressed={enabled}
       >
         <ShareAltOutlined />
@@ -1435,7 +1440,8 @@ function WorkspaceBroadcastPopover({
   targets,
   sessions,
   onToggleTarget,
-  onSetEnabled
+  onSetEnabled,
+  language
 }: {
   mode: WorkspaceMode
   enabled: boolean
@@ -1443,6 +1449,8 @@ function WorkspaceBroadcastPopover({
   sessions: { id: string; title: string; isSsh: boolean }[]
   onToggleTarget: (id: string) => void
   onSetEnabled: (enabled: boolean) => void
+  /** from the dockview header-actions component — see TabActions */
+  language: Language
 }): React.JSX.Element {
   const isSsh = (s: { id: string; title: string; isSsh: boolean }): boolean => s.isSsh
   const groupSessions = sessions.filter((s) => (mode === 'ssh' ? isSsh(s) : !isSsh(s)))
@@ -1451,26 +1459,26 @@ function WorkspaceBroadcastPopover({
   return (
     <div className="workspace-bcast-pop">
       <div className="workspace-bcast-pop-mode">
-        {mode === 'ssh' ? t('workspace.broadcast.popoverSsh') : t('workspace.broadcast.popoverTerminal')}
+        {mode === 'ssh' ? tFor(language, 'workspace.broadcast.popoverSsh') : tFor(language, 'workspace.broadcast.popoverTerminal')}
       </div>
       <div className="workspace-bcast-pop-switch">
-        <span className="workspace-bcast-pop-label">{t('workspace.broadcast.switch')}</span>
+        <span className="workspace-bcast-pop-label">{tFor(language, 'workspace.broadcast.switch')}</span>
         <Checkbox
           checked={enabled}
           disabled={targets.size < 2}
           onChange={(e) => onSetEnabled(e.target.checked)}
         >
           {enabled
-            ? t('workspace.broadcast.enabled', { count: targets.size })
+            ? tFor(language, 'workspace.broadcast.enabled', { count: targets.size })
             : targets.size < 2
-              ? t('workspace.broadcast.needTwo')
-              : t('workspace.broadcast.disabled')}
+              ? tFor(language, 'workspace.broadcast.needTwo')
+              : tFor(language, 'workspace.broadcast.disabled')}
         </Checkbox>
       </div>
       <div className="workspace-bcast-pop-list">
         {groupSessions.length === 0 ? (
           <div className="workspace-bcast-pop-empty">
-            {mode === 'ssh' ? t('workspace.broadcast.emptySsh') : t('workspace.broadcast.emptyTerminal')}
+            {mode === 'ssh' ? tFor(language, 'workspace.broadcast.emptySsh') : tFor(language, 'workspace.broadcast.emptyTerminal')}
           </div>
         ) : (
           groupSessions.map((s) => (
@@ -1482,7 +1490,7 @@ function WorkspaceBroadcastPopover({
           ))
         )}
       </div>
-      <div className="workspace-bcast-pop-hint">{t('workspace.broadcast.hint')}</div>
+      <div className="workspace-bcast-pop-hint">{tFor(language, 'workspace.broadcast.hint')}</div>
     </div>
   )
 }

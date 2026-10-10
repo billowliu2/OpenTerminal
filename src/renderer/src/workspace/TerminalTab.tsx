@@ -6,7 +6,8 @@ import type { IDockviewPanelHeaderProps } from 'dockview-react'
 
 import { useBroadcastStore } from './broadcastStore'
 import { SshHostBadge } from './SshHostBadge'
-import { t } from '@shared/i18n'
+import { useSettingsStore } from '@renderer/settings/store'
+import { DEFAULT_LANGUAGE, t, tFor } from '@shared/i18n'
 import type { LayoutMeta } from '@shared/ipc'
 
 export type TerminalTabProps = IDockviewPanelHeaderProps<{
@@ -30,13 +31,19 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
   const [title, setTitle] = useState<string | undefined>(api.title)
   const selfIndex = panel.panels.findIndex((p) => p.api === api)
 
+  // dockview keeps the tab component in its own render slot — a re-render of
+  // App/Workspace does not reach it — so the language has to be subscribed here
+  // and passed to `tFor` explicitly; `t()` would read the module-level language
+  // of whatever render last touched it.
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
+
   const isSsh = params?.sessionKind === 'ssh'
   const hostLabel: string | undefined = isSsh ? (params?.hostLabel || title) : undefined
   const tooltip = isSsh
     ? hostLabel && hostLabel !== title
       ? `${title} — ${hostLabel}`
       : (hostLabel || title)
-    : t('workspace.tab.localTerminal')
+    : tFor(language, 'workspace.tab.localTerminal')
   // M6 broadcast: show a badge on tabs that are current broadcast targets.
   const isBroadcastTarget = useBroadcastStore((state) => state.targets.has(params?.sessionId ?? ''))
 
@@ -55,9 +62,9 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
 
   const menu: MenuProps = {
     items: [
-      { key: 'close', label: t('common.close') },
-      { key: 'closeOthers', label: t('workspace.tab.closeOthers'), disabled: panel.panels.length <= 1 },
-      { key: 'closeRight', label: t('workspace.tab.closeRight'), disabled: selfIndex === -1 || selfIndex === panel.panels.length - 1 }
+      { key: 'close', label: tFor(language, 'common.close') },
+      { key: 'closeOthers', label: tFor(language, 'workspace.tab.closeOthers'), disabled: panel.panels.length <= 1 },
+      { key: 'closeRight', label: tFor(language, 'workspace.tab.closeRight'), disabled: selfIndex === -1 || selfIndex === panel.panels.length - 1 }
     ],
     onClick: ({ key }) => {
       if (key === 'close') {
@@ -85,20 +92,20 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
       >
         {isSsh && <CloudServerOutlined className="workspace-terminal-tab-icon" />}
         <span className="workspace-terminal-tab-title">{title}</span>
-        {isSsh && hostLabel && <SshHostBadge label={hostLabel} />}
+        {isSsh && hostLabel && <SshHostBadge label={hostLabel} language={language} />}
         {isBroadcastTarget && (
           <span
             className="workspace-terminal-tab-bcast"
-            title={t('workspace.tab.broadcastTarget')}
-            aria-label={t('workspace.tab.broadcastTarget')}
+            title={tFor(language, 'workspace.tab.broadcastTarget')}
+            aria-label={tFor(language, 'workspace.tab.broadcastTarget')}
           >
-            {t('workspace.tab.broadcastBadge')}
+            {tFor(language, 'workspace.tab.broadcastBadge')}
           </span>
         )}
         <button
           type="button"
           className="workspace-terminal-tab-close"
-          aria-label={t('common.close')}
+          aria-label={tFor(language, 'common.close')}
           onPointerDown={(event) => event.preventDefault()}
           onClick={(event) => {
             event.preventDefault()

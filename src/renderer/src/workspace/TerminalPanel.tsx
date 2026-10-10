@@ -3,7 +3,8 @@ import type { IDockviewPanelProps } from 'dockview-react'
 import { Button } from 'antd'
 import { AreaChartOutlined } from '@ant-design/icons'
 
-import { t } from '@shared/i18n'
+import { tFor, DEFAULT_LANGUAGE } from '@shared/i18n'
+import { useSettingsStore } from '@renderer/settings/store'
 import { PanelErrorBoundary } from '../ErrorBoundary'
 import { TerminalView } from '../terminal/TerminalView'
 import { MonitorPanel } from '../monitor/MonitorPanel'
@@ -41,6 +42,12 @@ export function TerminalPanel({ params, api, onSessionDead }: TerminalPanelProps
   const closedRef = useRef(false)
   /** Right sidebar (monitor) visibility for ssh sessions — expanded by default. */
   const [sideOpen, setSideOpen] = useState(true)
+
+  // dockview renders panel content from its own portal slot, so the panel never
+  // re-renders as part of the App→Workspace tree; the language is subscribed
+  // here and handed to `tFor` explicitly rather than read from the module-level
+  // language that `t()` uses.
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
 
   // M6 broadcast: keep the session in the broadcast registry while mounted so
   // it can be picked as a target / receive fan-out writes. Registrations are
@@ -84,20 +91,20 @@ export function TerminalPanel({ params, api, onSessionDead }: TerminalPanelProps
   // is remounted on retry; the shell (tab, broadcast registration) survives.
   return (
     <div className="workspace-terminal-panel">
-      <PanelErrorBoundary label={t('workspace.error.panelTitle')}>
+      <PanelErrorBoundary label={tFor(language, 'workspace.error.panelTitle')}>
         {isSsh && (
           <Button
             type="text"
             size="small"
             className="workspace-terminal-monitor-toggle"
             icon={<AreaChartOutlined />}
-            aria-label={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
-            title={sideOpen ? t('workspace.panel.hideSidebar') : t('workspace.panel.showSidebar')}
+            aria-label={sideOpen ? tFor(language, 'workspace.panel.hideSidebar') : tFor(language, 'workspace.panel.showSidebar')}
+            title={sideOpen ? tFor(language, 'workspace.panel.hideSidebar') : tFor(language, 'workspace.panel.showSidebar')}
             onClick={() => setSideOpen((prev) => !prev)}
           />
         )}
         <div className="workspace-terminal-split">
-          {isSsh ? <SshBottomPanel sessionId={sessionId} terminal={terminal} /> : terminal}
+          {isSsh ? <SshBottomPanel sessionId={sessionId} terminal={terminal} language={language} /> : terminal}
           {isSsh && sideOpen && (
             <div className="workspace-terminal-side">
               <MonitorPanel sessionId={sessionId} />

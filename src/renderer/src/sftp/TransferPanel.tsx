@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { CloseOutlined } from '@ant-design/icons'
 import type { TransferKind, TransferProgressEvent, TransferState } from '@shared/sftp'
-import { t } from '@shared/i18n'
+import { DEFAULT_LANGUAGE, tFor } from '@shared/i18n'
+import { useSettingsStore } from '@renderer/settings/store'
 
 /** One aggregated transfer row in the overlay (the per-event state string is
  *  the shared `TransferState`). */
@@ -24,8 +25,16 @@ interface TransferRowProps {
  * Memoized on the entry object: the progress channel replaces only the entry a
  * transfer owns, so a busy multi-transfer overlay re-renders the advancing row
  * and leaves the others alone.
+ *
+ * That memo is also why the row subscribes to the language itself: a language
+ * switch changes no prop here, so nothing else would ever re-render it, and
+ * `t()` would keep serving whatever the module-level language was. A row count
+ * is bounded by the concurrent transfers, so one subscription per row is
+ * cheaper than threading the language down as a prop (which would defeat the
+ * memo and re-render every row on each progress tick).
  */
 const TransferRow = memo(function TransferRow({ id, entry, onDismiss }: TransferRowProps): React.JSX.Element {
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
   const pct =
     entry.totalBytes > 0
       ? Math.min(100, Math.round((entry.bytes / entry.totalBytes) * 100))
@@ -37,18 +46,18 @@ const TransferRow = memo(function TransferRow({ id, entry, onDismiss }: Transfer
       <div className="sftp-transfer-head">
         <span className="sftp-transfer-title">
           {entry.state === 'error'
-            ? t('panels.transfer.failed')
+            ? tFor(language, 'panels.transfer.failed')
             : entry.state === 'cancelled'
-              ? t('panels.transfer.cancelled')
+              ? tFor(language, 'panels.transfer.cancelled')
               : entry.state === 'done'
-                ? t('panels.transfer.done')
+                ? tFor(language, 'panels.transfer.done')
                 : entry.kind === 'upload'
-                  ? t('panels.transfer.uploading')
+                  ? tFor(language, 'panels.transfer.uploading')
                   : entry.kind === 'download'
-                    ? t('panels.transfer.downloading')
+                    ? tFor(language, 'panels.transfer.downloading')
                     : entry.kind === 'zmodem-upload'
-                      ? t('panels.transfer.zmodemUploading')
-                      : t('panels.transfer.zmodemDownloading')}
+                      ? tFor(language, 'panels.transfer.zmodemUploading')
+                      : tFor(language, 'panels.transfer.zmodemDownloading')}
         </span>
         {/* Only the SFTP engine's own transfers can be cancelled; zmodem
             runs in a separate engine that ignores cancelTransfer. */}
@@ -58,7 +67,7 @@ const TransferRow = memo(function TransferRow({ id, entry, onDismiss }: Transfer
             className="sftp-transfer-cancel"
             onClick={() => window.api.cancelTransfer(id)}
           >
-            {t('common.cancel')}
+            {tFor(language, 'common.cancel')}
           </button>
         )}
         {/* Cancelled rows dismiss themselves after 3s, but one that also

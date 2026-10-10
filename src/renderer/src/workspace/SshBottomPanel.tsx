@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { t } from '@shared/i18n'
+import { tFor, type Language } from '@shared/i18n'
 import { FilePanel } from '../sftp/FilePanel'
 
 export interface SshBottomPanelProps {
   sessionId: string
   /** The terminal surface rendered in the flexible top region. */
   terminal: ReactNode
+  /** From TerminalPanel, the dockview-rendered parent that owns the language
+   *  subscription — this panel only re-renders along with it. */
+  language: Language
 }
 
 /** File browser height in px — clamped to [120, 60% of container height]. */
 const MIN_HEIGHT = 120
 
-export function SshBottomPanel({ sessionId, terminal }: SshBottomPanelProps): React.JSX.Element {
+export function SshBottomPanel({ sessionId, terminal, language }: SshBottomPanelProps): React.JSX.Element {
   /** Current file-browser height in px. */
   const [filesHeight, setFilesHeight] = useState<number>(220)
   /** Divider drag in flight — drives the accent highlight. */
@@ -82,7 +85,7 @@ export function SshBottomPanel({ sessionId, terminal }: SshBottomPanelProps): Re
         className={'ssh-bottom-divider' + (resizing ? ' is-resizing' : '')}
         role="separator"
         aria-orientation="horizontal"
-        aria-label={t('ssh.bottomPanel.resize')}
+        aria-label={tFor(language, 'ssh.bottomPanel.resize')}
         onPointerDown={onDividerPointerDown}
         onPointerMove={onDividerPointerMove}
         onPointerUp={endDrag}
