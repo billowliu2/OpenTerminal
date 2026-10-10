@@ -168,6 +168,7 @@
 - [ ] 「启动时自动检查」运行中途拨开会在 ~5s 后立即检查（startupArmed 语义应为下次启动生效）
 - [ ] 下载无整体超时：检查有 withTimeout，下载没有——慢滴流可让 downloading 卡死且自动下载不再重试（需设计，不能简单套超时杀死慢速下载）
 - [ ] release.cjs `--channel-only` 与 `--skip-gitea` 组合矛盾（channel-only 先 return，警告永不打印，Gitea 通道仍会上传）
+- [ ] release.cjs 通道重传缺口：exe/blockmap 的 PUT 撞 409 直接 throw（只有 release-notes/latest.yml 有「409→删除→重传」路径），同版本替换资产时必须先手动 DELETE 通道文件
 - [ ] autoWrap=false 的固定列宽模式（xterm.js 无原生 wrapMode，需自定义列数控制）
 - [ ] 终端标题跟随 OSC 序列（窗格标题显示当前目录/命令）
 - [ ] 内置等宽字体打包（OFL 许可：JetBrains Mono / Fira Code 等）
