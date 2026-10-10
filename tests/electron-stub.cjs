@@ -46,7 +46,10 @@ const fakeSession = (name) => {
 
 module.exports = {
   BrowserWindow: {
-    getAllWindows: () => []
+    // Configurable so a test can drive the "is a window visible?" guards (the
+    // update balloons, the session snapshot). Like the rest of the stub state
+    // this lives on the shared global, and the default is "no window open".
+    getAllWindows: () => state.windows ?? []
   },
   app: {
     getPath: (name) => {
@@ -110,6 +113,16 @@ module.exports = {
     setContextMenu() {}
     on() {}
     destroy() {}
+    /**
+     * Balloons (`notifyUpdate`, the minimize hint) have no other observable
+     * effect, so they are recorded instead of dropped. The sink is a global for
+     * the same reason as the rest of the state: the bundle inlines this file, so
+     * a test's require of this path is a different module instance.
+     */
+    displayBalloon(options) {
+      const sink = (globalThis.__otBalloons ??= [])
+      sink.push(options)
+    }
     static getBounds() {
       return { x: 0, y: 0, width: 0, height: 0 }
     }
@@ -122,6 +135,10 @@ module.exports = {
   },
   __setPackaged: (v) => {
     state.isPackaged = v
+  },
+  /** Fake window list `BrowserWindow.getAllWindows()` hands the bundled code. */
+  __setWindows: (wins) => {
+    state.windows = wins
   },
   /** channel -> listener (invoke), `on:<channel>` -> listener (send). */
   get __handlers() {

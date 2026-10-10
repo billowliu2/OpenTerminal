@@ -26,11 +26,22 @@
  *     of the two-feed split)
  *   - dev builds never check (state 'dev'), and a packaged build's changelog
  *     fetch falls back through the three sources
+ *   - the schedule: the periodic timer follows the configured interval, 0 means
+ *     never, re-applying replaces the cadence, and the startup check is armed at
+ *     most once per run (sections 10-13)
+ *   - one check at a time (a second caller shares the in-flight promise), and the
+ *     `scheduled` / `auto` marks belong to the caller that started it
+ *   - one release is fetched and announced once: a repeating cycle does not
+ *     restart the download, does not repeat the balloon, and does not downgrade a
+ *     finished download back to 'available'; a different release is news again,
+ *     and a manual check is never suppressed
+ *   - balloons respect their guards (Windows only, tray present, no visible
+ *     window)
  *
  * Build: node tests/build-bundles.cjs
  * Run:   node tests/updater-fallback.mjs   (must exit 0)
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -61,8 +72,46 @@ globalThis.__otFetch = (url, init) => {
 const stub = require('./electron-stub.cjs')
 stub.__setPackaged(false)
 
-const updater = require('./.updater.cjs')
+/**
+ * Load the bundle with its inlined tray slot exposed, and hand the test's own
+ * `Tray` stub to it.
+ *
+ * Why this is needed: `src/main/tray.ts` keeps the tray in a module-level slot
+ * that only `initTray()` fills, and `initTray` is not something updater.ts
+ * imports — esbuild drops it, so the bundle has no way to create a tray at all
+ * and `notifyUpdate` (the sole balloon producer, and what the balloon assertions
+ * are about) always returns at its `!tray` guard. The bundle text is therefore
+ * re-emitted with ONE appended line that reads/writes that slot, and that copy —
+ * byte-identical otherwise — is the module under test. Nothing under src/ is
+ * touched, and `require('./.updater.cjs')` is still what is exercised, just via a
+ * copy built from the freshly compiled file.
+ *
+ * `slot` stays undefined if a future build renames or drops the slot; the
+ * balloon checks then skip (with a printed reason) rather than fail.
+ */
+let bundleTmpDir
+const requireUpdater = () => {
+  const source = readFileSync(join(__dirname, '.updater.cjs'), 'utf8')
+  if (!/^var tray = null;$/m.test(source)) return { module: require('./.updater.cjs'), slot: undefined }
+  const dir = mkdtempSync(join(tmpdir(), 'ot-updater-bundle-'))
+  bundleTmpDir = dir
+  const patched = join(dir, 'updater.cjs')
+  writeFileSync(
+    patched,
+    `${source}
+// harness: expose the inlined tray slot (see tests/updater-fallback.mjs)
+module.exports.__traySlot = { get: () => tray, set: (value) => { tray = value } }
+`,
+    'utf8'
+  )
+  return { module: require(patched), slot: require(patched).__traySlot }
+}
+
+const { module: updater, slot: traySlot } = requireUpdater()
 const { Ipc } = require('./.ipc-channels.cjs')
+
+/** Stand a tray up exactly as `initTray` would, using the stub's own class. */
+if (traySlot) traySlot.set(new stub.Tray({}))
 
 let failed = 0
 let passed = 0
@@ -378,9 +427,9 @@ console.log('updater events drive the state the renderer reads')
   stub.__setUserData(userData)
   stub.__setPackaged(true)
 
-  // configureAutoUpdater wires the event listeners and (unless the user turned
-  // startup checks off) schedules a check 5s after launch — unref'd, so it does
-  // not hold the test open.
+  // configureAutoUpdater wires the event listeners. It arms NO timer: the startup
+  // check and the periodic one belong to applyUpdateSchedule, which
+  // settingsStore's injected applier calls on startup and on every settings save.
   updater.configureAutoUpdater()
 
   // `on()` publishes the instance the bundle actually subscribed, which is NOT
@@ -525,6 +574,454 @@ console.log('install')
   stub.__setPackaged(false)
   await call(Ipc.UPDATE_INSTALL)
   ok(ctl.quitAndInstallCalls.length === 0, 'a dev build does not call quitAndInstall')
+}
+
+// ---- 10. the schedule, auto-download, suppression, balloons ------------------
+/**
+ * Everything below shares module-level state that no test can reset, so the
+ * scenarios are chosen around it:
+ *  - the suppression record (src/main/updater.ts `ActedRelease`) holds ONE
+ *    release at a time, is dropped by a manual check and is replaced wholesale
+ *    when a different version shows up — so each scenario uses its own version
+ *    number (7.x and 9.9.9 are spent by section 7), or starts from a manual check;
+ *  - the "startup check armed" flag is per run too: the first `applyUpdateSchedule`
+ *    that allows startup checks is the only one that can arm it, which is why
+ *    sections 10-13 run in this order.
+ * `reset()` re-points the feeds and the check/download doubles, so those do not
+ * leak between sections.
+ */
+const scheduleDir = mkdtempSync(join(tmpdir(), 'ot-updater-schedule-'))
+stub.__setUserData(scheduleDir)
+/** The settings the update handlers read (autoDownloadUpdate lives here). */
+const writeSystem = (system) => writeFileSync(join(scheduleDir, 'settings.json'), JSON.stringify({ system }))
+/** Every check the harness observed, with the source mark published for it. */
+const checkLog = []
+const recordCheck = () => {
+  // Read synchronously: the handler returns the module state, and the mark is
+  // written before the check is handed to the updater.
+  checkLog.push(call(Ipc.UPDATE_STATE_GET).scheduled === true)
+  return Promise.resolve(null)
+}
+const startupChecks = () => checkLog.filter((scheduled) => scheduled === false).length
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+/** Let a listener the module started with `void` settle. */
+const tick = () => sleep(5)
+
+/**
+ * A window fake rich enough for the two things the bundled code does with
+ * `BrowserWindow.getAllWindows()`: `broadcast` sends the new state to each window,
+ * and `notifyUpdate` asks the first one whether it is visible.
+ */
+const fakeWindow = (visible) => ({
+  isVisible: () => visible,
+  isDestroyed: () => false,
+  webContents: { send: () => {} }
+})
+
+/** Windows-only side effect, and it needs a tray the bundle cannot create itself. */
+const balloons = () => (globalThis.__otBalloons ??= [])
+const balloonCount = () => balloons().length
+const balloonChecksWork = process.platform === 'win32' && traySlot !== undefined
+const whyNoBalloons =
+  traySlot === undefined ? 'the bundle exposes no tray slot' : `process.platform is ${process.platform}`
+const okBalloon = (cond, msg) => {
+  if (!balloonChecksWork) {
+    console.log(`  skip: ${msg} (${whyNoBalloons})`)
+    return
+  }
+  ok(cond, msg)
+}
+
+// The events were wired by section 7; the call is idempotent. `live` is the
+// instance the bundle subscribed — emitting on any other one is a no-op.
+updater.configureAutoUpdater()
+const live = ctl.live
+ok(live !== undefined, 'the updater instance under test is the one the bundle wired')
+
+console.log('the periodic check follows the configured interval')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ hour: 5, startupDelay: 20 }) // one "hour" = 5ms
+  // Startup checks off here on purpose: this section counts the periodic ticks,
+  // and the timer that arms the startup one is the subject of the next section.
+  writeSystem({ autoCheckUpdate: false, updateCheckIntervalHours: 4, autoDownloadUpdate: false })
+  ctl.checkForUpdates = recordCheck
+  fetchImpl = () => Promise.resolve(errResponse(503)) // probe fails -> one attempt per check
+
+  const from = checkLog.length
+  updater.applyUpdateSchedule({ autoCheckUpdate: false, updateCheckIntervalHours: 4 })
+  await sleep(200)
+  const ticks = checkLog.slice(from)
+  ok(ticks.length >= 2, `a 4-hour interval ticks repeatedly (${ticks.length} checks in 200ms)`)
+  ok(
+    ticks.every((scheduled) => scheduled === true),
+    'every one of them is marked as a scheduled check'
+  )
+  ok(startupChecks() === 0, 'and none of them was mistaken for the startup check')
+}
+
+console.log('interval 0: the periodic check is off, the startup check still runs once')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ startupDelay: 20, hour: 5 })
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  ctl.checkForUpdates = recordCheck
+  fetchImpl = () => Promise.resolve(errResponse(503))
+
+  const from = checkLog.length
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 0 })
+  await sleep(150)
+  const ran = checkLog.slice(from)
+  ok(ran.length === 1, `exactly one check ran — the startup one (${ran.length})`)
+  ok(ran[0] === false, "'never' means the startup check is the only one, and it is not marked scheduled")
+  ok(startupChecks() === 1, 'the run has seen its startup check exactly once')
+}
+
+console.log('re-applying the schedule replaces the cadence (and 0 stops it)')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ startupDelay: 20, hour: 5 })
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 24, autoDownloadUpdate: false })
+  ctl.checkForUpdates = recordCheck
+  fetchImpl = () => Promise.resolve(errResponse(503))
+
+  const from = checkLog.length
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 24 }) // one hour = 5ms -> 120ms
+  await sleep(150)
+  const slow = checkLog.slice(from)
+  ok(slow.length <= 2, `a 24-hour interval is slow (${slow.length} checks in 150ms)`)
+
+  const fastFrom = checkLog.length
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 4 }) // -> 20ms
+  await sleep(150)
+  const fast = checkLog.slice(fastFrom)
+  ok(fast.length >= 3, `switching to 4 hours speeds the beat up (${fast.length} checks in 150ms)`)
+  ok(fast.length > slow.length, 'the new cadence replaced the old one')
+
+  // Back to the slow interval: if the 20ms timer had merely been left running, it
+  // would keep ticking ~7 times here instead of at most once.
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 24 })
+  await sleep(30)
+  const settled = checkLog.length
+  await sleep(150)
+  ok(
+    checkLog.length - settled <= 1,
+    `the 20ms timer is gone, only the slow beat is left (${checkLog.length - settled} checks)`
+  )
+
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 0 })
+  const stopped = checkLog.length
+  await sleep(150)
+  ok(checkLog.length === stopped, `switching to 0 stops the timer (${checkLog.length - stopped} checks after)`)
+}
+
+console.log('the startup check is armed at most once per run')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ startupDelay: 15, hour: 5 })
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  ctl.checkForUpdates = recordCheck
+  fetchImpl = () => Promise.resolve(errResponse(503))
+
+  // A settings save re-runs this applier, so three more applications stand in for
+  // three saves two seconds into the run: none of them may add a startup check on
+  // top of the one the previous section saw.
+  const before = checkLog.length
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 0 })
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 0 })
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 0 })
+  await sleep(150)
+  ok(checkLog.length === before, `repeated applies scheduled no extra check (${checkLog.length - before})`)
+  ok(startupChecks() === 1, 'and the whole run still has exactly one startup check')
+}
+
+console.log('a check already running is shared, never started twice')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  fetchImpl = () => Promise.resolve(errResponse(503))
+  let calls = 0
+  let settle
+  ctl.checkForUpdates = () => {
+    calls++
+    return new Promise((resolve) => {
+      settle = resolve
+    })
+  }
+
+  const manual = updater.runCheck('manual')
+  const scheduled = updater.runCheck('scheduled')
+  ok(manual === scheduled, 'the second caller gets the very same promise')
+  // The updater is only called after the GitHub probe resolves, so give the
+  // started check a turn before counting.
+  await tick()
+  ok(calls === 1, `the updater was asked to check once (${calls})`)
+  ok(call(Ipc.UPDATE_STATE_GET).scheduled === false, 'the mark belongs to the check that actually started (manual)')
+
+  settle(null)
+  const [a, b] = await Promise.all([manual, scheduled])
+  ok(a === b, 'both callers resolve to the same state')
+  ok(calls === 1, `still one upstream check after it settled (${calls})`)
+}
+
+console.log('auto-download follows the setting')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: true })
+  let downloads = 0
+  ctl.downloadUpdate = () => {
+    downloads++
+    return Promise.resolve()
+  }
+
+  live.emit('update-available', { version: '8.8.8' })
+  await tick()
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(downloads === 1, `the transfer starts on its own (${downloads})`)
+    ok(s.status === 'downloading', `the state moves to 'downloading' (got '${s.status}')`)
+    ok(s.version === '8.8.8', 'the downloading state names the version')
+    ok(s.auto === true, 'and is marked automatic (the About tab keys its wording off this)')
+  }
+
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  live.emit('update-available', { version: '8.8.7' })
+  await tick()
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(downloads === 1, `with the setting off nothing is fetched (${downloads})`)
+    ok(s.status === 'available', `the state stays 'available' for the UI button (got '${s.status}')`)
+  }
+}
+
+console.log('the same release is fetched and announced once')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: true })
+  let downloads = 0
+  ctl.downloadUpdate = () => {
+    downloads++
+    return Promise.resolve()
+  }
+  const base = balloonCount()
+  /** One 4-hour cycle reporting the same release again. */
+  const cycle = (version) => {
+    live.emit('checking-for-update')
+    live.emit('update-available', { version })
+  }
+
+  cycle('7.7.7')
+  await tick()
+  live.emit('download-progress', { percent: 50 })
+  live.emit('update-downloaded', { version: '7.7.7' })
+  await tick()
+  ok(downloads === 1, `one fetch for one release (${downloads})`)
+  okBalloon(balloonCount() === base + 1, `the finished download is announced once (${balloonCount() - base})`)
+
+  const announced = balloonCount()
+  cycle('7.7.7')
+  await tick()
+  ok(downloads === 1, `the next cycle does not restart the transfer (${downloads})`)
+  okBalloon(balloonCount() === announced, `and does not repeat the balloon (${balloonCount() - announced} more)`)
+
+  // Auto-download off: now the availability balloon is the one that must not repeat.
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  const quiet = balloonCount()
+  cycle('7.7.6')
+  await tick()
+  const s = call(Ipc.UPDATE_STATE_GET)
+  ok(s.status === 'available' && s.version === '7.7.6', `the release is still reported to the UI (${s.status})`)
+  okBalloon(balloonCount() === quiet + 1, `a fresh release is announced once (${balloonCount() - quiet})`)
+  const told = balloonCount()
+  cycle('7.7.6')
+  await tick()
+  okBalloon(balloonCount() === told, `the same release is not announced again (${balloonCount() - told} more)`)
+  ok(downloads === 1, 'and nothing was fetched behind the user (the setting is off)')
+}
+
+console.log('a different release is news again')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: true })
+  let downloads = 0
+  ctl.downloadUpdate = () => {
+    downloads++
+    return Promise.resolve()
+  }
+  const base = balloonCount()
+
+  live.emit('update-available', { version: '6.6.6' })
+  await tick()
+  live.emit('update-downloaded', { version: '6.6.6' })
+  await tick()
+  ok(downloads === 1, `the first release is fetched (${downloads})`)
+  okBalloon(balloonCount() === base + 1, `and announced once (${balloonCount() - base})`)
+
+  live.emit('update-available', { version: '6.6.5' })
+  await tick()
+  ok(downloads === 2, `a new release is fetched as if the app had just started (${downloads})`)
+  live.emit('update-downloaded', { version: '6.6.5' })
+  await tick()
+  okBalloon(balloonCount() === base + 2, `and announced once of its own (${balloonCount() - base})`)
+}
+
+console.log('a manual check is never suppressed')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  fetchImpl = () => Promise.resolve(errResponse(503))
+  const base = balloonCount()
+  ctl.checkForUpdates = () => {
+    live.emit('update-available', { version: '5.5.5' })
+    return Promise.resolve(null)
+  }
+
+  // A background cycle announces the release the first time…
+  await updater.runCheck('scheduled')
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'available', 'a background check reports the release')
+  const first = balloonCount()
+  okBalloon(first === base + 1, `and announces it (${first - base})`)
+
+  // …and stays quiet about it afterwards — that is the suppression.
+  await updater.runCheck('scheduled')
+  okBalloon(balloonCount() === first, 'a later background check for the same release stays quiet')
+
+  // A click on "check now" is an explicit act: the record is dropped, so the same
+  // release is reported and announced again.
+  const state = await call(Ipc.UPDATE_CHECK)
+  ok(state.status === 'available' && state.version === '5.5.5', `the manual check reports it again (${state.status})`)
+  okBalloon(balloonCount() === first + 1, `and announces it again (${balloonCount() - first})`)
+}
+
+console.log('a finished download stays finished')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: true })
+  let downloads = 0
+  ctl.downloadUpdate = () => {
+    downloads++
+    return Promise.resolve()
+  }
+  const version = '4.4.4'
+
+  live.emit('update-available', { version })
+  await tick()
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(s.status === 'downloading' && downloads === 1, `the automatic download started (${s.status}, ${downloads})`)
+    ok(s.auto === true, 'marked automatic')
+  }
+  live.emit('update-downloaded', { version })
+  await tick()
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(s.status === 'downloaded', `the package is on disk (got '${s.status}')`)
+    ok(s.percent === undefined, 'the progress bar is cleared')
+    ok(s.auto === true, 'the automatic mark survives (the panel keys its wording off it)')
+  }
+
+  // The 4-hour cycle reports the same release again: the UI must not fold "install"
+  // back into "download" — and must not be parked on a spinner either.
+  live.emit('checking-for-update')
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'checking', 'the cycle starts by reporting a check in progress')
+  live.emit('update-available', { version })
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(s.status === 'downloaded', `the finished download is not downgraded to 'available' (got '${s.status}')`)
+    ok(s.status !== 'checking', 'and the state is not left on the spinner')
+    ok(s.version === version, `the state still names the release (${s.version})`)
+    ok(s.percent === undefined, 'with no leftover percent')
+    ok(s.auto === true, 'and the automatic mark intact')
+  }
+  ok(downloads === 1, `the repeat cycle fetched nothing (${downloads})`)
+
+  // `downloaded` is not `fetchHandled`: a transfer that only started must not be
+  // mistaken for a finished one.
+  live.emit('update-available', { version: '4.4.3' })
+  await tick()
+  ok(downloads === 2, `a new release is fetched (${downloads})`)
+  live.emit('download-progress', { percent: 10 })
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'downloading', 'the transfer is in progress')
+  live.emit('update-available', { version: '4.4.3' })
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(s.status !== 'downloaded', `a started-but-unfinished transfer is not 'downloaded' (got '${s.status}')`)
+    ok(downloads === 2, `and the fetched-once claim keeps the second cycle from restarting it (${downloads})`)
+  }
+
+  // Failures and "nothing to report" cycles must not forget what is on disk.
+  live.emit('update-downloaded', { version: '4.4.3' })
+  await tick()
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'downloaded', 'the second release finishes too')
+  live.emit('error', new Error('boom'))
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'error', 'an error is reported as usual')
+  live.emit('update-available', { version: '4.4.3' })
+  ok(
+    call(Ipc.UPDATE_STATE_GET).status === 'downloaded',
+    'but the finished package is still known after the error'
+  )
+  live.emit('update-not-available')
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'latest', "'nothing to update' is reported as usual")
+  live.emit('update-available', { version: '4.4.3' })
+  ok(
+    call(Ipc.UPDATE_STATE_GET).status === 'downloaded',
+    'and still survives a cycle that found nothing'
+  )
+
+  // A NEW release replaces the record instead of inheriting it.
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  live.emit('update-available', { version: '4.4.2' })
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(s.status === 'available', `a different release starts from 'available' (got '${s.status}')`)
+    ok(s.version === '4.4.2', `and is named (${s.version})`)
+  }
+}
+
+console.log('balloons respect the visible-window guard')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  if (!balloonChecksWork) {
+    console.log(`  skip: the balloon guard checks (${whyNoBalloons})`)
+  } else {
+    stub.__setWindows([fakeWindow(true)])
+    const visible = balloonCount()
+    live.emit('update-available', { version: '3.3.3' })
+    ok(balloonCount() === visible, 'a visible window suppresses the balloon (the About tab already shows the state)')
+
+    stub.__setWindows([fakeWindow(false)])
+    const hidden = balloonCount()
+    live.emit('update-available', { version: '3.3.2' })
+    ok(balloonCount() === hidden + 1, 'with every window hidden the balloon is shown')
+
+    stub.__setWindows([])
+    const closed = balloonCount()
+    live.emit('update-available', { version: '3.3.1' })
+    ok(balloonCount() === closed + 1, 'and it is shown when no window has been created at all')
+  }
+}
+
+stub.__setWindows([])
+stub.__setUserData('')
+rmSync(scheduleDir, { recursive: true, force: true })
+if (bundleTmpDir) {
+  try {
+    rmSync(bundleTmpDir, { recursive: true, force: true })
+  } catch {
+    // best effort: the copy only has to live as long as the run needs the module
+  }
 }
 
 stub.__setPackaged(false)

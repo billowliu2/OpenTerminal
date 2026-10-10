@@ -47,6 +47,13 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 ## 更新机制
 
 - 检查更新：**GitHub 优先**（走系统代理；前置 20 秒连通性探测 `probeGithub`——探测失败/超时直接兜底 Gitea，不给 electron-updater 挂起的机会），失败回退国内 Gitea 通用包通道（强制直连，不走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
+- **三条检查来源**（`runCheck(source)`，共用一条路径，`UpdateState.scheduled` 标记来源）：启动后 5s 一次（`autoCheckUpdate`）、周期定时（`settings.system.updateCheckIntervalHours`，白名单 `{0,4,12,24}` 默认 4，`0`=从不；4/12/24 建 `setInterval(runCheck('scheduled'))`）、用户手动。**所有 timer 必须 `.unref()`**，否则会阻止进程退出。已有在途检查时返回同一 promise（`checkInFlight`），避免 electron-updater 的去重把来源标记记到错的调用方头上
+- **调度器是注入的**：`applyUpdateSchedule(system)` 由 `index.ts` 经 `settingsStore.setUpdateScheduleApplier` 注入——`updater.ts` 已 import `settingsStore`，反向 import 成环。applier 幂等（先清旧 interval 再建）且每次 `mutateSettings` 都会重跑；启动检查用模块级 `startupArmed` 保证**每进程只武装一次**，否则改一次设置就多排一次启动检查
+- **自动下载**（`settings.system.autoDownloadUpdate`，默认关）：`update-available` 时若开关开且无在途下载 → `handleDownload('auto')`（`UpdateState.auto` 标记）。`autoUpdater.autoDownload` **保持 false**——单一事实源在 settings，不交给 electron-updater。失败落 `status:'error'` 且**不重试**，等下一个周期
+- **安装永远交给用户**：绝不因下载完成自动退出；`autoInstallOnAppQuit = true` 只覆盖「用户自己退出时装上」
+- **同版本抑制**（`actedRelease` 单槽记录，`actedFor(version)` 版本不同即整体替换）：`announced`（发现气泡）、`fetchHandled`（已发起下载）、`downloaded`（包已落盘）、`downloadedAnnounced`（已下载气泡）——否则长开机的应用每 4 小时重复弹气泡/重复走一遍 `downloadUpdate`。`runCheck('manual')` **无条件清空**记录（手动是明确意图，必须如实反映）；`update-not-available`/`error` **不清空**；下载失败回滚该次 `fetchHandled`
+- `downloaded` 与 `fetchHandled` **必须分开**：前者只在 `update-downloaded` 置位，用它判断「已完成」；拿 `fetchHandled` 判断会把下载中的版本误跳过。`update-available` 里若该版本 `downloaded` 为真，要 `setState` 一个等价的 `downloaded` 状态（**不能**直接 return 不写——`performCheck` 已把状态置成 `checking`，早退会让「关于」页永远转圈），这样按钮不会从「重启安装」退回「下载」
+- **通知**：`tray.ts` 的 `notifyUpdate(title, content)` 弹 Windows 托盘气泡；非 win32 / tray 为空 / **有可见窗口**（用户在看「关于」页）都不弹。自动下载开启时不弹「发现新版本」（有意义的是「已下载」那条），手动下载完成也不弹
 - 更新日志：Gitea 仓库是私有的（匿名 API 404），改为从更新通道的 `release-notes.md` 读取（直连 session `openterminal-update-direct`），再回退 Gitea/GitHub releases API
 - 自动更新只走 NSIS exe；自 v1.0.22 起不再构建 MSI 安装包（electron-updater 本就不支持 MSI 自动更新）
 - 每次 checkForUpdates 都被 **30s 整体超时**包住（`withTimeout`）：electron-updater 自带的 60s 只是 socket 空闲超时，慢滴流响应能一直占住它。超时按普通失败走 GitHub→Gitea 回退，但**被放弃的检查取消不掉**，而 electron-updater 对并发检查去重（返回同一个 in-flight promise），所以兜底那次共用被放弃的 promise——它同样被超时兜住，最终落到错误态，不会永远停在「检查中」
