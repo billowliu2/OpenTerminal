@@ -27,6 +27,8 @@
     if (!tag) return null;
     var t = String(tag).replace(/_/g, '-');
     if (/^zh-?(tw|hk|mo)/i.test(t)) return 'zh-TW';
+    // zh-Hant-* is Traditional by definition (kept in sync with the head script).
+    if (/^zh-hant/i.test(t)) return 'zh-TW';
     if (/^zh/i.test(t)) return 'zh-CN';
     if (/^ja/i.test(t)) return 'ja';
     if (/^en/i.test(t)) return 'en';

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { App as AntdApp, Button, Modal, Space, Typography } from 'antd'
 import type { ZmodemOfferEvent, ZmodemResponse } from '@shared/ipc'
-import { t } from '@shared/i18n'
+import { DEFAULT_LANGUAGE, t, tFor } from '@shared/i18n'
+import { useSettingsStore } from '../settings/store'
 
 /**
  * M6 ZMODEM offer/done UX: renders one dialog per active zmodem offer.
@@ -15,6 +16,10 @@ import { t } from '@shared/i18n'
  */
 export default function ZmodemOffers(): null | React.JSX.Element {
   const { message } = AntdApp.useApp()
+  // Rendered as App's sibling: a language switch re-renders App, but the parent's
+  // children element is identical, so this subtree bails out and would keep the
+  // old language. Subscribe here and translate with the explicit language.
+  const language = useSettingsStore((s) => s.settings.system.language ?? DEFAULT_LANGUAGE)
   const [offers, setOffers] = useState<Map<string, ZmodemOfferEvent>>(new Map())
   const busyRef = useRef<Set<string>>(new Set())
 
@@ -117,21 +122,21 @@ export default function ZmodemOffers(): null | React.JSX.Element {
       closable={false}
       maskClosable={false}
       keyboard={false}
-      title={isReceive ? t('ssh.zmodem.titleReceive') : t('ssh.zmodem.titleSend')}
+      title={isReceive ? tFor(language, 'ssh.zmodem.titleReceive') : tFor(language, 'ssh.zmodem.titleSend')}
       footer={
         <Space>
           <Button
             type="primary"
             onClick={() => (isReceive ? void handlePickDir(first.id) : void handlePickFiles(first.id))}
           >
-            {isReceive ? t('ssh.zmodem.pickDir') : t('ssh.zmodem.pickFiles')}
+            {isReceive ? tFor(language, 'ssh.zmodem.pickDir') : tFor(language, 'ssh.zmodem.pickFiles')}
           </Button>
-          <Button onClick={() => handleCancel(first.id)}>{t('common.cancel')}</Button>
+          <Button onClick={() => handleCancel(first.id)}>{tFor(language, 'common.cancel')}</Button>
         </Space>
       }
     >
       <Typography.Text>
-        {isReceive ? t('ssh.zmodem.receiveDesc') : t('ssh.zmodem.sendDesc')}
+        {isReceive ? tFor(language, 'ssh.zmodem.receiveDesc') : tFor(language, 'ssh.zmodem.sendDesc')}
       </Typography.Text>
     </Modal>
   )

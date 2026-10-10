@@ -164,6 +164,10 @@
 - [x] ~~首启动空屏~~（v0.2.1：启动自动打开一个终端）
 - [ ] zh-TW 用语统一（i18n 质量专项）：`命令/指令` 全文件混用（panels/ssh/settings/terminal，台湾惯用「指令」）、`口令`→`密碼`（ssh.secret.passphrase）、顺带通读 服务器→伺服器 / 默认→預設 / 网络→網路 / 软件→軟體。需要一次全局连贯的专项，零散改会制造新的不一致
 - [ ] ja 片假名长音符号统一：`フォルダ`(6) / `フォルダー`(7) 混用，二选一全局统一
+- [ ] 周期检查可被高频设置写入推迟（updater：每次 mutateSettings 重排 4h 定时器，字体快捷键连按/ColorPicker 拖动会重置倒计时；改为「仅 interval 值变化时重排」或记录上次触发时间）
+- [ ] 「启动时自动检查」运行中途拨开会在 ~5s 后立即检查（startupArmed 语义应为下次启动生效）
+- [ ] 下载无整体超时：检查有 withTimeout，下载没有——慢滴流可让 downloading 卡死且自动下载不再重试（需设计，不能简单套超时杀死慢速下载）
+- [ ] release.cjs `--channel-only` 与 `--skip-gitea` 组合矛盾（channel-only 先 return，警告永不打印，Gitea 通道仍会上传）
 - [ ] autoWrap=false 的固定列宽模式（xterm.js 无原生 wrapMode，需自定义列数控制）
 - [ ] 终端标题跟随 OSC 序列（窗格标题显示当前目录/命令）
 - [ ] 内置等宽字体打包（OFL 许可：JetBrains Mono / Fira Code 等）

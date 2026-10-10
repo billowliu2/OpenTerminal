@@ -986,6 +986,28 @@ console.log('a finished download stays finished')
     ok(s.status === 'available', `a different release starts from 'available' (got '${s.status}')`)
     ok(s.version === '4.4.2', `and is named (${s.version})`)
   }
+
+  // A manual check after a finished download must ALSO keep the downloaded
+  // state — the package is on disk, so "downloaded" is the truthful answer, and
+  // folding the install button back into "download" would make the user fetch
+  // what they already have. The manual record drop only discards announcement
+  // bookkeeping, never the on-disk fact.
+  live.emit('update-downloaded', { version: '4.4.2' })
+  await tick()
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'downloaded', 'the new release finishes too')
+  ctl.checkForUpdates = () => {
+    live.emit('checking-for-update')
+    live.emit('update-available', { version: '4.4.2' })
+    return Promise.resolve(null)
+  }
+  {
+    const state = await call(Ipc.UPDATE_CHECK)
+    ok(
+      state.status === 'downloaded' && state.version === '4.4.2',
+      `a manual check keeps a finished download finished (got '${state.status}')`
+    )
+    ok(state.status !== 'checking', 'and is not parked on the spinner')
+  }
 }
 
 console.log('balloons respect the visible-window guard')

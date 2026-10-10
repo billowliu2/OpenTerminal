@@ -27,6 +27,9 @@
         if (!tag) return null;
         var t = String(tag).replace(/_/g, '-');
         if (/^zh-?(tw|hk|mo)/i.test(t)) return 'zh-TW';
+        // BCP-47 can carry a script subtag (zh-Hant-TW, zh-Hant-HK, zh-Hant):
+        // some browsers report those forms, and they are Traditional by definition.
+        if (/^zh-hant/i.test(t)) return 'zh-TW';
         if (/^zh/i.test(t)) return 'zh-CN';
         if (/^ja/i.test(t)) return 'ja';
         if (/^en/i.test(t)) return 'en';
@@ -35,7 +38,12 @@
       function pickLang() {
         var m = /[?&]lang=([^&]+)/.exec(location.search);
         if (m) {
-          var fromUrl = normalize(decodeURIComponent(m[1]));
+          // A truncated % escape in a shared link must not throw inside this
+          // first-frame IIFE: a throw here would skip setting html[lang] AND the
+          // pending flag, leaving the page stuck on the default language.
+          var raw = null;
+          try { raw = decodeURIComponent(m[1]); } catch (e) {}
+          var fromUrl = normalize(raw);
           if (fromUrl) return fromUrl;
         }
         try {

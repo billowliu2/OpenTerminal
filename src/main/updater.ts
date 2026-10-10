@@ -323,11 +323,17 @@ async function performCheck(source: CheckSource): Promise<UpdateState> {
  */
 export function runCheck(source: CheckSource = 'manual'): Promise<UpdateState> {
   // A manual check is an explicit act, so whatever it finds counts as news even
-  // if this run has already dealt with that version: the suppression record is
-  // dropped here — before the in-flight guard, so a click that joins a check
-  // already running gets the same treatment. (A manual DOWNLOAD needs no
-  // equivalent: its entry point never consults the record.)
-  if (source === 'manual') actedRelease = undefined
+  // if this run has already announced that version: the announcement half of the
+  // record is dropped here — before the in-flight guard, so a click that joins a
+  // check already running gets the same treatment. The DOWNLOADED half is kept:
+  // for a release whose package sits on disk, "downloaded" *is* the truthful
+  // answer, and dropping it made update-available report `available` again —
+  // folding the About tab's install button back into "download" for a manual
+  // check on an already-fetched release. (A manual DOWNLOAD needs no equivalent:
+  // its entry point never consults the record.)
+  if (source === 'manual') {
+    actedRelease = actedRelease?.downloaded ? actedRelease : undefined
+  }
   if (checkInFlight) return checkInFlight
   const task = performCheck(source)
   checkInFlight = task
