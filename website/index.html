@@ -3,45 +3,89 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OpenTerminal - 本地终端 / SSH / SFTP 桌面终端，开源 Windows 终端工具</title>
-  <meta name="description" content="OpenTerminal 是开源的 Windows 桌面终端：本地终端、SSH 远程会话、SFTP 文件管理、分屏与广播输入、主题定制。MIT 协议，支持自动更新。" />
+  <title data-i18n="meta.title">OpenTerminal - 本地终端 / SSH / SFTP 桌面终端，开源 Windows 终端工具</title>
+  <meta name="description" content="OpenTerminal 是开源的 Windows 桌面终端：本地终端、SSH 远程会话、SFTP 文件管理、分屏与广播输入、主题定制。MIT 协议，支持自动更新。" data-i18n-attr="content:meta.description" />
   <link rel="icon" type="image/png" href="assets/icon.png" />
   <link rel="preload" href="assets/fonts/space-grotesk-600.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="assets/fonts/jetbrains-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <meta property="og:title" content="OpenTerminal - 本地终端 / SSH / SFTP 桌面终端" />
-  <meta property="og:description" content="开源的 Windows 桌面终端：本地终端、SSH 远程会话、SFTP 文件管理、分屏与广播输入。MIT 协议，支持自动更新。" />
+  <meta property="og:title" content="OpenTerminal - 本地终端 / SSH / SFTP 桌面终端" data-i18n-attr="content:meta.ogTitle" />
+  <meta property="og:description" content="开源的 Windows 桌面终端：本地终端、SSH 远程会话、SFTP 文件管理、分屏与广播输入。MIT 协议，支持自动更新。" data-i18n-attr="content:meta.ogDescription" />
   <meta property="og:image" content="assets/shot-terminal.jpg" />
   <meta name="theme-color" content="#0b0e12" />
   <link rel="stylesheet" href="assets/style.css" />
   <script>
-    // 主题必须在首帧前定好，避免闪白/闪黑；默认深色，只有用户显式切过才用保存值
+    // 主题与界面语言都必须在首帧前定好：前者避免闪白/闪黑，后者避免闪一帧中文。
+    // 语言优先级（与 assets/i18n-apply.js 一致）：?lang= > localStorage > navigator > zh-CN。
     (function () {
       var theme = 'dark';
       try {
         if (localStorage.getItem('openterminal.theme') === 'light') theme = 'light';
       } catch (e) {}
       document.documentElement.dataset.theme = theme;
+
+      function normalize(tag) {
+        if (!tag) return null;
+        var t = String(tag).replace(/_/g, '-');
+        if (/^zh-?(tw|hk|mo)/i.test(t)) return 'zh-TW';
+        if (/^zh/i.test(t)) return 'zh-CN';
+        if (/^ja/i.test(t)) return 'ja';
+        if (/^en/i.test(t)) return 'en';
+        return null;
+      }
+      function pickLang() {
+        var m = /[?&]lang=([^&]+)/.exec(location.search);
+        if (m) {
+          var fromUrl = normalize(decodeURIComponent(m[1]));
+          if (fromUrl) return fromUrl;
+        }
+        try {
+          var fromStore = normalize(localStorage.getItem('openterminal.lang'));
+          if (fromStore) return fromStore;
+        } catch (e) {}
+        var list = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language];
+        for (var i = 0; i < list.length; i++) {
+          var hit = normalize(list[i]);
+          if (hit) return hit;
+        }
+        return 'zh-CN';
+      }
+      var lang = pickLang();
+      document.documentElement.lang = lang;
+      // HTML 源码文案是简体中文：非中文用户先把 body 藏住，等 i18n 应用完再显示。
+      // 定时器是兜底，保证 i18n 脚本出错时页面也不会一直空着。
+      if (lang !== 'zh-CN') {
+        document.documentElement.setAttribute('data-i18n-pending', '');
+        setTimeout(function () {
+          document.documentElement.removeAttribute('data-i18n-pending');
+        }, 2500);
+      }
     })();
   </script>
 </head>
 <body>
 
-  <a class="skip-link" href="#main">跳到主要内容</a>
+  <a class="skip-link" href="#main" data-i18n="a11y.skip">跳到主要内容</a>
 
   <header class="site-nav">
     <div class="container nav-inner">
       <a class="brand" href="#top">
-        <img src="assets/icon.png" alt="OpenTerminal 图标" width="24" height="24" />
+        <img src="assets/icon.png" alt="OpenTerminal 图标" width="24" height="24" data-i18n-attr="alt:brand.iconAlt" />
         <span>OpenTerminal</span>
       </a>
       <div class="nav-right">
-        <nav class="nav-links" aria-label="站内导航">
-          <a href="#features">功能</a>
-          <a href="#download">下载</a>
-          <a href="#changelog">更新日志</a>
+        <nav class="nav-links" aria-label="站内导航" data-i18n-attr="aria-label:nav.aria">
+          <a href="#features" data-i18n="nav.features">功能</a>
+          <a href="#download" data-i18n="nav.download">下载</a>
+          <a href="#changelog" data-i18n="nav.changelog">更新日志</a>
           <a href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener">GitHub</a>
         </nav>
-        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题">
+        <select class="lang-select" id="lang-select" aria-label="界面语言" data-i18n-attr="aria-label:nav.langAria">
+          <option value="zh-CN">简体中文</option>
+          <option value="zh-TW">繁體中文</option>
+          <option value="en">English</option>
+          <option value="ja">日本語</option>
+        </select>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换明暗主题" title="切换明暗主题" data-i18n-attr="aria-label:nav.themeToggle;title:nav.themeToggle">
           <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
           </svg>
@@ -59,32 +103,32 @@
     <section class="hero" id="top">
       <div class="container hero-grid">
         <div class="hero-copy">
-          <p class="hero-kicker">开源桌面终端 · MIT 协议</p>
-          <h1>本地终端、SSH 与 SFTP<br />装进<span class="accent">同一个</span>桌面应用</h1>
-          <p class="hero-sub">
+          <p class="hero-kicker" data-i18n="hero.kicker">开源桌面终端 · MIT 协议</p>
+          <h1 data-i18n-html="hero.title">本地终端、SSH 与 SFTP<br />装进<span class="accent">同一个</span>桌面应用</h1>
+          <p class="hero-sub" data-i18n="hero.sub">
             OpenTerminal 面向开发和运维场景：WebGL 加速的终端渲染、可分屏的 SSH 会话、
             内置 SFTP 文件管理与广播输入。安装即用，支持自动更新。
           </p>
           <div class="hero-actions">
-            <a class="btn btn-primary" id="dl-exe" href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.23/OpenTerminal-1.0.23-setup.exe">
+            <a class="btn btn-primary" id="dl-exe" href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.25/OpenTerminal-1.0.25-setup.exe" data-i18n="hero.download">
               下载 Windows 安装包
             </a>
-            <a class="btn btn-ghost" href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener">
+            <a class="btn btn-ghost" href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener" data-i18n="hero.source">
               查看源码
             </a>
           </div>
-          <p class="hero-note">当前版本 <span class="mono">v1.0.23</span> · NSIS exe 安装包，支持应用内自动更新。</p>
+          <p class="hero-note"><span data-i18n="hero.notePre">当前版本</span> <span class="mono">v1.0.25</span> <span data-i18n="hero.notePost">· NSIS exe 安装包，支持应用内自动更新。</span></p>
         </div>
         <figure class="hero-shot">
-          <img src="assets/shot-terminal.jpg" alt="OpenTerminal 主界面：三路分屏并行运行 Kimi Code、Claude Code 与 Codex" width="1739" height="870" />
-          <figcaption>三路分屏并行运行 AI 编程 Agent，背景图与压暗层可自定义</figcaption>
+          <img src="assets/shot-terminal.jpg" alt="OpenTerminal 主界面：三路分屏并行运行 Kimi Code、Claude Code 与 Codex" width="1739" height="870" data-i18n-attr="alt:hero.shot.alt" />
+          <figcaption data-i18n="hero.shot.caption">三路分屏并行运行 AI 编程 Agent，背景图与压暗层可自定义</figcaption>
         </figure>
       </div>
       <div class="container spec-strip">
-        <span>当前版本 <strong class="mono">v1.0.23</strong></span>
-        <span>Windows 10 / 11 · x64</span>
-        <span>MIT 开源协议</span>
-        <span>exe 支持应用内自动更新</span>
+        <span><span data-i18n="spec.version">当前版本</span> <strong class="mono">v1.0.25</strong></span>
+        <span data-i18n="spec.os">Windows 10 / 11 · x64</span>
+        <span data-i18n="spec.license">MIT 开源协议</span>
+        <span data-i18n="spec.update">exe 支持应用内自动更新</span>
       </div>
     </section>
 
@@ -92,178 +136,178 @@
       <div class="container">
         <div class="section-head">
           <div>
-            <p class="section-eyebrow">Capabilities</p>
-            <h2>核心能力</h2>
-            <p class="section-sub">按使用场景划分的能力组，左右拖动或用箭头浏览；完整清单见仓库 README。</p>
+            <p class="section-eyebrow" data-i18n="features.eyebrow">Capabilities</p>
+            <h2 data-i18n="features.title">核心能力</h2>
+            <p class="section-sub" data-i18n="features.sub">按使用场景划分的能力组，左右拖动或用箭头浏览；完整清单见仓库 README。</p>
           </div>
           <div class="cap-controls">
-            <button class="track-btn" type="button" data-dir="-1" aria-label="向左浏览能力卡片">
+            <button class="track-btn" type="button" data-dir="-1" aria-label="向左浏览能力卡片" data-i18n-attr="aria-label:features.prev">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
             </button>
-            <button class="track-btn" type="button" data-dir="1" aria-label="向右浏览能力卡片">
+            <button class="track-btn" type="button" data-dir="1" aria-label="向右浏览能力卡片" data-i18n-attr="aria-label:features.next">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
             </button>
           </div>
         </div>
 
-        <div class="cap-track" id="cap-track" tabindex="0" aria-label="核心能力，可横向滚动">
+        <div class="cap-track" id="cap-track" tabindex="0" aria-label="核心能力，可横向滚动" data-i18n-attr="aria-label:features.trackAria">
           <article class="cap-card">
             <p class="cap-num">01</p>
-            <h3>终端核心</h3>
+            <h3 data-i18n="cap.01.title">终端核心</h3>
             <ul>
-              <li>node-pty 本地会话，自动探测 PowerShell / zsh / bash</li>
-              <li>xterm.js WebGL 渲染，声明 256 色与真彩，异常自动降级</li>
-              <li>内嵌搜索（Ctrl+F）、命令历史、粘贴风险确认</li>
-              <li>关键词高亮 22 条内置规则，支持自定义正则与三档强度</li>
-              <li>字体、字重、字距、行高、光标样式实时生效</li>
+              <li data-i18n="cap.01.li.1">node-pty 本地会话，自动探测 PowerShell / zsh / bash</li>
+              <li data-i18n="cap.01.li.2">xterm.js WebGL 渲染，声明 256 色与真彩，异常自动降级</li>
+              <li data-i18n="cap.01.li.3">内嵌搜索（Ctrl+F）、命令历史、粘贴风险确认</li>
+              <li data-i18n="cap.01.li.4">关键词高亮 22 条内置规则，支持自定义正则与三档强度</li>
+              <li data-i18n="cap.01.li.5">字体、字重、字距、行高、光标样式实时生效</li>
             </ul>
           </article>
 
           <article class="cap-card">
             <p class="cap-num">02</p>
-            <h3>SSH 会话</h3>
+            <h3 data-i18n="cap.02.title">SSH 会话</h3>
             <ul>
-              <li>ssh2 实现：密码、私钥（文件或粘贴内容）、SSH Agent</li>
-              <li>多路分屏与广播输入，一次操作下发到多台主机</li>
-              <li>主机指纹校验、首次连接确认、变更告警</li>
-              <li>ZMODEM 传输支持（sz / rz）</li>
-              <li>OSC 7 上报工作目录，新会话按上次位置恢复</li>
+              <li data-i18n="cap.02.li.1">ssh2 实现：密码、私钥（文件或粘贴内容）、SSH Agent</li>
+              <li data-i18n="cap.02.li.2">多路分屏与广播输入，一次操作下发到多台主机</li>
+              <li data-i18n="cap.02.li.3">主机指纹校验、首次连接确认、变更告警</li>
+              <li data-i18n="cap.02.li.4">ZMODEM 传输支持（sz / rz）</li>
+              <li data-i18n="cap.02.li.5">OSC 7 上报工作目录，新会话按上次位置恢复</li>
             </ul>
           </article>
 
           <article class="cap-card">
             <p class="cap-num">03</p>
-            <h3>SFTP 文件面板</h3>
+            <h3 data-i18n="cap.03.title">SFTP 文件面板</h3>
             <ul>
-              <li>列表头列分明：名称、大小、修改时间、权限、用户/组</li>
-              <li>点击列头排序；文件名解析为真实用户与组名</li>
-              <li>字体缩放 80%–180%，Ctrl+滚轮或工具栏按钮</li>
-              <li>上传下载、同名覆盖确认、chmod / chown 编辑</li>
-              <li>大目录虚拟滚动，上万条目不卡窗口</li>
+              <li data-i18n="cap.03.li.1">列表头列分明：名称、大小、修改时间、权限、用户/组</li>
+              <li data-i18n="cap.03.li.2">点击列头排序；文件名解析为真实用户与组名</li>
+              <li data-i18n="cap.03.li.3">字体缩放 80%–180%，Ctrl+滚轮或工具栏按钮</li>
+              <li data-i18n="cap.03.li.4">上传下载、同名覆盖确认、chmod / chown 编辑</li>
+              <li data-i18n="cap.03.li.5">大目录虚拟滚动，上万条目不卡窗口</li>
             </ul>
           </article>
 
           <article class="cap-card">
             <p class="cap-num">04</p>
-            <h3>工作区与布局</h3>
+            <h3 data-i18n="cap.04.title">工作区与布局</h3>
             <ul>
-              <li>dockview 分屏：任意拆分、拖拽、合并与浮动</li>
-              <li>布局模板保存与一键套用</li>
-              <li>启动恢复上次会话布局</li>
-              <li>界面缩放 50% 至 150%</li>
+              <li data-i18n="cap.04.li.1">dockview 分屏：任意拆分、拖拽、合并与浮动</li>
+              <li data-i18n="cap.04.li.2">布局模板保存与一键套用</li>
+              <li data-i18n="cap.04.li.3">启动恢复上次会话布局</li>
+              <li data-i18n="cap.04.li.4">界面缩放 50% 至 150%</li>
             </ul>
           </article>
 
           <article class="cap-card">
             <p class="cap-num">05</p>
-            <h3>主题与外观</h3>
+            <h3 data-i18n="cap.05.title">主题与外观</h3>
             <ul>
-              <li>主题编辑器：22 个颜色位逐项调整，实时预览</li>
-              <li>内置 11 套主题，跟随系统明暗自动切换</li>
-              <li>自定义背景图片、不透明度与压暗层</li>
-              <li>标签强调色、高亮配色跟随主题</li>
+              <li data-i18n="cap.05.li.1">主题编辑器：22 个颜色位逐项调整，实时预览</li>
+              <li data-i18n="cap.05.li.2">内置 11 套主题，跟随系统明暗自动切换</li>
+              <li data-i18n="cap.05.li.3">自定义背景图片、不透明度与压暗层</li>
+              <li data-i18n="cap.05.li.4">标签强调色、高亮配色跟随主题</li>
             </ul>
           </article>
 
           <article class="cap-card">
             <p class="cap-num">06</p>
-            <h3>效率工具</h3>
+            <h3 data-i18n="cap.06.title">效率工具</h3>
             <ul>
-              <li>命令库：保存常用命令片段，跨会话发送到指定终端</li>
-              <li>高亮规则集按主机绑定，不同服务器不同配色</li>
-              <li>规则导入导出、实时预览与命中统计</li>
-              <li>会话快照与恢复、终端标签自动命名</li>
+              <li data-i18n="cap.06.li.1">命令库：保存常用命令片段，跨会话发送到指定终端</li>
+              <li data-i18n="cap.06.li.2">高亮规则集按主机绑定，不同服务器不同配色</li>
+              <li data-i18n="cap.06.li.3">规则导入导出、实时预览与命中统计</li>
+              <li data-i18n="cap.06.li.4">会话快照与恢复、终端标签自动命名</li>
             </ul>
           </article>
 
           <article class="cap-card">
             <p class="cap-num">07</p>
-            <h3>系统监控</h3>
+            <h3 data-i18n="cap.07.title">系统监控</h3>
             <ul>
-              <li>CPU、负载、内存、磁盘、网络实时面板</li>
-              <li>每核占用与磁盘分区明细</li>
-              <li>运行时长与网络速率曲线</li>
-              <li>随会话打开，不额外占用通道</li>
+              <li data-i18n="cap.07.li.1">CPU、负载、内存、磁盘、网络实时面板</li>
+              <li data-i18n="cap.07.li.2">每核占用与磁盘分区明细</li>
+              <li data-i18n="cap.07.li.3">运行时长与网络速率曲线</li>
+              <li data-i18n="cap.07.li.4">随会话打开，不额外占用通道</li>
             </ul>
           </article>
 
           <article class="cap-card">
             <p class="cap-num">08</p>
-            <h3>锁屏与安全</h3>
+            <h3 data-i18n="cap.08.title">锁屏与安全</h3>
             <ul>
-              <li>Ctrl+L 一键锁屏，支持闲置自动锁定与启动即锁</li>
-              <li>密码经 scrypt 加盐哈希存储，不落盘明文</li>
-              <li>输错触发递增冷却；锁定期间禁用菜单与刷新快捷键</li>
-              <li>锁屏只是遮罩：背后会话与传输不中断</li>
+              <li data-i18n="cap.08.li.1">Ctrl+L 一键锁屏，支持闲置自动锁定与启动即锁</li>
+              <li data-i18n="cap.08.li.2">密码经 scrypt 加盐哈希存储，不落盘明文</li>
+              <li data-i18n="cap.08.li.3">输错触发递增冷却；锁定期间禁用菜单与刷新快捷键</li>
+              <li data-i18n="cap.08.li.4">锁屏只是遮罩：背后会话与传输不中断</li>
             </ul>
           </article>
         </div>
-        <p class="cap-hint">← 拖动浏览 · 共 8 组能力</p>
+        <p class="cap-hint" data-i18n="cap.hint">← 拖动浏览 · 共 8 组能力</p>
 
         <div class="feature-row">
           <figure class="feature-shot reveal">
-            <img src="assets/shot-agents.png" alt="OpenTerminal 多路分屏运行 Kimi Code、Claude Code、Codex 等 AI 编程 Agent" width="1296" height="870" />
+            <img src="assets/shot-agents.png" alt="OpenTerminal 多路分屏运行 Kimi Code、Claude Code、Codex 等 AI 编程 Agent" width="1296" height="870" data-i18n-attr="alt:fw.shot.alt" />
           </figure>
           <div class="feature-copy reveal">
-            <p class="eyebrow">Workbench</p>
-            <h3>AI Agent 工作台</h3>
+            <p class="eyebrow" data-i18n="fw.eyebrow">Workbench</p>
+            <h3 data-i18n="fw.title">AI Agent 工作台</h3>
             <ul>
-              <li>多路分屏并行运行 Kimi Code、Claude Code、Codex 等 AI 编程工具</li>
-              <li>为高频刷新的 TUI 界面优化：终端尺寸去抖同步，避免反复重绘</li>
-              <li>中文输入法候选窗紧贴光标，TUI 内输入中文不再漂移</li>
-              <li>关键词高亮自动标出错误、警告、HTTP 状态码与百分比</li>
+              <li data-i18n="fw.li.1">多路分屏并行运行 Kimi Code、Claude Code、Codex 等 AI 编程工具</li>
+              <li data-i18n="fw.li.2">为高频刷新的 TUI 界面优化：终端尺寸去抖同步，避免反复重绘</li>
+              <li data-i18n="fw.li.3">中文输入法候选窗紧贴光标，TUI 内输入中文不再漂移</li>
+              <li data-i18n="fw.li.4">关键词高亮自动标出错误、警告、HTTP 状态码与百分比</li>
             </ul>
           </div>
         </div>
 
         <div class="feature-row">
           <figure class="feature-shot reveal">
-            <img src="assets/shot-sftp.png" alt="OpenTerminal SFTP 文件面板：列表头、可排序列、完整修改时间与用户/组" width="1282" height="801" />
-            <img class="narrow" src="assets/shot-sftp-menu.png" alt="OpenTerminal 在文件列表空白处右键弹出同款文件菜单" width="1282" height="801" />
-            <figcaption>列表空白处右键同样是完整文件菜单，行内右键则作用于所选条目</figcaption>
+            <img src="assets/shot-sftp.png" alt="OpenTerminal SFTP 文件面板：列表头、可排序列、完整修改时间与用户/组" width="1282" height="801" data-i18n-attr="alt:fs.shot.alt" />
+            <img class="narrow" src="assets/shot-sftp-menu.png" alt="OpenTerminal 在文件列表空白处右键弹出同款文件菜单" width="1282" height="801" data-i18n-attr="alt:fs.shot.alt2" />
+            <figcaption data-i18n="fs.caption">列表空白处右键同样是完整文件菜单，行内右键则作用于所选条目</figcaption>
           </figure>
           <div class="feature-copy reveal">
-            <p class="eyebrow">SFTP</p>
-            <h3>远程文件面板</h3>
+            <p class="eyebrow" data-i18n="fs.eyebrow">SFTP</p>
+            <h3 data-i18n="fs.title">远程文件面板</h3>
             <ul>
-              <li>列表头列分明：名称、大小、修改时间、权限、用户/组，点击列头排序</li>
-              <li>文件名解析为真实用户与组名（root/root、eveuser/eveuser），不再只有数字</li>
-              <li>字体缩放 80%–180%：Ctrl+滚轮或工具栏按钮，行高与字号联动并记忆</li>
-              <li>上传 / 下载、同名覆盖确认、chmod 权限与 chown 属主编辑</li>
-              <li>大目录虚拟滚动，上万条目不卡窗口</li>
+              <li data-i18n="fs.li.1">列表头列分明：名称、大小、修改时间、权限、用户/组，点击列头排序</li>
+              <li data-i18n="fs.li.2">文件名解析为真实用户与组名（root/root、eveuser/eveuser），不再只有数字</li>
+              <li data-i18n="fs.li.3">字体缩放 80%–180%：Ctrl+滚轮或工具栏按钮，行高与字号联动并记忆</li>
+              <li data-i18n="fs.li.4">上传 / 下载、同名覆盖确认、chmod 权限与 chown 属主编辑</li>
+              <li data-i18n="fs.li.5">大目录虚拟滚动，上万条目不卡窗口</li>
             </ul>
           </div>
         </div>
 
         <div class="feature-row">
           <figure class="feature-shot reveal">
-            <img src="assets/shot-themes.jpg" alt="OpenTerminal 主题设置：背景图片、不透明度、压暗层与主题画廊" width="1739" height="870" />
+            <img src="assets/shot-themes.jpg" alt="OpenTerminal 主题设置：背景图片、不透明度、压暗层与主题画廊" width="1739" height="870" data-i18n-attr="alt:fc.shot.alt" />
           </figure>
           <div class="feature-copy reveal">
-            <p class="eyebrow">Customize</p>
-            <h3>定制与效率</h3>
+            <p class="eyebrow" data-i18n="fc.eyebrow">Customize</p>
+            <h3 data-i18n="fc.title">定制与效率</h3>
             <ul>
-              <li>主题编辑器：22 个颜色位逐项调整，实时预览；支持自定义背景图片、不透明度与压暗层</li>
-              <li>内置 11 套主题，跟随系统明暗自动切换</li>
-              <li>命令库：保存常用命令片段，跨会话发送到指定终端</li>
-              <li>启动恢复上次会话布局；界面缩放 50% 至 150%</li>
-              <li>四语言界面：简体中文、繁体中文、English、日本語</li>
+              <li data-i18n="fc.li.1">主题编辑器：22 个颜色位逐项调整，实时预览；支持自定义背景图片、不透明度与压暗层</li>
+              <li data-i18n="fc.li.2">内置 11 套主题，跟随系统明暗自动切换</li>
+              <li data-i18n="fc.li.3">命令库：保存常用命令片段，跨会话发送到指定终端</li>
+              <li data-i18n="fc.li.4">启动恢复上次会话布局；界面缩放 50% 至 150%</li>
+              <li data-i18n="fc.li.5">四语言界面：简体中文、繁体中文、English、日本語</li>
             </ul>
           </div>
         </div>
 
         <div class="feature-row">
           <figure class="feature-shot reveal">
-            <img src="assets/shot-lock.png" alt="OpenTerminal 锁屏界面：不透明遮罩与密码解锁" width="1739" height="870" />
+            <img src="assets/shot-lock.png" alt="OpenTerminal 锁屏界面：不透明遮罩与密码解锁" width="1739" height="870" data-i18n-attr="alt:fl.shot.alt" />
           </figure>
           <div class="feature-copy reveal">
-            <p class="eyebrow">Security</p>
-            <h3>锁屏与安全</h3>
+            <p class="eyebrow" data-i18n="fl.eyebrow">Security</p>
+            <h3 data-i18n="fl.title">锁屏与安全</h3>
             <ul>
-              <li>Ctrl+L 一键锁屏，支持闲置自动锁定与启动即锁</li>
-              <li>锁定期间禁用应用菜单、页面刷新与开发者工具快捷键</li>
-              <li>密码经 scrypt 加盐哈希存储，不落盘明文；输错触发递增冷却</li>
-              <li>锁屏只是遮罩：背后的终端会话与文件传输保持运行不中断</li>
+              <li data-i18n="fl.li.1">Ctrl+L 一键锁屏，支持闲置自动锁定与启动即锁</li>
+              <li data-i18n="fl.li.2">锁定期间禁用应用菜单、页面刷新与开发者工具快捷键</li>
+              <li data-i18n="fl.li.3">密码经 scrypt 加盐哈希存储，不落盘明文；输错触发递增冷却</li>
+              <li data-i18n="fl.li.4">锁屏只是遮罩：背后的终端会话与文件传输保持运行不中断</li>
             </ul>
           </div>
         </div>
@@ -272,39 +316,44 @@
 
     <section class="download" id="download">
       <div class="container">
-        <p class="section-eyebrow">Download</p>
-        <h2>下载</h2>
-        <p class="section-sub">
+        <p class="section-eyebrow" data-i18n="dl.eyebrow">Download</p>
+        <h2 data-i18n="dl.title">下载</h2>
+        <!-- 发新版本时更新下方 exe 直链与 hero 的 id=dl-exe 链接 -->
+        <p class="section-sub" data-i18n="dl.sub">
           从 GitHub Releases 下载；全部历史版本在同一页面。
-          <!-- 发新版本时更新下方 exe 直链与 hero 的 id=dl-exe 链接 -->
         </p>
         <table class="dl-table">
           <thead>
-            <tr><th>安装包</th><th>适用场景</th><th>大小</th><th>链接</th></tr>
+            <tr>
+              <th data-i18n="dl.th.pkg">安装包</th>
+              <th data-i18n="dl.th.scene">适用场景</th>
+              <th data-i18n="dl.th.size">大小</th>
+              <th data-i18n="dl.th.link">链接</th>
+            </tr>
           </thead>
           <tbody>
             <tr>
-              <td class="mono">OpenTerminal-1.0.23-setup.exe</td>
-              <td>NSIS 安装包，支持应用内自动更新（推荐）</td>
+              <td class="mono">OpenTerminal-1.0.25-setup.exe</td>
+              <td data-i18n="dl.table.exe">NSIS 安装包，支持应用内自动更新（推荐）</td>
               <td class="mono">109 MB</td>
               <td>
-                <a href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.23/OpenTerminal-1.0.23-setup.exe">下载</a>
+                <a href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.25/OpenTerminal-1.0.25-setup.exe" data-i18n="dl.table.download">下载</a>
               </td>
             </tr>
             <tr>
-              <td class="mono">历史版本</td>
-              <td>全部发布记录与更新说明</td>
+              <td class="mono" data-i18n="dl.table.history">历史版本</td>
+              <td data-i18n="dl.table.historyScene">全部发布记录与更新说明</td>
               <td class="mono">-</td>
               <td>
-                <a href="https://github.com/billowliu2/OpenTerminal/releases" target="_blank" rel="noopener">releases 列表</a>
+                <a href="https://github.com/billowliu2/OpenTerminal/releases" target="_blank" rel="noopener" data-i18n="dl.table.releases">releases 列表</a>
               </td>
             </tr>
           </tbody>
         </table>
 
         <div class="update-note">
-          <h3>自动更新说明</h3>
-          <p>
+          <h3 data-i18n="dl.note.title">自动更新说明</h3>
+          <p data-i18n="dl.note.body">
             应用内检查更新优先访问 GitHub Releases（跟随系统代理），失败时自动回退国内 git.codingplan.site 更新通道（直连）。
             更新包经 SHA-512 校验后安装。更新说明文字从发布通道的 release-notes.md 读取，与每次发布同步更新。
             自 v1.0.22 起不再提供 MSI 安装包，统一使用 NSIS exe。
@@ -315,44 +364,56 @@
 
     <section class="changelog" id="changelog">
       <div class="container">
-        <p class="section-eyebrow">Changelog</p>
-        <h2>近期更新</h2>
+        <p class="section-eyebrow" data-i18n="cl.eyebrow">Changelog</p>
+        <h2 data-i18n="cl.title">近期更新</h2>
         <div class="changelog-list">
+          <article>
+            <h3><span class="mono">1.0.25</span><span class="rel-date">2026-10-10</span></h3>
+            <ul>
+              <li data-i18n="changelog.1.0.25.li.1">定时检查更新（从不 / 4 / 12 / 24 小时，默认 4）</li>
+              <li data-i18n="changelog.1.0.25.li.2">自动下载更新开关（后台静默下载，安装时机仍由用户决定，绝不自动退出）</li>
+              <li data-i18n="changelog.1.0.25.li.3">下载完成 / 发现新版本时窗口最小化到托盘则弹提示</li>
+              <li data-i18n="changelog.1.0.25.li.4">同版本不重复提示或重复下载</li>
+            </ul>
+          </article>
+          <article>
+            <h3><span class="mono">1.0.24</span><span class="rel-date">2026-10-09</span></h3>
+            <ul>
+              <li data-i18n="changelog.1.0.24.li.1">修复应用旧版布局模板会误杀全部 SSH 会话</li>
+              <li data-i18n="changelog.1.0.24.li.2">配置文件损坏时先备份再重置（不再静默销毁命令库 / 书签 / 设置）</li>
+              <li data-i18n="changelog.1.0.24.li.3">会话日志退出不再丢尾部</li>
+              <li data-i18n="changelog.1.0.24.li.4">SFTP 删除不再误报失败；ZMODEM 接收大文件内存可控；新增 3 组渲染层测试</li>
+            </ul>
+          </article>
           <article>
             <h3><span class="mono">1.0.23</span><span class="rel-date">2026-10-09</span></h3>
             <ul>
-              <li>SFTP 文件面板改为真正的表格：六列对齐、表头吸顶、点击列头排序</li>
-              <li>字体可缩放 0.8–1.8 倍（A- / A+ 或 Ctrl+滚轮），行高联动并记忆设置</li>
-              <li>用户 / 组列显示真实名称，不再只有数字 UID / GID</li>
-              <li>列表空白处右键即可唤出文件菜单；修复六列此前未真正按网格对齐的问题</li>
+              <li data-i18n="changelog.1.0.23.li.1">SFTP 文件面板改为真正的表格：六列对齐、表头吸顶、点击列头排序</li>
+              <li data-i18n="changelog.1.0.23.li.2">字体可缩放 0.8–1.8 倍（A- / A+ 或 Ctrl+滚轮），行高联动并记忆设置</li>
+              <li data-i18n="changelog.1.0.23.li.3">用户 / 组列显示真实名称，不再只有数字 UID / GID</li>
+              <li data-i18n="changelog.1.0.23.li.4">列表空白处右键即可唤出文件菜单；修复六列此前未真正按网格对齐的问题</li>
             </ul>
           </article>
           <article>
             <h3><span class="mono">1.0.22</span><span class="rel-date">2026-10-08</span></h3>
             <ul>
-              <li>修复中文输入法候选窗不跟随光标（v1.0.21 回归）</li>
-              <li>不再提供 MSI 安装包，统一使用 NSIS exe</li>
-              <li>打包流程新增依赖一致性校验，防止旧依赖混入安装包</li>
+              <li data-i18n="changelog.1.0.22.li.1">修复中文输入法候选窗不跟随光标（v1.0.21 回归）</li>
+              <li data-i18n="changelog.1.0.22.li.2">不再提供 MSI 安装包，统一使用 NSIS exe</li>
+              <li data-i18n="changelog.1.0.22.li.3">打包流程新增依赖一致性校验，防止旧依赖混入安装包</li>
             </ul>
           </article>
           <article>
             <h3><span class="mono">1.0.21</span><span class="rel-date">2026-10-07</span></h3>
             <ul>
-              <li>背景图体验：任意主题下调透明度均为压暗、文字自动提亮到 WCAG AA、新增背景压暗滑杆</li>
-              <li>性能：设置热更不再触发全窗格重排，SFTP 大目录虚拟滚动，面板独立错误边界</li>
-              <li>安装包精简约 90MB；SFTP/ZMODEM 本地路径准入与多处安全加固</li>
-            </ul>
-          </article>
-          <article>
-            <h3><span class="mono">1.0.20</span><span class="rel-date">2026-10-01</span></h3>
-            <ul>
-              <li>修复中文输入法候选窗不跟随光标</li>
-              <li>锁屏加固：锁定期间移除应用菜单，Ctrl+L 按键判定重构并补测试</li>
+              <li data-i18n="changelog.1.0.21.li.1">背景图体验：任意主题下调透明度均为压暗、文字自动提亮到 WCAG AA、新增背景压暗滑杆</li>
+              <li data-i18n="changelog.1.0.21.li.2">性能：设置热更不再触发全窗格重排，SFTP 大目录虚拟滚动，面板独立错误边界</li>
+              <li data-i18n="changelog.1.0.21.li.3">安装包精简约 90MB；SFTP/ZMODEM 本地路径准入与多处安全加固</li>
             </ul>
           </article>
         </div>
         <p class="changelog-more">
-          完整日志见仓库 <a href="https://github.com/billowliu2/OpenTerminal/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a>。
+          <span data-i18n="cl.morePre">完整日志见仓库</span>
+          <a href="https://github.com/billowliu2/OpenTerminal/blob/main/CHANGELOG.md" target="_blank" rel="noopener">CHANGELOG.md</a><span data-i18n="cl.morePost">。</span>
         </p>
       </div>
     </section>
@@ -361,11 +422,13 @@
 
   <footer class="site-footer">
     <div class="container footer-inner">
-      <span>© 2026 CodingPlan.Site · OpenTerminal 以 MIT 协议开源</span>
-      <span class="mono">更新通道：git.codingplan.site</span>
+      <span data-i18n="footer.copyright">© 2026 CodingPlan.Site · OpenTerminal 以 MIT 协议开源</span>
+      <span class="mono" data-i18n="footer.channel">更新通道：git.codingplan.site</span>
     </div>
   </footer>
 
+  <script src="assets/i18n.js"></script>
+  <script src="assets/i18n-apply.js"></script>
   <script>
     (function () {
       var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -461,10 +524,20 @@
       // 明暗主题切换
       var toggle = document.getElementById('theme-toggle');
       var meta = document.querySelector('meta[name="theme-color"]');
+      function themeLabel(key, fallback) {
+        var dict = (window.OPENTERMINAL_I18N || {})[document.documentElement.lang];
+        return (dict && dict[key]) || fallback;
+      }
       function applyTheme(theme) {
         document.documentElement.dataset.theme = theme;
         if (meta) meta.setAttribute('content', theme === 'light' ? '#fafbf9' : '#0b0e12');
-        if (toggle) toggle.setAttribute('aria-label', theme === 'light' ? '切换到深色主题' : '切换到浅色主题');
+        if (toggle) {
+          var label = theme === 'light'
+            ? themeLabel('nav.themeToDark', '切换到深色主题')
+            : themeLabel('nav.themeToLight', '切换到浅色主题');
+          toggle.setAttribute('aria-label', label);
+          toggle.setAttribute('title', label);
+        }
       }
       if (toggle) {
         toggle.addEventListener('click', function () {
@@ -474,6 +547,9 @@
         });
       }
       applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+      document.addEventListener('openterminal:langchange', function () {
+        applyTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+      });
     })();
   </script>
 
