@@ -17,6 +17,10 @@ const main: Record<string, string> = {
 
   'main.updater.feedFailed': 'Gitea フィード: {gitea}；GitHub: {github}',
   'main.updater.checkTimeout': '更新の確認がタイムアウトしました',
+  'main.updater.notifyAvailableTitle': '新しいバージョンがあります',
+  'main.updater.notifyAvailableContent': 'OpenTerminal v{version} が利用可能です',
+  'main.updater.notifyDownloadedTitle': 'アップデートをダウンロードしました',
+  'main.updater.notifyDownloadedContent': 'v{version} をダウンロードしました — 終了時にインストールされます',
 
   'main.ssh.connectTimeout': '接続がタイムアウトしました ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'ホスト鍵のフィンガープリントを保存できませんでした: {detail}',

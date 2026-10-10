@@ -84,7 +84,13 @@ export function AboutTab(): React.JSX.Element {
   }, [])
 
   const status = state?.status ?? 'idle'
-  const statusText = t(STATUS_TEXT[status]) + (state?.version ? ` v${state.version}` : '')
+  // A download the app started on its own reads differently from one the user
+  // pressed the button for — same state, different expectation about install.
+  const statusKey =
+    status === 'downloaded' && state?.auto
+      ? 'settings.about.statusDownloadedAuto'
+      : STATUS_TEXT[status]
+  const statusText = t(statusKey) + (state?.version ? ` v${state.version}` : '')
 
   return (
     <div className="about-tab">

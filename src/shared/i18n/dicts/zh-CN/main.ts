@@ -17,6 +17,10 @@ const main: Record<string, string> = {
 
   'main.updater.feedFailed': '国内源: {gitea}；GitHub: {github}',
   'main.updater.checkTimeout': '检查更新超时',
+  'main.updater.notifyAvailableTitle': '发现新版本',
+  'main.updater.notifyAvailableContent': 'OpenTerminal v{version} 已可用',
+  'main.updater.notifyDownloadedTitle': '更新已下载',
+  'main.updater.notifyDownloadedContent': 'v{version} 已下载完成，退出应用时将自动安装',
 
   'main.ssh.connectTimeout': '连接超时 ({host}:{port})',
   'main.ssh.saveFingerprintFailed': '保存主机指纹失败: {detail}',

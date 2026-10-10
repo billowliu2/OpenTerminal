@@ -89,6 +89,16 @@ const settings: Record<string, string> = {
   'settings.system.preventSleep': '阻止系统休眠',
   'settings.system.preventSleepDesc':
     '开启后 OpenTerminal 将阻止系统自动休眠；关闭则允许系统按系统设置休眠',
+  'settings.system.updateCheckInterval': '定时检查更新',
+  'settings.system.updateCheckIntervalDesc':
+    '后台按周期自动检查新版本（启动时与手动检查始终可用）',
+  'settings.system.updateCheckNever': '从不',
+  'settings.system.updateCheck4h': '每 4 小时',
+  'settings.system.updateCheck12h': '每 12 小时',
+  'settings.system.updateCheck24h': '每 24 小时',
+  'settings.system.autoDownload': '自动下载更新',
+  'settings.system.autoDownloadDesc':
+    '发现新版本时在后台静默下载；安装时机仍由你决定（退出应用时会自动安装）',
   'settings.system.restoreSession': '启动时恢复上次会话',
   'settings.system.restoreSessionDesc':
     '下次启动恢复分屏布局，并让每个终端回到它上次所在的目录；关闭则每次都以单个终端启动',
@@ -292,6 +302,7 @@ const settings: Record<string, string> = {
   'settings.about.statusLatest': '已经是最新版本',
   'settings.about.statusDownloading': '正在下载…',
   'settings.about.statusDownloaded': '下载完成，可重启安装',
+  'settings.about.statusDownloadedAuto': '已在后台下载完成，退出时自动安装',
   'settings.about.statusError': '检查失败',
   'settings.about.statusDev': '开发模式不支持更新检查',
   'settings.about.autoCheck': '启动时自动检查',

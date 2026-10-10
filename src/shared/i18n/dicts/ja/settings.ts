@@ -91,6 +91,16 @@ const settings: Record<string, string> = {
   'settings.system.preventSleep': 'スリープを防止',
   'settings.system.preventSleepDesc':
     'オンにすると OpenTerminal がシステムの自動スリープを防ぎます。オフにすると OS の設定どおりにスリープします',
+  'settings.system.updateCheckInterval': '定期アップデート確認',
+  'settings.system.updateCheckIntervalDesc':
+    'バックグラウンドで定期的に新バージョンを確認します（起動時と手動確認は常に有効）',
+  'settings.system.updateCheckNever': 'なし',
+  'settings.system.updateCheck4h': '4 時間ごと',
+  'settings.system.updateCheck12h': '12 時間ごと',
+  'settings.system.updateCheck24h': '24 時間ごと',
+  'settings.system.autoDownload': 'アップデートを自動ダウンロード',
+  'settings.system.autoDownloadDesc':
+    '新バージョンをバックグラウンドで自動ダウンロードします（インストールは終了時に実行されます）',
   'settings.system.restoreSession': '起動時に前回のセッションを復元',
   'settings.system.restoreSessionDesc':
     '次回の起動で分割レイアウトを復元し、各ターミナルを前回のディレクトリに戻します。オフにすると毎回 1 つのターミナルで起動します',
@@ -303,6 +313,7 @@ const settings: Record<string, string> = {
   'settings.about.statusLatest': '最新バージョンです',
   'settings.about.statusDownloading': 'ダウンロードしています…',
   'settings.about.statusDownloaded': 'ダウンロード完了。再起動してインストールできます',
+  'settings.about.statusDownloadedAuto': 'バックグラウンドでダウンロード完了 — 終了時にインストールされます',
   'settings.about.statusError': '確認に失敗しました',
   'settings.about.statusDev': '開発モードでは更新を確認できません',
   'settings.about.autoCheck': '起動時に自動で確認',

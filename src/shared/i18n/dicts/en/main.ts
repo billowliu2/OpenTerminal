@@ -17,6 +17,10 @@ const main: Record<string, string> = {
 
   'main.updater.feedFailed': 'Gitea feed: {gitea}; GitHub: {github}',
   'main.updater.checkTimeout': 'Update check timed out',
+  'main.updater.notifyAvailableTitle': 'Update available',
+  'main.updater.notifyAvailableContent': 'OpenTerminal v{version} is available',
+  'main.updater.notifyDownloadedTitle': 'Update downloaded',
+  'main.updater.notifyDownloadedContent': 'v{version} downloaded — it installs when you quit the app',
 
   'main.ssh.connectTimeout': 'Connection timed out ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'Failed to save the host fingerprint: {detail}',

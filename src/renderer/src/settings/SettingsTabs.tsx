@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { Input, InputNumber, Radio, Select, Switch } from 'antd'
+import { UPDATE_CHECK_INTERVALS, type UpdateCheckInterval } from '@shared/settings'
 import type { ThemeColors } from '@shared/theme'
 import { DEFAULT_LANGUAGE, LANGUAGES, t, type Language } from '@shared/i18n'
 import { isReservedAccelerator } from '@shared/reservedAccelerators'
@@ -345,6 +346,18 @@ export function RenderSettingsTab(): React.JSX.Element {
   )
 }
 
+/**
+ * Label for each offered interval. Keyed by the whitelist union rather than
+ * built ad hoc, so a new entry in UPDATE_CHECK_INTERVALS fails to type-check
+ * here until it has a label (and `0` keeps meaning "never").
+ */
+const UPDATE_INTERVAL_LABELS: Record<UpdateCheckInterval, string> = {
+  0: 'settings.system.updateCheckNever',
+  4: 'settings.system.updateCheck4h',
+  12: 'settings.system.updateCheck12h',
+  24: 'settings.system.updateCheck24h'
+}
+
 export function SystemSettingsTab(): React.JSX.Element {
   const settings = useSettingsStore((s) => s.settings)
   const updateSystem = useSettingsStore((s) => s.updateSystem)
@@ -400,6 +413,31 @@ export function SystemSettingsTab(): React.JSX.Element {
           <Switch
             checked={settings.system.shellIntegration === true}
             onChange={(checked) => void updateSystem({ shellIntegration: checked })}
+          />
+        }
+      />
+      <SettingRow
+        label={t('settings.system.updateCheckInterval')}
+        desc={t('settings.system.updateCheckIntervalDesc')}
+        control={
+          <Select
+            className="settings-select"
+            value={settings.system.updateCheckIntervalHours ?? 4}
+            onChange={(value) => void updateSystem({ updateCheckIntervalHours: value })}
+            options={UPDATE_CHECK_INTERVALS.map((hours) => ({
+              value: hours,
+              label: t(UPDATE_INTERVAL_LABELS[hours])
+            }))}
+          />
+        }
+      />
+      <SettingRow
+        label={t('settings.system.autoDownload')}
+        desc={t('settings.system.autoDownloadDesc')}
+        control={
+          <Switch
+            checked={settings.system.autoDownloadUpdate === true}
+            onChange={(checked) => void updateSystem({ autoDownloadUpdate: checked })}
           />
         }
       />

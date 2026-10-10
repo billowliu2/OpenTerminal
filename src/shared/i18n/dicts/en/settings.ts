@@ -94,6 +94,16 @@ const settings: Record<string, string> = {
   'settings.system.preventSleep': 'Prevent system sleep',
   'settings.system.preventSleepDesc':
     'While on, OpenTerminal keeps the system from sleeping automatically; when off, the system follows its own power settings',
+  'settings.system.updateCheckInterval': 'Periodic update check',
+  'settings.system.updateCheckIntervalDesc':
+    'Check for new versions periodically in the background (startup and manual checks always work)',
+  'settings.system.updateCheckNever': 'Never',
+  'settings.system.updateCheck4h': 'Every 4 hours',
+  'settings.system.updateCheck12h': 'Every 12 hours',
+  'settings.system.updateCheck24h': 'Every 24 hours',
+  'settings.system.autoDownload': 'Download updates automatically',
+  'settings.system.autoDownloadDesc':
+    'Silently download new versions in the background; installing stays your call (it installs when you quit the app)',
   'settings.system.restoreSession': 'Restore last session on startup',
   'settings.system.restoreSessionDesc':
     'Restore the split layout on the next launch and return each terminal to its last directory; when off, OpenTerminal always starts with a single terminal',
@@ -308,6 +318,7 @@ const settings: Record<string, string> = {
   'settings.about.statusLatest': 'Already up to date',
   'settings.about.statusDownloading': 'Downloading…',
   'settings.about.statusDownloaded': 'Download complete — restart to install',
+  'settings.about.statusDownloadedAuto': 'Downloaded in the background — installs when you quit',
   'settings.about.statusError': 'Check failed',
   'settings.about.statusDev': 'Update checks are unavailable in development mode',
   'settings.about.autoCheck': 'Check automatically at startup',
