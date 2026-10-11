@@ -22,6 +22,7 @@ import { broadcast } from './broadcast'
 import { writeJson } from './store'
 import { applyGlobalShortcut } from './globalShortcuts'
 import { applyWindowChrome } from './windowChrome'
+import { setAppLogEnabled } from './appLog'
 
 const settingsPath = (): string => join(app.getPath('userData'), 'settings.json')
 
@@ -372,6 +373,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         autoDownloadUpdate: candidate.autoDownloadUpdate === true,
         // Both default on/off as in DEFAULT_SETTINGS; absent means "not chosen".
         restoreSession: candidate.restoreSession !== false,
+        diagnosticLog: candidate.diagnosticLog !== false,
         shellIntegration: candidate.shellIntegration === true,
         language: isLanguage(candidate.language) ? candidate.language : DEFAULT_LANGUAGE
       }
@@ -442,6 +444,9 @@ function applySystemSettings(system: SystemSettings): void {
   }
   // Re-register the global show/hide shortcut whenever system settings change.
   applyGlobalShortcut(system.globalShowHide)
+  // The diagnostic log gate follows the setting live (appLog is imported here —
+  // it only touches electron/fs, so there is no cycle).
+  setAppLogEnabled(system.diagnosticLog !== false)
   // Re-arm (or disarm) the periodic update check the same way. Routed through the
   // injected applier instead of importing the updater, which would be a cycle.
   updateScheduleApplier?.(system)

@@ -19,6 +19,8 @@ import { compileRules, HighlightStream, type RuleStat } from './highlightEngine'
 import { publishHighlightStats } from './highlightStats'
 import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
+import { WriteBatcher } from './writeBatcher'
+import { refitDelay } from './fitThrottle'
 import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
 import { getSessionCwd, setSessionCwd } from '@renderer/workspace/sessionCwdStore'
@@ -348,6 +350,12 @@ export function TerminalView({
   const searchRef = useRef<SearchAddon | null>(null)
   const observerRef = useRef<ResizeObserver | null>(null)
   const timerRef = useRef<number>(0)
+  // Reflow throttle: `lastFitAtRef` is the last fit attempt's timestamp (0 =
+  // none yet, so a rebound session's first fit runs immediately),
+  // `fitTrailingRef` is the trailing timer that guarantees a final fit at the
+  // settled size once a drag's resize-event stream stops.
+  const lastFitAtRef = useRef(0)
+  const fitTrailingRef = useRef<number>(0)
   // PTY resize bookkeeping: `ptyTimerRef` debounces the resize while a window
   // drag/maximize settles, `ptySizeRef` drops the no-op resizes in between.
   // Poking the pty on every intermediate layout tick makes full-screen TUIs
@@ -518,6 +526,24 @@ export function TerminalView({
   const scheduleFit = useCallback(() => {
     window.cancelAnimationFrame(timerRef.current)
     timerRef.current = window.requestAnimationFrame(() => {
+      // Throttle reflows while a window drag resizes the pane every frame: one
+      // fit rewraps the whole scrollback (tens of ms at the default 5000
+      // lines, more with CJK), and one per frame saturates the main thread and
+      // starves xterm's write queue — the UI then stays frozen for seconds
+      // after the drag while the backlog drains. During a drag fits run at
+      // most every FIT_REFLOW_THROTTLE_MS; the trailing timer lands a final
+      // fit at the settled size.
+      const wait = refitDelay(lastFitAtRef.current, performance.now())
+      if (wait > 0) {
+        if (!fitTrailingRef.current) {
+          fitTrailingRef.current = window.setTimeout(() => {
+            fitTrailingRef.current = 0
+            scheduleFit()
+          }, wait)
+        }
+        return
+      }
+      lastFitAtRef.current = performance.now()
       const fit = fitAddonRef.current
       if (!fit) return
       try {
@@ -907,6 +933,10 @@ export function TerminalView({
     // from a template apply or panel reuse; recording resumes idle.
     lineBufRef.current = ''
     ptySizeRef.current = null
+    // A rebound session's first fit must not inherit the previous session's
+    // throttle window — the pty spawns at a placeholder size and the shell
+    // may already be drawing.
+    lastFitAtRef.current = 0
     setSuggestions([])
     setSuggestionIndex(0)
     if (recordingRef.current) {
@@ -928,18 +958,28 @@ export function TerminalView({
     // A shell prompt is exactly such a run with no follow-up data, so flush the
     // carry on a short timer — prompts render within a frame, anchors survive.
     let carryTimer: number | undefined
+    // Batch xterm writes: a busy TUI delivers one IPC message per pty read,
+    // and every term.write re-arms xterm's parser scheduler — hundreds of
+    // tiny writes a second keep the parser permanently behind the producer,
+    // which is what froze the UI for seconds after an output burst. The
+    // batcher hands output over in one write per ~16ms window (the carry
+    // cadence), so a flood costs one parser run per frame instead of one per
+    // IPC message.
+    const batcher = new WriteBatcher((text) => {
+      if (!deadRef.current) term.write(text)
+    })
     const scheduleCarryFlush = (): void => {
       if (carryTimer !== undefined || !stream.hasPending()) return
       carryTimer = window.setTimeout(() => {
         carryTimer = undefined
         if (deadRef.current) return
         const rest = stream.flush()
-        if (rest) term.write(rest)
+        if (rest) batcher.push(rest)
       }, 16)
     }
     const writeHighlighted = (data: string) => {
       const out = stream.push(data)
-      if (out) term.write(out)
+      if (out) batcher.push(out)
       scheduleCarryFlush()
     }
     // Clickable URLs. Ctrl/Cmd+Click opens the target in the system browser;
@@ -1076,6 +1116,10 @@ export function TerminalView({
     // Death state, shared by the PTY_EXIT subscription and the SESSION_STATE
     // query below: the two paths must land identically.
     const markDead = (code: number): void => {
+      // The batcher may still hold the session's final output (PTY_EXIT lands
+      // after the data but before the flush timer); release it before the
+      // dead flag starts dropping writes.
+      batcher.flushNow()
       deadRef.current = true
       setExitCode(code)
       setDead(true)
@@ -1158,6 +1202,13 @@ export function TerminalView({
     return () => {
       if (carryTimer !== undefined) window.clearTimeout(carryTimer)
       if (ptyTimerRef.current) window.clearTimeout(ptyTimerRef.current)
+      if (fitTrailingRef.current) {
+        window.clearTimeout(fitTrailingRef.current)
+        fitTrailingRef.current = 0
+      }
+      // Teardown/rebind drops whatever the batcher still holds; a rebound
+      // pane re-fetches the session replay, so nothing visible is lost.
+      batcher.dispose()
       host?.removeEventListener('keydown', onPasteKey, true)
       for (const unsubscribe of unsubscribes) unsubscribe()
       for (const disposable of disposables) disposable.dispose()

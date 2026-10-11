@@ -417,6 +417,16 @@ export function SystemSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
+        label={t('settings.system.diagnosticLog')}
+        desc={t('settings.system.diagnosticLogDesc')}
+        control={
+          <Switch
+            checked={settings.system.diagnosticLog !== false}
+            onChange={(checked) => void updateSystem({ diagnosticLog: checked })}
+          />
+        }
+      />
+      <SettingRow
         label={t('settings.system.updateCheckInterval')}
         desc={t('settings.system.updateCheckIntervalDesc')}
         control={

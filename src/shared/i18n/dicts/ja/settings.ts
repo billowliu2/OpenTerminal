@@ -107,6 +107,9 @@ const settings: Record<string, string> = {
   'settings.system.shellIntegration': 'Shell 統合',
   'settings.system.shellIntegrationDesc':
     'shell に作業ディレクトリを報告させ（OSC 7）、パスの記憶をより正確にします（スクリプト内の cd も含みます）。プロンプトをラップするため、プロンプトの表示が崩れる場合はオフにしてください',
+  'settings.system.diagnosticLog': '診断ログを記録',
+  'settings.system.diagnosticLogDesc':
+    '起動・UI フリーズ・クラッシュなどの主要イベントをログディレクトリに書き込みます（日ごとのファイル、7 日間保持で自動削除）。オフの間は記録しません',
   'settings.system.closeAction': '閉じるボタンの動作',
   'settings.system.closeActionDesc':
     'ウィンドウの閉じるボタンを押したときの動作。タスクトレイに最小化した後は、トレイアイコンの右クリックメニューから終了できます',

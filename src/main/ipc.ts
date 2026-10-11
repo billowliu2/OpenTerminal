@@ -36,6 +36,7 @@ import { CommandsStore, defaultCommandsPath } from './commands'
 import type { CommandItem } from '../shared/commands'
 import { createPty, killPty, resizePty, writePty, openSession, configureSessionRuntime, getSessionReplay, sessionState, registerLogHooks } from './pty'
 import { respondZmodem } from './zmodem'
+import { appLog } from './appLog'
 import type { ZmodemResponse } from '../shared/ipc'
 
 /** The renderer document this app loads (dev builds load it from vite instead). */
@@ -149,6 +150,10 @@ export function registerIpc(): void {
     Ipc.APP_INFO,
     (): AppInfo => ({ platform: process.platform, appVersion: app.getVersion(), homeDir: homedir() })
   )
+  // Renderer watchdog reports land in the same diagnostic log as main's own.
+  ipcMain.on(Ipc.APP_LOG, (_event, line: string) => {
+    if (typeof line === 'string') void appLog('renderer', line)
+  })
 
   ipcMain.handle(Ipc.PTY_CREATE, (event, opts?: PtyCreateOptions) => createPty(opts, event.sender.id))
   ipcMain.handle(Ipc.SESSION_OPEN, (event, opts: SessionOpenOptions) => openSession(opts, event.sender.id))

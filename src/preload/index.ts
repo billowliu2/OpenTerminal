@@ -15,6 +15,7 @@ import type { TransferProgressEvent } from '../shared/sftp'
 
 const api: AppApi = {
   appInfo: () => ipcRenderer.invoke(Ipc.APP_INFO),
+  appLog: (line: string) => ipcRenderer.send(Ipc.APP_LOG, line),
 
   createPty: (opts?: PtyCreateOptions) => ipcRenderer.invoke(Ipc.PTY_CREATE, opts),
   openSession: (opts: SessionOpenOptions) => ipcRenderer.invoke(Ipc.SESSION_OPEN, opts),

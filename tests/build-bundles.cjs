@@ -71,7 +71,9 @@ const BUNDLES = [
   // The smoke test imports the renderer engine (.ts), so it needs bundling too.
   { entry: 'tests/hl-split-smoke.mjs', out: 'tests/.hl-split-smoke.cjs' },
   // Preset-rule assertions (word boundaries, case flag) over the same engine.
-  { entry: 'tests/hl-rules.mjs', out: 'tests/.hl-rules.cjs' }
+  { entry: 'tests/hl-rules.mjs', out: 'tests/.hl-rules.cjs' },
+  // Diagnostic app log: daily naming, retention sweep, async append queue.
+  { entry: 'src/main/appLog.ts', out: 'tests/.app-log.cjs' }
 ]
 
 for (const { entry, out, format = 'cjs', external = [], alias = {} } of BUNDLES) {

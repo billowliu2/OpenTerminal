@@ -105,6 +105,9 @@ const settings: Record<string, string> = {
   'settings.system.shellIntegration': 'Shell 集成',
   'settings.system.shellIntegrationDesc':
     '让 shell 主动上报工作目录（OSC 7），路径记忆更精确（含脚本内的 cd）；会包装你的命令提示符，遇到提示符主题异常时关掉即可',
+  'settings.system.diagnosticLog': '记录诊断日志',
+  'settings.system.diagnosticLogDesc':
+    '把启动、界面卡死、崩溃等关键事件写入日志目录（按天一个文件，保留 7 天自动清理），排查问题时用；关闭后不再记录',
   'settings.system.closeAction': '关闭按钮行为',
   'settings.system.closeActionDesc':
     '点击窗口关闭按钮时的动作；最小化到托盘后可在托盘图标右键菜单中退出',

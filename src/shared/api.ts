@@ -30,6 +30,8 @@ import type { ZmodemDoneEvent, ZmodemOfferEvent, ZmodemResponse } from './ipc'
  */
 export interface AppApi {
   appInfo(): Promise<AppInfo>
+  /** append one line to the diagnostic app log (watchdog reports) */
+  appLog(line: string): void
 
   // ---- sessions (pty data plane is shared by local and ssh sessions) ----
   createPty(opts?: PtyCreateOptions): Promise<PtyCreateResult>

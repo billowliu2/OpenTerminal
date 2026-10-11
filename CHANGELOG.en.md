@@ -1,5 +1,20 @@
 # OpenTerminal Changelog
 
+## v1.0.26 - 2026-10-11
+
+This release is about performance and diagnosability: it fixes the multi-second UI freezes when dragging to resize the window or when a terminal floods output, and adds an on-disk diagnostic log (on by default, auto-cleaned after 7 days) so freeze reports finally come with evidence.
+
+### Fixed: intermittent UI freezes
+- While dragging to resize, the terminal grid reflow now runs at most once every 150ms instead of every frame, with a final reflow at the settled size — dragging no longer locks up the UI
+- Terminal output is now written to xterm in 16ms batches: when several high-refresh TUIs (e.g. an AI coding assistant's concurrent subagents) flood the screen at once, output no longer backlogs into a multi-second freeze
+- Together, these keep tab switching, typing and pane dragging responsive under heavy load
+
+### New: diagnostic log
+- New Settings → System toggle "Diagnostic log" (**on by default**)
+- Key events — startup, UI freezes (with duration and which process stalled), crashes — are written to the log directory, one file per day, **auto-deleted after 7 days**
+- While off, nothing is recorded
+- Attach the day's log file when reporting a problem to pinpoint the freeze source
+
 ## v1.0.25 - 2026-10-10
 
 ## v1.0.23

@@ -11,6 +11,7 @@ import { applyMenuLockState } from './lockMenu'
 import { isLockBlockedShortcut, isPanicLockChord } from './lockShortcuts'
 import { initTray, markQuitting, onMainWindowClose, refreshTrayMenu } from './tray'
 import { applyUpdateSchedule, configureAutoUpdater, registerUpdateIpc } from './updater'
+import { appLog, initAppLog, setAppLogEnabled } from './appLog'
 import { applyWindowChrome } from './windowChrome'
 import { onLanguageChange, t } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
@@ -72,6 +73,13 @@ if (!gotSingleInstanceLock) {
   app
     .whenReady()
     .then(() => {
+      // The diagnostic log must exist before any IPC handler can reference it;
+      // startup also sweeps log files past the retention window. The gate is
+      // set from settings first, so even the startup line respects the switch.
+      setAppLogEnabled(loadSettings().system.diagnosticLog !== false)
+      initAppLog()
+      void appLog('main', `app started: v${app.getVersion()} (${process.platform}/${process.arch})`)
+
       // Serve the configured background image (path lives in settings; anything
       // else — including a path that is no longer configured — is refused, so the
       // protocol cannot be used to read arbitrary files).
@@ -263,20 +271,27 @@ function createWindow(): void {
 
 process.on('unhandledRejection', (reason) => {
   console.error('[main] unhandledRejection:', reason)
+  void appLog('main', `unhandledRejection: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}`)
 })
 process.on('uncaughtException', (err) => {
   console.error('[main] uncaughtException:', err)
+  void appLog('main', `uncaughtException: ${err.stack ?? err.message}`)
 })
 
 // Diagnostics for "app froze then recovered" reports: WER logs an
 // AppHangTransient but keeps no stack. A stall of THIS (UI) thread is what
 // Windows flags as a hang, so measure event-loop lag and say so loudly when
 // it happens — that distinguishes a main-process block from a renderer one.
+// The same line goes to the on-disk diagnostic log (appLog.ts), which a
+// packaged build's console cannot reach.
 let lastTick = Date.now()
 setInterval(() => {
   const now = Date.now()
   const lag = now - lastTick - 1000
-  if (lag > 2000) console.error(`[main] event loop stalled ~${lag}ms`)
+  if (lag > 2000) {
+    console.error(`[main] event loop stalled ~${lag}ms`)
+    void appLog('main', `event loop stalled ~${lag}ms`)
+  }
   lastTick = now
 }, 1000).unref()
 

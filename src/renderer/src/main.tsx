@@ -14,7 +14,9 @@ import './global.css'
 
 // Diagnostics: report renderer main-thread freezes after recovery. console.error
 // is surfaced into the dev terminal by the main process's console-message hook,
-// so a "卡死又恢复" report tells us which process stalled and for how long.
+// and the same line goes through APP_LOG into the on-disk diagnostic log, so a
+// packaged build's "卡死又恢复" report also tells us which process stalled and
+// for how long.
 {
   let lastTick = performance.now()
   setInterval(() => {
@@ -26,7 +28,13 @@ import './global.css'
     // tray. A hidden window also has nothing user-visible to freeze, so the
     // report is skipped until the page is visible again.
     if (lag > 3000 && !document.hidden) {
-      console.error(`[renderer] main thread stalled ~${Math.round(lag)}ms`)
+      const line = `main thread stalled ~${Math.round(lag)}ms`
+      console.error(`[renderer] ${line}`)
+      // The settings gate is enforced again in main; checking here just saves
+      // the IPC round-trip for a stalled-process report nobody wants stored.
+      if (useSettingsStore.getState().settings.system.diagnosticLog !== false) {
+        window.api?.appLog?.(line)
+      }
     }
     lastTick = now
   }, 2000)
@@ -49,6 +57,7 @@ if (typeof window !== 'undefined' && !window.api) {
   })
   const api: AppApi = {
     appInfo: async () => ({ platform: 'browser', appVersion: 'dev', homeDir: '' }),
+    appLog: noop,
     createPty: async () => ({ id: stubId(), shell: 'stub', cwd: '' }),
     openSession: async () => ({ id: stubId() }),
     getSessionReplay: async () => '',

@@ -98,6 +98,8 @@ export const Ipc = {
 
   // ---- misc ----
   APP_INFO: 'app:info',
+  /** renderer -> main: append one line to the diagnostic app log (fire-and-forget) */
+  APP_LOG: 'app:log',
 
   // ---- updater (check/download/install + state broadcast) ----
   UPDATE_CHECK: 'update:check',

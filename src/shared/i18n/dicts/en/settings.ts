@@ -110,6 +110,9 @@ const settings: Record<string, string> = {
   'settings.system.shellIntegration': 'Shell integration',
   'settings.system.shellIntegrationDesc':
     'Let the shell report its working directory (OSC 7) for more precise path tracking, including cd inside scripts; it wraps your prompt, so turn it off if the prompt theme looks wrong',
+  'settings.system.diagnosticLog': 'Diagnostic log',
+  'settings.system.diagnosticLogDesc':
+    'Write key events (startup, UI freezes, crashes) to the log directory — one file per day, auto-deleted after 7 days; nothing is recorded while this is off',
   'settings.system.closeAction': 'Close button behavior',
   'settings.system.closeActionDesc':
     'What happens when you click the window close button; after minimizing to the tray you can quit from the tray icon context menu',

@@ -207,6 +207,12 @@ export interface SystemSettings {
   shellIntegration?: boolean
   /** interface language (see @shared/i18n); missing = 简体中文 */
   language?: Language
+  /**
+   * Persist the diagnostic log (startup, freeze watchdogs, crashes) to
+   * <userData>/logs with a 7-day rolling cleanup. On by default — the log is
+   * what makes "the app froze" field reports diagnosable. Off = record nothing.
+   */
+  diagnosticLog?: boolean
 }
 
 /**
@@ -501,7 +507,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoDownloadUpdate: false,
     restoreSession: true,
     shellIntegration: false,
-    language: 'zh-CN'
+    language: 'zh-CN',
+    diagnosticLog: true
   },
   // Off until the user sets a password and turns it on: an app that locks
   // itself out of the box would be a support ticket, not a feature.

@@ -44,6 +44,14 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 5. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
 6. `git tag v<版本号>` 并推送两个远程（代码/tag 与 release 资产的镜像保持同步）。注意顺序坑：release.cjs 创建 release 时若远端尚无该 tag,Gitea/GitHub 会在**默认分支 HEAD** 自动建一个指向错误 commit 的 tag，第 6 步推送会被拒——要么先建 tag 推上去再跑 release.cjs，要么事后 `git push -f <远端> v<版本号>` 强制修正到 release commit(v1.0.22 即踩过）
 
+## 诊断日志
+
+- 正式版落盘的诊断日志在 `<userData>/logs/app-YYYY-MM-DD.log`（**本地日期**命名，`src/main/appLog.ts`）：**保留 7 天**（今天 + 前 7 天，更早即删），启动时清扫一次 + 每 24h unref 定时器再扫（长开机的进程跨午夜也会清）；只动 `app-*.log` 命名匹配的文件，目录里的外来文件不碰。会话录制日志（LOG_START）是用户文件，永远不走这里
+- **开关**：`settings.system.diagnosticLog`（默认开，设置页「系统」区）。闸门在 `appLog()` 里（`setAppLogEnabled` 由 `applySystemSettings` 每次设置变更时跟随，index.ts 启动时先按 settings 设好再写启动行）；渲染层看门狗发送前也自查一遍省 IPC。关闭 = 什么都不记，但保留期清扫照常（它只删不写）
+- 写入方：主进程启动行 / `unhandledRejection` / `uncaughtException` / 事件循环 stall 看门狗（`index.ts`）；渲染层 stall 看门狗经 `APP_LOG` IPC 中继（`main.tsx` → preload → `ipc.ts`）。`appLog()` 走异步串行队列、失败静默——**日志永远不能搞挂应用本身**；单行上限 2000 字符、内嵌换行压平、source 列定宽对齐
+- 排障口径：卡死报告先让用户发当天的 app log——`[main] event loop stalled` = 主进程阻塞，`[renderer] main thread stalled` = 渲染层卡死，两条都没有 = 怀疑 GPU/外部因素
+- 测试：`node tests/app-log.mjs`（经 `tests/.app-log.cjs` bundle；命名/保留窗口表驱动 + 真实临时目录的清扫、追加与开关门控）
+
 ## 更新机制
 
 - 检查更新：**GitHub 优先**（走系统代理；前置 20 秒连通性探测 `probeGithub`——探测失败/超时直接兜底 Gitea，不给 electron-updater 挂起的机会），失败回退国内 Gitea 通用包通道（强制直连，不走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
@@ -68,7 +76,9 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 ## 终端尺寸同步
 
 - `TerminalView.scheduleFit`：fit 后**去抖 100ms** 再把 cols/rows 发给 PTY，并跳过与上次相同的尺寸。每次 ResizeObserver 都戳 PTY 会让全屏 TUI（Claude Code 等）在最大化/还原的中间尺寸上反复重绘，留下重复帧
-- 拖动窗口期间 xterm 网格立即更新，PTY 尺寸在停止后 100ms 生效
+- **fit 本身有 150ms 节流**（`src/renderer/src/terminal/fitThrottle.ts` 的 `refitDelay`，纯函数，`tests/refit-throttle.mjs` 表驱动）：一次 fit 会全量 reflow 整个 scrollback（默认 5000 行，CJK 密集时几十 ms），拖动窗口每帧一次会占满主线程、饿死 xterm 写入队列，UI 在拖动结束后冻结数秒排积压。拖动期间 fit 最多每 150ms 一次，trailing 定时器在事件流停止后补一次终态 fit；`lastFitAtRef = 0` 表示「还没 fit 过」，**首次 fit 绝不等待**（PTY 以占位尺寸启动、shell 可能已在画），重绑时会重置
+- 拖动窗口期间 xterm 网格按 150ms 节流更新，PTY 尺寸在停止后 100ms 生效
+- **PTY 输出经 `WriteBatcher` 批量进 xterm**（`src/renderer/src/terminal/writeBatcher.ts`，`tests/write-batcher.mjs`）：高频 TUI 每个 node-pty 读块一条 IPC，每条都 `term.write` 会让 xterm 解析调度器每秒重启数百次、永远追不上生产者。批量化后每 ~16ms 窗口合并成一次 write（与 carry flush 同节奏），顺序不变。两个别忘了的接线点：① `markDead` 先 `batcher.flushNow()` 再置 dead 标志——PTY_EXIT 在数据之后、flush 定时器之前到达，dead 后写入会被丢弃；② effect cleanup 里 `batcher.dispose()`（重绑的 pane 靠 session replay 补回，不丢可见内容）
 
 ## 性能与安全边界（M11 第二轮）
 

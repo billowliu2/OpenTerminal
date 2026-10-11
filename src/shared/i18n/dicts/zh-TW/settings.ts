@@ -105,6 +105,9 @@ const settings: Record<string, string> = {
   'settings.system.shellIntegration': 'Shell 整合',
   'settings.system.shellIntegrationDesc':
     '讓 shell 主動回報工作目錄（OSC 7），路徑記憶更精確（含指令碼內的 cd）；會包裝你的命令提示字元，提示字元主題顯示異常時關閉即可',
+  'settings.system.diagnosticLog': '記錄診斷日誌',
+  'settings.system.diagnosticLogDesc':
+    '將啟動、介面凍結、當機等關鍵事件寫入日誌目錄（每日一個檔案，保留 7 天自動清除），排查問題時使用；關閉後不再記錄',
   'settings.system.closeAction': '關閉按鈕行為',
   'settings.system.closeActionDesc':
     '點擊視窗關閉按鈕時的動作；最小化至系統匣後，可從系統匣圖示的右鍵選單結束',
