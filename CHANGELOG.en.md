@@ -1,5 +1,19 @@
 # OpenTerminal Changelog
 
+## v1.0.27 - 2026-10-15
+
+This release adds close confirmation for terminal tabs: an accidental close no longer kills a terminal or SSH session you are working in — especially the frequent case of pressing Backspace right after clicking a tab.
+
+### New: confirm before closing tabs
+- Two new switches under Settings → Rendering & Behavior (**off by default**; leaving them off keeps the previous behaviour exactly):
+  - **Confirm before closing terminal tabs**: ask before closing a local terminal tab
+  - **Confirm before closing SSH tabs**: ask before closing an SSH connection tab (SSH disconnects are costly, so you can enable it for SSH only)
+- Covers every user-initiated close path: the tab × button, the context menu's Close / Close others / Close right, and the Delete / Backspace keys
+- "Close others" / "Close right" ask once for the whole batch, with the number of tabs shown in the dialog
+- Pressing Backspace / Delete while a tab has keyboard focus (the main source of accidental closes) no longer closes it directly — it goes through the same confirmation
+- Switches take effect immediately after saving, no restart needed; typing Backspace / Delete inside the terminal is completely unaffected
+- Programmatic closes (a session exiting on its own, applying a layout template) never prompt
+
 ## v1.0.26 - 2026-10-11
 
 This release is about performance and diagnosability: it fixes the multi-second UI freezes when dragging to resize the window or when a terminal floods output, and adds an on-disk diagnostic log (on by default, auto-cleaned after 7 days) so freeze reports finally come with evidence.

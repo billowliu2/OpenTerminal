@@ -276,6 +276,26 @@ export function RenderSettingsTab(): React.JSX.Element {
         }
       />
       <SettingRow
+        label={t('settings.render.confirmTabClose')}
+        desc={t('settings.render.confirmTabCloseDesc')}
+        control={
+          <Switch
+            checked={settings.terminal.confirmTabClose}
+            onChange={(checked) => void updateTerminal({ confirmTabClose: checked })}
+          />
+        }
+      />
+      <SettingRow
+        label={t('settings.render.confirmSshTabClose')}
+        desc={t('settings.render.confirmSshTabCloseDesc')}
+        control={
+          <Switch
+            checked={settings.terminal.confirmSshTabClose}
+            onChange={(checked) => void updateTerminal({ confirmSshTabClose: checked })}
+          />
+        }
+      />
+      <SettingRow
         label={t('settings.render.suggest')}
         desc={t('settings.render.suggestDesc')}
         control={

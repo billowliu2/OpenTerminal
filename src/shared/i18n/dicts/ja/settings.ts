@@ -72,6 +72,12 @@ const settings: Record<string, string> = {
   'settings.render.pasteRiskConfirm': '貼り付け前の確認',
   'settings.render.pasteRiskConfirmDesc':
     '複数行（または極端に長い 1 行）を貼り付ける前に確認します。1 行はそのまま貼り付けます',
+  'settings.render.confirmTabClose': 'ターミナルタブを閉じる前に確認',
+  'settings.render.confirmTabCloseDesc':
+    'ローカルターミナルタブを閉じる前に確認ダイアログを表示',
+  'settings.render.confirmSshTabClose': 'SSH タブを閉じる前に確認',
+  'settings.render.confirmSshTabCloseDesc':
+    'SSH 接続タブを閉じる前に確認ダイアログを表示',
   'settings.render.suggest': '入力候補',
   'settings.render.suggestDesc':
     '入力中にコマンド候補を表示します。Tab で確定、Enter は常にそのまま実行します',

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { App, Button, Dropdown, Input, Modal, Popconfirm, Space } from 'antd'
 import type { MenuProps } from 'antd'
 import { CloudServerOutlined } from '@ant-design/icons'
@@ -22,13 +22,18 @@ export type TerminalTabProps = IDockviewPanelHeaderProps<{
  *   关闭 / 关闭其他 / 关闭右侧
  *
  * SSH sessions get a 🖥 server icon and a green left-border accent so they're
- * visually distinct from local terminals. All menu actions close panels
- * directly through `api.close()`. The workspace's `onDidRemovePanel` handles
- * the pty kill, so nothing leaks.
+ * visually distinct from local terminals. Every user-initiated close button,
+ * menu action and the tablist's Delete/Backspace accelerator goes through
+ * `requestClose`, which may ask for confirmation first (see below). Whatever
+ * the path, the workspace's `onDidRemovePanel` handles the pty kill, so
+ * nothing leaks.
  */
 export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Element {
   const panel = api.group // bound panel via the panel api
+  type TabPanel = (typeof panel.panels)[number]
   const [title, setTitle] = useState<string | undefined>(api.title)
+  const [pending, setPending] = useState<TabPanel[] | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const selfIndex = panel.panels.findIndex((p) => p.api === api)
 
   // dockview keeps the tab component in its own render slot — a re-render of
@@ -56,9 +61,85 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
     return () => disposable.dispose()
   }, [api])
 
-  const closePanel = (target: typeof panel.panels[number]): void => {
-    target.api.close()
+  // `api.group` is read live rather than reusing the render-time `panel`:
+  // dragging this tab into another group re-parents the DOM without re-mounting
+  // the React component (dockview keeps the portal element and only swaps the
+  // `.dv-tab` shell around it), so anything captured at render would still name
+  // the group this tab has left.
+  const selfPanel = (): TabPanel | undefined => api.group.panels.find((p) => p.api === api)
+
+  // Confirmation has to happen *before* `api.close()`: dockview has no
+  // vetoable close hook, and the workspace kills the session from
+  // `onDidRemovePanel`, which is already too late to ask. Every user-initiated
+  // close entry point funnels through here; programmatic closes (a dead
+  // session, applying a layout template) call `api.close()` directly.
+  //
+  // Read the settings at call time: this runs from long-lived menu / keydown
+  // handlers, so a value captured at render would go stale after a change.
+  const needsConfirmFor = (targets: TabPanel[]): boolean => {
+    const terminal = useSettingsStore.getState().settings.terminal
+    return targets.some((p) =>
+      (p.params as { sessionKind?: 'local' | 'ssh' } | undefined)?.sessionKind === 'ssh'
+        ? terminal.confirmSshTabClose
+        : terminal.confirmTabClose
+    )
   }
+
+  const requestClose = (targets: TabPanel[]): void => {
+    if (targets.length === 0) return
+    if (!needsConfirmFor(targets)) {
+      for (const target of targets) target.api.close()
+      return
+    }
+    setPending(targets)
+  }
+
+  const closePending = (): void => {
+    if (!pending) return
+    // Liveness filter: something else (a dead session, another tab's menu) may
+    // have closed a target while the dialog was up. Asked of the panel itself —
+    // its `group` follows it across groups, unlike a render-time snapshot.
+    for (const target of pending) if (target.group.panels.includes(target)) target.api.close()
+    setPending(null)
+  }
+
+  // dockview closes the focused tab on Delete/Backspace from a keydown listener
+  // on the tab list, but only when the event target *is* the `.dv-tab` shell —
+  // which is what has focus, and an ancestor of this component's root, so a
+  // React handler on the root never sees the key. The listener therefore has to
+  // be native, on the shell, in the capture phase (dockview listens during the
+  // bubble phase). It is attached to the document rather than to the shell
+  // itself because dragging a tab into another group re-parents this component's
+  // DOM into a fresh shell *without* re-mounting or re-rendering it: a
+  // shell-scoped listener would be stranded on the discarded element and
+  // Delete/Backspace would silently stop working for that tab. Everything the
+  // handler reads is resolved live (`api.group`, the settings), so the closure
+  // from the first render stays correct.
+  //
+  // The event is only swallowed when a confirmation is actually required;
+  // otherwise dockview's own handler runs as before, focus moved to the
+  // neighbouring tab included, so "off" is indistinguishable from the old
+  // behaviour.
+  useEffect(() => {
+    const doc = rootRef.current?.ownerDocument ?? document
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return
+      const shell = rootRef.current?.closest('.dv-tab')
+      if (!shell || event.target !== shell) return
+      // Only the real tab strip: the overflow dropdown renders a second
+      // `.dv-tab`-classed wrapper around a copy of this component, and dockview's
+      // own handler is scoped to the tab list, so match that scope instead of
+      // closing a panel the platform would have left alone.
+      if (!shell.closest('.dv-tabs-container')) return
+      const self = selfPanel()
+      if (!self || !needsConfirmFor([self])) return
+      event.preventDefault()
+      event.stopPropagation()
+      requestClose([self])
+    }
+    doc.addEventListener('keydown', onKeyDown, true)
+    return () => doc.removeEventListener('keydown', onKeyDown, true)
+  }, [api])
 
   const menu: MenuProps = {
     items: [
@@ -67,56 +148,78 @@ export function TerminalTab({ api, params }: TerminalTabProps): React.JSX.Elemen
       { key: 'closeRight', label: tFor(language, 'workspace.tab.closeRight'), disabled: selfIndex === -1 || selfIndex === panel.panels.length - 1 }
     ],
     onClick: ({ key }) => {
-      if (key === 'close') {
+      const self = selfPanel()
+      if (!self) {
         api.close()
+        return
+      }
+      // `api.group.panels` is the live group array and `close()` splices it, so
+      // the targets must be snapshotted first — otherwise every element that
+      // shifts into the current index is skipped. Read through `api.group`
+      // rather than a render-time copy in case the tab has since been dragged
+      // into another group.
+      const siblings = [...api.group.panels]
+      if (key === 'close') {
+        requestClose([self])
       } else if (key === 'closeOthers') {
-        // `panel.panels` is the live group array and `close()` splices it, so
-        // the targets must be snapshotted first — otherwise every element that
-        // shifts into the current index is skipped.
-        for (const sibling of [...panel.panels]) {
-          if (sibling.api !== api) closePanel(sibling)
-        }
+        requestClose(siblings.filter((sibling) => sibling.api !== api))
       } else if (key === 'closeRight') {
-        for (const target of [...panel.panels].slice(selfIndex + 1)) {
-          closePanel(target)
-        }
+        requestClose(siblings.slice(siblings.indexOf(self) + 1))
       }
     }
   }
 
   return (
-    <Dropdown menu={menu} trigger={['contextMenu']}>
-      <div
-        className={`workspace-terminal-tab${isSsh ? ' workspace-terminal-tab-ssh' : ''}`}
-        title={tooltip}
-      >
-        {isSsh && <CloudServerOutlined className="workspace-terminal-tab-icon" />}
-        <span className="workspace-terminal-tab-title">{title}</span>
-        {isSsh && hostLabel && <SshHostBadge label={hostLabel} language={language} />}
-        {isBroadcastTarget && (
-          <span
-            className="workspace-terminal-tab-bcast"
-            title={tFor(language, 'workspace.tab.broadcastTarget')}
-            aria-label={tFor(language, 'workspace.tab.broadcastTarget')}
-          >
-            {tFor(language, 'workspace.tab.broadcastBadge')}
-          </span>
-        )}
-        <button
-          type="button"
-          className="workspace-terminal-tab-close"
-          aria-label={tFor(language, 'common.close')}
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            api.close()
-          }}
+    <>
+      <Dropdown menu={menu} trigger={['contextMenu']}>
+        <div
+          ref={rootRef}
+          className={`workspace-terminal-tab${isSsh ? ' workspace-terminal-tab-ssh' : ''}`}
+          title={tooltip}
         >
-          <CloseGlyph />
-        </button>
-      </div>
-    </Dropdown>
+          {isSsh && <CloudServerOutlined className="workspace-terminal-tab-icon" />}
+          <span className="workspace-terminal-tab-title">{title}</span>
+          {isSsh && hostLabel && <SshHostBadge label={hostLabel} language={language} />}
+          {isBroadcastTarget && (
+            <span
+              className="workspace-terminal-tab-bcast"
+              title={tFor(language, 'workspace.tab.broadcastTarget')}
+              aria-label={tFor(language, 'workspace.tab.broadcastTarget')}
+            >
+              {tFor(language, 'workspace.tab.broadcastBadge')}
+            </span>
+          )}
+          <button
+            type="button"
+            className="workspace-terminal-tab-close"
+            aria-label={tFor(language, 'common.close')}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              const self = selfPanel()
+              if (self) requestClose([self])
+            }}
+          >
+            <CloseGlyph />
+          </button>
+        </div>
+      </Dropdown>
+      <Modal
+        open={pending !== null}
+        title={tFor(language, 'workspace.tab.closeConfirmTitle')}
+        okText={tFor(language, 'workspace.tab.closeConfirmOk')}
+        okButtonProps={{ danger: true }}
+        cancelText={tFor(language, 'common.cancel')}
+        maskClosable={false}
+        onOk={closePending}
+        onCancel={() => setPending(null)}
+      >
+        {pending && pending.length === 1
+          ? tFor(language, 'workspace.tab.closeConfirmOne', { title: pending[0].title ?? '' })
+          : tFor(language, 'workspace.tab.closeConfirmMany', { count: pending?.length ?? 0 })}
+      </Modal>
+    </>
   )
 }
 
