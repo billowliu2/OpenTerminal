@@ -1,5 +1,14 @@
 # OpenTerminal Changelog
 
+## v1.0.28 - 2026-10-15
+
+This release fixes the "downloads twice" issue during in-app updates: when updating from an older version the progress bar ran through twice, costing nearly double the traffic in the worst case.
+
+### Fixed: update downloads twice
+- The root cause: the updater tried a "differential download" (fetching only the changed chunks) on every download and fell back to a full re-download when it failed — and neither of our update sources can serve differential downloads, so every update ran as a differential attempt followed by a full package
+- Differential download is now disabled: **every update is exactly one full download**, and the progress bar runs through once
+- Note: users still on an older version will see the double download one last time while updating TO this version (the fix has to reach them first); once this version is installed, every future update downloads once
+
 ## v1.0.27 - 2026-10-15
 
 This release adds close confirmation for terminal tabs: an accidental close no longer kills a terminal or SSH session you are working in — especially the frequent case of pressing Backspace right after clicking a tab.

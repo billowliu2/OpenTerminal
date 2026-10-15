@@ -439,6 +439,13 @@ console.log('updater events drive the state the renderer reads')
   ok(live.logger === console, 'the updater logs through console')
   ok(live.autoDownload === false, 'auto-download is left to the user (the UI offers the button)')
   ok(live.autoInstallOnAppQuit === true, 'a downloaded update installs on app quit')
+  // Differential download is disabled: it cannot work against either feed (GitHub
+  // assets reject multi-range requests, the Gitea channel keeps no old blockmap),
+  // and each failure costs a second full transfer.
+  ok(
+    live.disableDifferentialDownload === true,
+    'differential download is off (a failed attempt would download the package twice)'
+  )
 
   const before = await call(Ipc.UPDATE_STATE_GET)
   ok(before !== undefined && typeof before.currentVersion === 'string', 'UPDATE_STATE_GET returns the current state')

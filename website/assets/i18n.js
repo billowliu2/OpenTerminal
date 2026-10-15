@@ -155,6 +155,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '近期更新',
 
+    'changelog.1.0.28.li.1': '修复应用内更新会下载两次的问题：禁用注定失败的差量下载，每次更新恰好一次整包下载，进度条只走一遍',
+
+    'changelog.1.0.27.li.1': '新增关闭标签二次确认：终端 / SSH 两个独立开关（默认关闭），设置 → 渲染与行为',
+    'changelog.1.0.27.li.2': '覆盖标签 × 按钮、右键「关闭 / 关闭其他 / 关闭右侧」与键盘 Delete / Backspace 误关——点击标签后按 Backspace 不再直接关闭',
+    'changelog.1.0.27.li.3': '批量关闭整批只确认一次；开关保存后立即生效，无需重启',
+
+    'changelog.1.0.26.li.1': '修复拖动缩放窗口或终端高频输出时界面冻结数秒（网格重排节流 + 输出批量写入）',
+    'changelog.1.0.26.li.2': '新增落盘诊断日志：默认开启，按天一个文件保留 7 天，设置 → 系统可关闭',
+    'changelog.1.0.26.li.3': '反馈卡顿问题时附上当天的日志文件即可精确定位',
+
     'changelog.1.0.25.li.1': '定时检查更新（从不 / 4 / 12 / 24 小时，默认 4）',
     'changelog.1.0.25.li.2': '自动下载更新开关（后台静默下载，安装时机仍由用户决定，绝不自动退出）',
     'changelog.1.0.25.li.3': '下载完成 / 发现新版本时窗口最小化到托盘则弹提示',
@@ -164,19 +174,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.24.li.2': '配置文件损坏时先备份再重置（不再静默销毁命令库 / 书签 / 设置）',
     'changelog.1.0.24.li.3': '会话日志退出不再丢尾部',
     'changelog.1.0.24.li.4': 'SFTP 删除不再误报失败；ZMODEM 接收大文件内存可控；新增 3 组渲染层测试',
-
-    'changelog.1.0.23.li.1': 'SFTP 文件面板改为真正的表格：六列对齐、表头吸顶、点击列头排序',
-    'changelog.1.0.23.li.2': '字体可缩放 0.8–1.8 倍（A- / A+ 或 Ctrl+滚轮），行高联动并记忆设置',
-    'changelog.1.0.23.li.3': '用户 / 组列显示真实名称，不再只有数字 UID / GID',
-    'changelog.1.0.23.li.4': '列表空白处右键即可唤出文件菜单；修复六列此前未真正按网格对齐的问题',
-
-    'changelog.1.0.22.li.1': '修复中文输入法候选窗不跟随光标（v1.0.21 回归）',
-    'changelog.1.0.22.li.2': '不再提供 MSI 安装包，统一使用 NSIS exe',
-    'changelog.1.0.22.li.3': '打包流程新增依赖一致性校验，防止旧依赖混入安装包',
-
-    'changelog.1.0.21.li.1': '背景图体验：任意主题下调透明度均为压暗、文字自动提亮到 WCAG AA、新增背景压暗滑杆',
-    'changelog.1.0.21.li.2': '性能：设置热更不再触发全窗格重排，SFTP 大目录虚拟滚动，面板独立错误边界',
-    'changelog.1.0.21.li.3': '安装包精简约 90MB；SFTP/ZMODEM 本地路径准入与多处安全加固',
 
     'cl.morePre': '完整日志见仓库',
     'cl.morePost': '。',
@@ -332,6 +329,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '近期更新',
 
+    'changelog.1.0.28.li.1': '修復應用內更新會下載兩次的問題：停用注定失敗的差量下載，每次更新恰好一次整包下載，進度條只走一遍',
+
+    'changelog.1.0.27.li.1': '新增關閉分頁二次確認：終端機 / SSH 兩個獨立開關（預設關閉），設定 → 渲染與行為',
+    'changelog.1.0.27.li.2': '涵蓋分頁 × 按鈕、右鍵「關閉 / 關閉其他 / 關閉右側」與鍵盤 Delete / Backspace 誤關——點擊分頁後按 Backspace 不再直接關閉',
+    'changelog.1.0.27.li.3': '批量關閉整批只確認一次；開關儲存後立即生效，無需重啟',
+
+    'changelog.1.0.26.li.1': '修復拖動縮放視窗或終端機高頻輸出時介面凍結數秒（網格重排節流 + 輸出批量寫入）',
+    'changelog.1.0.26.li.2': '新增落盤診斷日誌：預設開啟，按天一個檔案保留 7 天，設定 → 系統可關閉',
+    'changelog.1.0.26.li.3': '回報卡頓問題時附上當天的日誌檔案即可精確定位',
+
     'changelog.1.0.25.li.1': '定時檢查更新（從不 / 4 / 12 / 24 小時，預設 4）',
     'changelog.1.0.25.li.2': '自動下載更新開關（背景靜默下載，安裝時機仍由使用者決定，絕不自動結束）',
     'changelog.1.0.25.li.3': '下載完成 / 發現新版本時，視窗若最小化到系統匣會彈出提示',
@@ -341,19 +348,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.24.li.2': '設定檔損毀時先備份再重置（不再靜默銷毀指令庫 / 書籤 / 設定）',
     'changelog.1.0.24.li.3': '工作階段日誌結束時不再遺失尾段',
     'changelog.1.0.24.li.4': 'SFTP 刪除不再誤報失敗；ZMODEM 接收大檔案的記憶體用量可控；新增 3 組渲染層測試',
-
-    'changelog.1.0.23.li.1': 'SFTP 檔案面板改為真正的表格：六欄對齊、表頭固定、點擊表頭排序',
-    'changelog.1.0.23.li.2': '字型可縮放 0.8–1.8 倍（A- / A+ 或 Ctrl+滾輪），行高連動並記憶設定',
-    'changelog.1.0.23.li.3': '使用者 / 群組欄顯示真實名稱，不再只有數字 UID / GID',
-    'changelog.1.0.23.li.4': '清單空白處按右鍵即可喚出檔案選單；修復六欄先前未真正依格線對齊的問題',
-
-    'changelog.1.0.22.li.1': '修復中文輸入法候選窗不跟隨游標（v1.0.21 回歸）',
-    'changelog.1.0.22.li.2': '不再提供 MSI 安裝程式，統一使用 NSIS exe',
-    'changelog.1.0.22.li.3': '打包流程新增相依性一致性校驗，防止舊相依性混入安裝程式',
-
-    'changelog.1.0.21.li.1': '背景圖片體驗：任何主題下調低不透明度都是壓暗、文字自動提亮至 WCAG AA、新增背景壓暗滑桿',
-    'changelog.1.0.21.li.2': '效能：設定熱更新不再觸發全部窗格重排，SFTP 大目錄虛擬捲動，面板獨立錯誤邊界',
-    'changelog.1.0.21.li.3': '安裝程式精簡約 90MB；SFTP/ZMODEM 本機路徑准入與多處安全加固',
 
     'cl.morePre': '完整日誌請見倉庫',
     'cl.morePost': '。',
@@ -509,6 +503,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': 'Recent updates',
 
+    'changelog.1.0.28.li.1': 'Fixed in-app updates downloading twice: differential download (which could never succeed) is disabled, so every update is exactly one full download with a single progress pass',
+
+    'changelog.1.0.27.li.1': 'Added close-confirmation for tabs: separate switches for terminal and SSH tabs (off by default), under Settings → Rendering & Behavior',
+    'changelog.1.0.27.li.2': 'Covers the tab × button, the context menu\'s Close / Close others / Close right, and accidental Delete / Backspace — pressing Backspace after clicking a tab no longer closes it',
+    'changelog.1.0.27.li.3': 'Batch closes ask once for the whole batch; switches take effect immediately, no restart needed',
+
+    'changelog.1.0.26.li.1': 'Fixed the UI freezing for seconds while resizing the window or under high-frequency terminal output (reflow throttling + batched writes)',
+    'changelog.1.0.26.li.2': 'Added on-disk diagnostic logs: on by default, one file per day kept for 7 days, can be disabled in Settings → System',
+    'changelog.1.0.26.li.3': 'Attach the day\'s log file when reporting freezes for precise diagnosis',
+
     'changelog.1.0.25.li.1': 'Scheduled update checks (never / 4 / 12 / 24 hours, default 4)',
     'changelog.1.0.25.li.2': 'Auto-download toggle: silent background download, install timing still up to you, never quits on its own',
     'changelog.1.0.25.li.3': 'Tray notification when a new version is found or a download finishes while the window is minimized',
@@ -518,19 +522,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.24.li.2': 'Corrupted config files are now backed up before resetting — no more silent loss of the command library, bookmarks or settings',
     'changelog.1.0.24.li.3': 'Session logs no longer lose their tail when the app exits',
     'changelog.1.0.24.li.4': 'SFTP delete no longer reports false failures; ZMODEM downloads of large files keep memory bounded; 3 new renderer test suites',
-
-    'changelog.1.0.23.li.1': 'SFTP file panel is now a real table: six aligned columns, sticky header, click-to-sort',
-    'changelog.1.0.23.li.2': 'Font scaling from 0.8x to 1.8x (A- / A+ or Ctrl+wheel); row height follows and the setting is remembered',
-    'changelog.1.0.23.li.3': 'User / group columns show real names instead of bare UID / GID numbers',
-    'changelog.1.0.23.li.4': 'Right-click empty list space for the file menu; fixed columns that were not actually aligned to the grid',
-
-    'changelog.1.0.22.li.1': 'Fixed the IME candidate window not following the cursor (regression in v1.0.21)',
-    'changelog.1.0.22.li.2': 'MSI installer dropped; NSIS exe is now the only package',
-    'changelog.1.0.22.li.3': 'Build pipeline now verifies dependency consistency to keep stale dependencies out of the installer',
-
-    'changelog.1.0.21.li.1': 'Background images: lowering opacity now always dims the image in any theme, text is auto-brightened to WCAG AA, and a new dim slider was added',
-    'changelog.1.0.21.li.2': 'Performance: settings hot-updates no longer reflow every pane, SFTP virtual scrolling for large directories, per-pane error boundaries',
-    'changelog.1.0.21.li.3': 'Installer slimmed by about 90MB; local path admission for SFTP / ZMODEM plus several security hardening fixes',
 
     'cl.morePre': 'Full changelog in',
     'cl.morePost': '.',
@@ -686,6 +677,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '最近の更新',
 
+    'changelog.1.0.28.li.1': 'アプリ内アップデートが 2 回ダウンロードされる問題を修正：成功しない差分ダウンロードを無効化し、毎回ちょうど 1 回のフルダウンロードに',
+
+    'changelog.1.0.27.li.1': 'タブを閉じる前の確認機能を追加：ターミナル / SSH それぞれ個別のスイッチ（既定はオフ）、設定 → 描画と動作',
+    'changelog.1.0.27.li.2': 'タブの × ボタン、右クリックメニューの「閉じる / ほかを閉じる / 右側を閉じる」、および Delete / Backspace による誤クローズに対応——タブクリック後の Backspace で閉じなくなります',
+    'changelog.1.0.27.li.3': 'バッチクローズは全体で 1 回だけ確認；スイッチは保存後すぐに反映され、再起動不要',
+
+    'changelog.1.0.26.li.1': 'ウィンドウのリサイズや高頻度ターミナル出力時に UI が数秒固まる問題を修正（リフローのスロットリング + 書き込みバッチ化）',
+    'changelog.1.0.26.li.2': '診断ログを追加：既定で有効、日ごとに 1 ファイルを 7 日間保持、設定 → システムで無効化可能',
+    'changelog.1.0.26.li.3': '固まりの報告時に当日のログファイルを添付すれば正確に特定できます',
+
     'changelog.1.0.25.li.1': '定期的な更新チェック（しない / 4 / 12 / 24 時間、既定は 4 時間）',
     'changelog.1.0.25.li.2': '自動ダウンロードのオン／オフ（バックグラウンドで静かにダウンロード。インストールのタイミングは従来どおりユーザーが決定し、自動で終了することはありません）',
     'changelog.1.0.25.li.3': '新バージョンの検出時やダウンロード完了時に、ウィンドウがトレイに最小化されていれば通知を表示',
@@ -695,19 +696,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.24.li.2': '設定ファイルが壊れている場合は先にバックアップしてから初期化（コマンドライブラリ、ブックマーク、設定が黙って失われることはなくなりました）',
     'changelog.1.0.24.li.3': '終了時にセッションログの末尾が欠けなくなりました',
     'changelog.1.0.24.li.4': 'SFTP の削除が誤って失敗扱いにならなくなりました。ZMODEM の大容量受信もメモリ使用量を抑制。レンダラー層のテストを 3 組追加',
-
-    'changelog.1.0.23.li.1': 'SFTP ファイルパネルを本格的なテーブルに変更：6 列の整列、ヘッダーの固定表示、ヘッダークリックで並べ替え',
-    'changelog.1.0.23.li.2': '文字サイズを 0.8〜1.8 倍に変更可能（A- / A+ または Ctrl+ホイール）。行の高さも連動し、設定は記憶されます',
-    'changelog.1.0.23.li.3': 'ユーザー / グループ列に実際の名前を表示。数字だけの UID / GID ではなくなりました',
-    'changelog.1.0.23.li.4': '一覧の空白部分を右クリックでファイルメニューを表示。6 列が実際にはグリッドに揃っていなかった問題を修正',
-
-    'changelog.1.0.22.li.1': 'IME の変換候補ウィンドウがカーソルに追従しない問題を修正（v1.0.21 のリグレッション）',
-    'changelog.1.0.22.li.2': 'MSI インストーラーの提供を終了し、NSIS exe に統一',
-    'changelog.1.0.22.li.3': 'ビルド手順に依存関係の整合性チェックを追加し、古い依存関係が混入しないようにしました',
-
-    'changelog.1.0.21.li.1': '背景画像の扱いを改善。どのテーマでも不透明度を下げると画像が暗くなり、文字は WCAG AA まで自動的に明るく調整。減光スライダーも追加',
-    'changelog.1.0.21.li.2': 'パフォーマンス：設定のホットアップデートで全ペインが再レイアウトされなくなり、SFTP の大規模ディレクトリは仮想スクロール、ペインごとにエラーバウンダリを追加',
-    'changelog.1.0.21.li.3': 'インストーラーを約 90MB 削減。SFTP / ZMODEM のローカルパス検証と複数のセキュリティ強化',
 
     'cl.morePre': '完全な変更履歴は',
     'cl.morePost': ' をご覧ください。',
