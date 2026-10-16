@@ -9,6 +9,7 @@ import { ClearOutlined, CopyOutlined, ExportOutlined, FolderOpenOutlined, PauseO
 import { Checkbox, Modal } from 'antd'
 import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
+import { isLightTheme } from '@renderer/theme/semantic'
 import type { CommandItem } from '@shared/commands'
 import { highlightModeOf, type TerminalSettings } from '@shared/settings'
 import { rulesForProfile } from '@shared/highlightProfiles'
@@ -846,6 +847,8 @@ export function TerminalView({
 
   // ---- terminal instance: built once per session ----
   useLayoutEffect(() => {
+    const themeColors = getThemeById(themeOpts.themeId, themeOpts.customThemes).colors
+    const lightTheme = isLightTheme(themeColors.background)
     const term = new Terminal({
       fontSize: fontOpts.fontSize,
       fontFamily: fontOpts.fontFamily,
@@ -857,16 +860,21 @@ export function TerminalView({
       cursorBlink: fontOpts.cursorBlink,
       cursorStyle: fontOpts.cursorStyle,
       cursorInactiveStyle: fontOpts.cursorInactiveStyle,
-      theme: withChromeColors(getThemeById(themeOpts.themeId, themeOpts.customThemes).colors as ITheme, bgOpts.image !== ''),
+      theme: withChromeColors(themeColors as ITheme, bgOpts.image !== ''),
       allowProposedApi: true,
       allowTransparency: true,
       overviewRuler: { width: 9, showTopBorder: false, showBottomBorder: false },
-      drawBoldTextInBrightColors: true,
+      // Light themes ship WCAG-compliant palettes, but apps still emit
+      // dark-tuned bright/bold colors; bold must NOT jump to the bright set.
+      drawBoldTextInBrightColors: !lightTheme,
       // In image mode the xterm background is transparent (#00000000), which
       // xterm's contrast cache treats as black; a raised contrast floor lifts
       // dark foreground colors (light themes) enough to stay readable over
-      // the wallpaper. Without an image keep 1 (off) to honor theme colors.
-      minimumContrastRatio: bgOpts.image ? 4.5 : 1,
+      // the wallpaper. Without an image light themes keep the 4.5 floor to
+      // rescue low-contrast app output; dark themes keep 1 (off) to honor
+      // theme colors. (Spelled minimumContrastRatio — minContrastRatio is
+      // silently ignored.)
+      minimumContrastRatio: bgOpts.image || lightTheme ? 4.5 : 1,
       automaticFontFallback: true,
       convertEol: false,
       windowsPty: { backend: 'conpty', buildNumber: 0 }
@@ -1261,11 +1269,11 @@ export function TerminalView({
   useEffect(() => {
     const term = termRef.current
     if (!term) return
-    term.options.theme = withChromeColors(
-      getThemeById(themeOpts.themeId, themeOpts.customThemes).colors as ITheme,
-      bgOpts.image !== ''
-    )
-    term.options.minimumContrastRatio = bgOpts.image ? 4.5 : 1
+    const colors = getThemeById(themeOpts.themeId, themeOpts.customThemes).colors
+    const lightTheme = isLightTheme(colors.background)
+    term.options.theme = withChromeColors(colors as ITheme, bgOpts.image !== '')
+    term.options.drawBoldTextInBrightColors = !lightTheme
+    term.options.minimumContrastRatio = bgOpts.image || lightTheme ? 4.5 : 1
   }, [themeOpts, bgOpts])
 
   // ---- renderer mode changes: keep the instance, swap renderer, refit ----

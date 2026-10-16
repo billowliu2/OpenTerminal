@@ -56,7 +56,7 @@ class ErrorBoundaryClass extends Component<ErrorBoundaryClassProps, ErrorBoundar
             alignItems: 'center',
             justifyContent: 'center',
             gap: 12,
-            color: '#cccccc'
+            color: 'var(--ot-text, #cccccc)'
           }}
         >
           <div>{tFor(this.props.language, 'workspace.error.title')}</div>
@@ -66,7 +66,7 @@ class ErrorBoundaryClass extends Component<ErrorBoundaryClassProps, ErrorBoundar
               maxHeight: 240,
               overflow: 'auto',
               whiteSpace: 'pre-wrap',
-              color: '#ff6b6b',
+              color: 'var(--ot-danger-fg, #ff6b6b)',
               fontSize: 12
             }}
           >

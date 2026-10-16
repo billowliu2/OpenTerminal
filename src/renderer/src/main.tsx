@@ -10,6 +10,7 @@ import { ErrorBoundary } from './ErrorBoundary'
 import ZmodemOffers from './workspace/ZmodemOffers'
 import { useSettingsStore } from './settings/store'
 import { mix } from './theme/chrome'
+import { isLightTheme } from './theme/semantic'
 import './global.css'
 
 // Diagnostics: report renderer main-thread freezes after recovery. console.error
@@ -221,14 +222,16 @@ function ThemedConfigProvider({ children }: { children: ReactNode }): React.JSX.
   const themeId = useSettingsStore((s) => s.settings.terminal.themeId)
   const customThemes = useSettingsStore((s) => s.settings.customThemes)
   const colors = getThemeById(themeId, customThemes).colors
+  const light = isLightTheme(colors.background)
   return (
     <ConfigProvider
       theme={{
-        algorithm: antdTheme.darkAlgorithm,
+        // antd has no lightAlgorithm — light is the default algorithm.
+        algorithm: light ? antdTheme.defaultAlgorithm : antdTheme.darkAlgorithm,
         token: {
           colorBgBase: colors.background,
-          colorBgContainer: mix(colors.background, colors.foreground, 0.06) ?? '#1f1f1f',
-          colorBgElevated: mix(colors.background, colors.foreground, 0.1) ?? '#252525',
+          colorBgContainer: mix(colors.background, colors.foreground, 0.06) ?? (light ? '#f5f5f5' : '#1f1f1f'),
+          colorBgElevated: mix(colors.background, colors.foreground, 0.1) ?? (light ? '#f5f5f5' : '#252525'),
           colorTextBase: colors.foreground,
           borderRadius: 6
         }
