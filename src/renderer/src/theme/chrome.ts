@@ -1,42 +1,8 @@
 import type { ThemeColors } from '@shared/theme'
+import { contrast, isLightTheme, mix, semanticVars } from './semantic'
 
-function parseHex(color: string): [number, number, number] | null {
-  const m = /^#([0-9a-f]{6})$/i.exec(color.trim())
-  if (!m) return null
-  const n = parseInt(m[1], 16)
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-}
-
-/** WCAG relative luminance (0=black, 1=white); null for non-hex input. */
-function luminance(color: string): number | null {
-  const c = parseHex(color)
-  if (!c) return null
-  const lin = c.map((v) => {
-    const s = v / 255
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
-  })
-  return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
-}
-
-function toHex(v: number): string {
-  return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')
-}
-
-/** WCAG contrast ratio between two colors; 21 when either is not hex. */
-function contrast(a: string, b: string): number {
-  const la = luminance(a)
-  const lb = luminance(b)
-  if (la === null || lb === null) return 21
-  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
-}
-
-/** t=0 → a, t=1 → b */
-export function mix(a: string, b: string, t: number): string | null {
-  const ca = parseHex(a)
-  const cb = parseHex(b)
-  if (!ca || !cb) return null
-  return `#${toHex(ca[0] + (cb[0] - ca[0]) * t)}${toHex(ca[1] + (cb[1] - ca[1]) * t)}${toHex(ca[2] + (cb[2] - ca[2]) * t)}`
-}
+// 兼容既有导入方（main.tsx 的 mix）；新代码请直接从 ./semantic 导入。
+export { contrast, luminance, mix } from './semantic'
 
 /** Whether the active terminal theme has a light background. Tab bars derived
  *  from it flip their overlay direction (white-on-dark vs black-on-light). */
@@ -65,7 +31,7 @@ export function applyChromeTheme(colors: ThemeColors): void {
   }
   set('--chrome-bg', colors.background)
   set('--chrome-fg', colors.foreground)
-  chromeIsLight = (luminance(colors.background) ?? 0) > 0.5
+  chromeIsLight = isLightTheme(colors.background)
   if (chromeIsLight) {
     // Light chrome: keep the bar close to the background (a big mix toward
     // black turns pale themes into a muddy gray strip) and overlay tabs with
@@ -89,6 +55,16 @@ export function applyChromeTheme(colors: ThemeColors): void {
     set('--chrome-tab-ring-hover', 'rgba(255, 255, 255, 0.2)')
     set('--chrome-tab-fg', tabLabel(colors.background, colors.foreground, 0.68))
     set('--chrome-tab-fg-hover', tabLabel(colors.background, colors.foreground, 0.88))
+  }
+  // Semantic layer: --ot-* variables consumed by panels, popovers and inline
+  // styles. The dark branch locks the SEMANTIC anchors (zero visual change);
+  // the light branch darkens them until the WCAG ratio holds against this
+  // theme's background. `color-scheme` rides along so native scrollbars and
+  // form controls follow the same switch.
+  const vars = semanticVars(colors, chromeIsLight)
+  for (const [key, value] of Object.entries(vars)) {
+    if (key === 'colorScheme') style.setProperty('color-scheme', value)
+    else set(`--ot-${key}`, value)
   }
   applyTabAccent(tabAccent)
 }
