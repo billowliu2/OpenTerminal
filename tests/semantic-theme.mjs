@@ -23,7 +23,7 @@ ok(isLightTheme('#282a36') === false, '#282a36 is dark')
 
 console.log('dark branch locks anchors (zero regression):')
 const dark = semanticVars({ background: '#1e1e1e', foreground: '#cccccc' }, false)
-ok(dark['muted'] === SEMANTIC.muted, 'muted = anchor')
+ok(dark['textMuted'] === SEMANTIC.muted, 'textMuted = anchor')
 ok(dark['success'] === SEMANTIC.success, 'success = anchor')
 ok(dark['danger'] === SEMANTIC.danger, 'danger = anchor')
 ok(dark['warning'] === SEMANTIC.warning, 'warning = anchor')
@@ -44,7 +44,7 @@ for (const bg of ['#f6f8fa', '#fafafa', '#fdf6e3']) {
     const x = L(a), y = L(b)
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
   }
-  for (const key of ['muted', 'textSecondary', 'successFg', 'dangerFg', 'warningFg', 'infoFg']) {
+  for (const key of ['textMuted', 'textSecondary', 'successFg', 'dangerFg', 'warningFg', 'infoFg']) {
     ok(cr(v[key], bg) >= 4.5, `${bg} ${key} ${v[key]} >= 4.5 (${cr(v[key], bg).toFixed(2)})`)
   }
   for (const key of ['success', 'danger', 'warning', 'info']) {

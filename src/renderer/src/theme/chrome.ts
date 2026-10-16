@@ -1,5 +1,5 @@
 import type { ThemeColors } from '@shared/theme'
-import { contrast, isLightTheme, mix, semanticVars } from './semantic'
+import { contrast, isLightTheme, mix, semanticCssVars } from './semantic'
 
 // 兼容既有导入方（main.tsx 的 mix）；新代码请直接从 ./semantic 导入。
 export { contrast, luminance, mix } from './semantic'
@@ -60,12 +60,11 @@ export function applyChromeTheme(colors: ThemeColors): void {
   // styles. The dark branch locks the SEMANTIC anchors (zero visual change);
   // the light branch darkens them until the WCAG ratio holds against this
   // theme's background. `color-scheme` rides along so native scrollbars and
-  // form controls follow the same switch.
-  const vars = semanticVars(colors, chromeIsLight)
-  for (const [key, value] of Object.entries(vars)) {
-    if (key === 'colorScheme') style.setProperty('color-scheme', value)
-    else set(`--ot-${key}`, value)
-  }
+  // form controls follow the same switch. semanticCssVars() owns the camelCase
+  // -> kebab-case naming (custom property names are case-sensitive, so a miss
+  // would leave the variable unset and silently fall back to the dark :root
+  // literal); tests/ot-var-names.mjs guards it.
+  for (const [name, value] of Object.entries(semanticCssVars(colors, chromeIsLight))) set(name, value)
   applyTabAccent(tabAccent)
 }
 

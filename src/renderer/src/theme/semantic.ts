@@ -88,7 +88,8 @@ export const SEMANTIC = {
   focusRing: 'rgba(59, 142, 234, 0.2)'
 } as const
 
-/** Values for --ot-* variables (keys without the prefix). */
+/** Values for --ot-* variables (camelCase keys; chrome.ts converts them to
+ *  kebab-case, so `textMuted` lands as `--ot-text-muted`). */
 export function semanticVars(colors: ThemeLike, light: boolean): Record<string, string> {
   const bg = colors.background
   const fg = colors.foreground
@@ -96,7 +97,7 @@ export function semanticVars(colors: ThemeLike, light: boolean): Record<string, 
     return {
       text: fg,
       textSecondary: mix(bg, fg, 0.78) ?? fg,
-      muted: SEMANTIC.muted,
+      textMuted: SEMANTIC.muted,
       surface: mix(bg, fg, 0.05) ?? bg,
       surfaceRaised: SEMANTIC.surfaceRaised,
       hover: SEMANTIC.hover,
@@ -120,7 +121,7 @@ export function semanticVars(colors: ThemeLike, light: boolean): Record<string, 
   return {
     text: darkenToRatio(fg, bg, 7),
     textSecondary: darkenToRatio(mix(bg, fg, 0.75) ?? fg, bg, 4.5),
-    muted: darkenToRatio(SEMANTIC.muted, bg, 4.5),
+    textMuted: darkenToRatio(SEMANTIC.muted, bg, 4.5),
     surface: mix(bg, fg, 0.04) ?? bg,
     surfaceRaised: mix(bg, '#000000', 0.045) ?? bg,
     hover: 'rgba(0, 0, 0, 0.06)',
@@ -140,4 +141,21 @@ export function semanticVars(colors: ThemeLike, light: boolean): Record<string, 
     focusRing: SEMANTIC.focusRing,
     colorScheme: 'light'
   }
+}
+
+/** Final CSS custom property name for a semanticVars() key. Custom property
+ *  names are case-sensitive, so this kebab conversion is the only thing tying
+ *  the camelCase keys to the --ot-* names the stylesheets read — a miss leaves
+ *  the variable unset and the element falls back to the dark :root literal.
+ *  Exported so chrome.ts and tests/ot-var-names.mjs share one implementation. */
+export function cssVarName(key: string): string {
+  if (key === 'colorScheme') return 'color-scheme'
+  return `--ot-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`
+}
+
+/** semanticVars() keyed by their final CSS custom property names. */
+export function semanticCssVars(colors: ThemeLike, light: boolean): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(semanticVars(colors, light))) out[cssVarName(key)] = value
+  return out
 }
