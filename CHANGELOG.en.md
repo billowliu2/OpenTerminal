@@ -1,5 +1,19 @@
 # OpenTerminal Changelog
 
+## v1.0.29 - 2026-10-16
+
+This release fixes light themes: on white themes the text inside the terminal (especially the colored output of programs) was almost unreadable, and settings dialogs and other surfaces rendered with dark-theme colors on a light background.
+
+### Fixed: light themes were unreadable and glaring
+- Reworked the terminal palettes of all three built-in light themes (GitHub Light / One Half Light / Solarized Light): all 16 ANSI colors plus the foreground now meet WCAG AA (≥ 4.5:1) against the background, so "white on white" and washed-out yellow/cyan are gone
+- Light themes now enforce a minimum contrast ratio of 4.5:1 and no longer promote bold text to bright colors, so program output tuned for dark backgrounds stays readable
+- GitHub Light's pure white background is softened to #f6f8fa
+- Settings dialogs, dropdowns and other components now render with light-theme colors under light themes instead of dark surfaces on a light background
+
+### Improved: UI colors derived from the active theme
+- The sidebar, tab bars and the SFTP / monitor / settings panels now derive every color from the theme, so nothing is left too faint to read on light themes
+- Scrollbars, shadows and accent button text follow the theme as well
+
 ## v1.0.28 - 2026-10-15
 
 This release fixes the "downloads twice" issue during in-app updates: when updating from an older version the progress bar ran through twice, costing nearly double the traffic in the worst case.
