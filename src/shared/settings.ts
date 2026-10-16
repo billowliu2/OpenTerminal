@@ -66,6 +66,10 @@ export interface TerminalSettings {
   copyOnSelect: boolean
   /** confirm before pasting multi-line / suspicious text */
   pasteRiskConfirm: boolean
+  /** Ask for confirmation before a user-initiated close of a local terminal tab. */
+  confirmTabClose: boolean
+  /** Same for SSH connection tabs. */
+  confirmSshTabClose: boolean
   /** inline command suggestion popup while typing (history + library) */
   suggestEnabled: boolean
   /** record executed commands into the history panel */
@@ -476,6 +480,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     rendererMode: 'auto',
     copyOnSelect: false,
     pasteRiskConfirm: true,
+    confirmTabClose: false,
+    confirmSshTabClose: false,
     suggestEnabled: false,
     historyEnabled: false,
     historyLimit: 100,

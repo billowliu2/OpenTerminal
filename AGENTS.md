@@ -59,6 +59,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - **调度器是注入的**：`applyUpdateSchedule(system)` 由 `index.ts` 经 `settingsStore.setUpdateScheduleApplier` 注入——`updater.ts` 已 import `settingsStore`，反向 import 成环。applier 幂等（先清旧 interval 再建）且每次 `mutateSettings` 都会重跑；启动检查用模块级 `startupArmed` 保证**每进程只武装一次**，否则改一次设置就多排一次启动检查
 - **自动下载**（`settings.system.autoDownloadUpdate`，默认关）：`update-available` 时若开关开且无在途下载 → `handleDownload('auto')`（`UpdateState.auto` 标记）。`autoUpdater.autoDownload` **保持 false**——单一事实源在 settings，不交给 electron-updater。失败落 `status:'error'` 且**不重试**，等下一个周期
 - **安装永远交给用户**：绝不因下载完成自动退出；`autoInstallOnAppQuit = true` 只覆盖「用户自己退出时装上」
+- **差量下载已禁用**（`autoUpdater.disableDifferentialDownload = true`，configureAutoUpdater 里）：electron-updater 每次 `downloadUpdate()` 先试差量（拉新旧 blockmap + 多段 Range）失败再回退全量——用户看到进度条跑两遍、最坏近乎双倍流量（v1.0.x 用户报的「下载两次」）。而本项目三个前提让它注定失败：GitHub release 资产落 Azure Blob，多段 Range 返回 `501 Unsupported client range`（已实测）；国内 Gitea 通道被 `pruneChannel` 删得只剩最新版 exe/blockmap，老客户端取老 blockmap 得 404；NSIS 是 LZMA 固实压缩，版本间小改动让后续压缩数据整体漂移，差量区间≈整个文件。所以直接全量是唯一正确行为
 - **同版本抑制**（`actedRelease` 单槽记录，`actedFor(version)` 版本不同即整体替换）：`announced`（发现气泡）、`fetchHandled`（已发起下载）、`downloaded`（包已落盘）、`downloadedAnnounced`（已下载气泡）——否则长开机的应用每 4 小时重复弹气泡/重复走一遍 `downloadUpdate`。`runCheck('manual')` **无条件清空**记录（手动是明确意图，必须如实反映）；`update-not-available`/`error` **不清空**；下载失败回滚该次 `fetchHandled`
 - `downloaded` 与 `fetchHandled` **必须分开**：前者只在 `update-downloaded` 置位，用它判断「已完成」；拿 `fetchHandled` 判断会把下载中的版本误跳过。`update-available` 里若该版本 `downloaded` 为真，要 `setState` 一个等价的 `downloaded` 状态（**不能**直接 return 不写——`performCheck` 已把状态置成 `checking`，早退会让「关于」页永远转圈），这样按钮不会从「重启安装」退回「下载」
 - **通知**：`tray.ts` 的 `notifyUpdate(title, content)` 弹 Windows 托盘气泡；非 win32 / tray 为空 / **有可见窗口**（用户在看「关于」页）都不弹。自动下载开启时不弹「发现新版本」（有意义的是「已下载」那条），手动下载完成也不弹
@@ -118,6 +119,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
 - 会话计数不靠累加器：`releaseSession` 直接扫 `api.panels` 判断还有没有面板在显示该会话——累加器与「`updateParameters` 原地换会话」「整块布局替换」这类无事件变化脱节，会漏杀或误杀
 - **旧版（M6.1 前单 dockview）模板只喂 terminal dockview**：成功路径的 rebind 与收尾 kill 都必须按 `sshTouched` / `live` 集合门控——rebind 会把面板参数改写成新**本地**会话，对没被 fromJSON 触碰的 ssh dockview 跑一遍等于把活 SSH 面板降级成终端再杀会话
 - 主机密钥队列只渲染队头，且主进程 `DEFAULT_TIMEOUTS.prompt`（120s）超时后**不再广播**：渲染层用同 TTL 的定时清扫（`HOST_KEY_PROMPT_TTL_MS`）移除过期条目，否则陈旧弹窗永远占住队头挡住后续主机；两处 TTL 必须同步改。`respondHostKey` 等 IPC 调用**不得写进 setState 的 updater**（React 可能重放 updater）
+- **tab 关闭二次确认**（`settings.terminal.confirmTabClose` / `confirmSshTabClose`，默认关）：拦截点在 `TerminalTab.tsx` 的 `requestClose`——dockview 8.2.0 没有可否决的关闭前钩子，杀会话发生在 `onDidRemovePanel` 之后无法回滚，所以所有用户关闭入口（× 按钮、右键三关闭项、键盘 Delete/Backspace）必须在调用 `api.close()` 之前过它；键盘路径靠挂在 `.dv-tab` 外壳（自定义 div 的 dockview 祖先元素，DOM 焦点落点）上的原生捕获监听拦截。**新增用户可触发的关闭入口必须走 `requestClose`**，会话已死自动关闭/模板应用等程序性路径不走
 
 ## 关键词高亮
 

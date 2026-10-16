@@ -499,6 +499,21 @@ export function configureAutoUpdater(): void {
   // ever installs on its own — autoInstallOnAppQuit only covers quitting.
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
+  // Differential download is off because it cannot succeed against either of
+  // our feeds, and every failed attempt costs the user a second full transfer:
+  // electron-updater's differential path fetches the old and new blockmaps and
+  // then multi-range-requests the changed chunks, falling back to a plain whole-
+  // file download when any of that fails. GitHub serves the release assets from
+  // Azure Blob, which answers multi-range requests with `501 Unsupported client
+  // range` (measured), and the Gitea channel keeps only the newest exe + blockmap
+  // (`pruneChannel` deletes the previous release's), so an older client's
+  // blockmap 404s. Even where both were available the NSIS payload is LZMA solid
+  // compression: a small version-to-version change shifts everything after it,
+  // making the differential range nearly the whole file. The user then watches
+  // the progress bar run twice — worst case for roughly double the traffic — so
+  // going straight to the full download is the only behavior that is actually
+  // correct here.
+  autoUpdater.disableDifferentialDownload = true
 
   // The startup check and the periodic one are armed by applyUpdateSchedule
   // (wired in index.ts through settingsStore's injected applier) instead of

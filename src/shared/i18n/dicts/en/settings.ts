@@ -74,6 +74,12 @@ const settings: Record<string, string> = {
   'settings.render.pasteRiskConfirm': 'Confirm risky paste',
   'settings.render.pasteRiskConfirmDesc':
     'Ask before pasting multi-line text (or a very long single line); single lines paste directly',
+  'settings.render.confirmTabClose': 'Confirm before closing terminal tabs',
+  'settings.render.confirmTabCloseDesc':
+    'Ask for confirmation before closing a local terminal tab',
+  'settings.render.confirmSshTabClose': 'Confirm before closing SSH tabs',
+  'settings.render.confirmSshTabCloseDesc':
+    'Ask for confirmation before closing an SSH connection tab',
   'settings.render.suggest': 'Input suggestions',
   'settings.render.suggestDesc':
     'Show command suggestions while typing; Tab accepts, Enter always runs the command right away',

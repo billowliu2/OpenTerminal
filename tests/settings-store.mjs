@@ -186,6 +186,17 @@ console.log('[value bands]')
   }
 }
 {
+  for (const on of [true, false]) {
+    const back = await roundTrip({
+      terminal: { ...store.loadSettings().terminal, confirmTabClose: on, confirmSshTabClose: on }
+    })
+    ok(
+      back.terminal.confirmTabClose === on && back.terminal.confirmSshTabClose === on,
+      `tab close confirm switches '${on}' survive the round trip`
+    )
+  }
+}
+{
   const rules = [rule({ id: 'keep-1' }), rule({ id: 'keep-2' })]
   await roundTrip({ highlightRules: rules })
   const back = (
