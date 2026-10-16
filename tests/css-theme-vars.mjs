@@ -16,8 +16,9 @@ const WHITELIST = {
   // The layer that DEFINES the anchors and derives per-theme values.
   'theme/semantic.ts': null,
   // Pre-existing --chrome-* derivation anchors (mix targets / overlay bases).
+  // #181818 = global.css --chrome-bg, the pre-JS chromeBg default.
   'theme/chrome.ts': new Set([
-    '#000000', '#ffffff',
+    '#000000', '#ffffff', '#181818',
     'rgba(0, 0, 0, 0.045)', 'rgba(0, 0, 0, 0.09)', 'rgba(0, 0, 0, 0.18)', 'rgba(0, 0, 0, 0.32)',
     'rgba(255, 255, 255, 0.04)', 'rgba(255, 255, 255, 0.07)', 'rgba(255, 255, 255, 0.1)', 'rgba(255, 255, 255, 0.2)'
   ]),

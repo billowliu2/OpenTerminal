@@ -1,5 +1,5 @@
 import type { ThemeColors } from '@shared/theme'
-import { contrast, isLightTheme, mix, semanticCssVars } from './semantic'
+import { contrast, darkenToRatio, isLightTheme, mix, semanticCssVars } from './semantic'
 
 // 兼容既有导入方（main.tsx 的 mix）；新代码请直接从 ./semantic 导入。
 export { contrast, luminance, mix } from './semantic'
@@ -7,6 +7,10 @@ export { contrast, luminance, mix } from './semantic'
 /** Whether the active terminal theme has a light background. Tab bars derived
  *  from it flip their overlay direction (white-on-dark vs black-on-light). */
 let chromeIsLight = false
+
+/** Last chrome background; applyTabAccent() needs it to derive a readable
+ *  accent foreground for light themes. */
+let chromeBg = '#181818'
 
 /** Dark-chrome tab label: the background mixed toward the theme's own foreground
  *  (the light branch is the same mix toward black), but never below 4.5:1 against
@@ -32,6 +36,7 @@ export function applyChromeTheme(colors: ThemeColors): void {
   set('--chrome-bg', colors.background)
   set('--chrome-fg', colors.foreground)
   chromeIsLight = isLightTheme(colors.background)
+  chromeBg = colors.background
   if (chromeIsLight) {
     // Light chrome: keep the bar close to the background (a big mix toward
     // black turns pale themes into a muddy gray strip) and overlay tabs with
@@ -82,6 +87,12 @@ export function applyTabAccent(color: string): void {
     return
   }
   style.setProperty('--tab-accent', color)
-  const fg = chromeIsLight ? mix(color, '#000000', 0.35) : mix(color, '#ffffff', 0.18)
+  // Light chrome: a fixed 0.35 mix toward black left the default green
+  // (#3fb950 -> #297834) at 4.0:1 on the accent-tinted tab, just under AA, and
+  // arbitrary user accents could be far worse. darkenToRatio() guarantees the
+  // ratio against the chrome background; the tinted surfaces it also lands on
+  // are slightly darker, hence the margin above 4.5. Dark chrome keeps the
+  // existing lighten mix (its accents sit on dark tabs).
+  const fg = chromeIsLight ? darkenToRatio(color, chromeBg, 5.5) : mix(color, '#ffffff', 0.18)
   style.setProperty('--tab-accent-fg', fg ?? color)
 }
