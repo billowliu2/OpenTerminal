@@ -19,10 +19,10 @@
 }
 
 .mm-error {
-  border: 1px solid #f85149;
+  border: 1px solid var(--ot-danger, #f85149);
   border-radius: 6px;
-  background: rgba(248, 81, 73, 0.12);
-  color: #f85149;
+  background: color-mix(in srgb, var(--ot-danger, #f85149) 12%, transparent);
+  color: var(--ot-danger-fg, #f85149);
   padding: 5px 8px;
   font-size: 12px;
 }
@@ -49,7 +49,7 @@
 
 .mm-os {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -78,7 +78,7 @@
 .mm-label {
   font-size: 11px;
   font-weight: 500;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   user-select: none;
@@ -86,19 +86,19 @@
 
 .mm-value {
   font-size: 13px;
-  color: #3fb950;
+  color: var(--ot-success-fg, #3fb950);
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
 }
 
 .mm-value-sub {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 .mm-sub {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 .mm-load {
@@ -141,7 +141,7 @@
 .mm-mem-pct {
   flex: 0 0 auto;
   font-size: 11px;
-  color: #d29922;
+  color: var(--ot-warning-fg, #d29922);
   font-variant-numeric: tabular-nums;
   min-width: 32px;
   text-align: right;
@@ -177,7 +177,7 @@
 
 .mm-disk-size {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -221,7 +221,7 @@
 
 .mm-net-unit {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 .mm-arrow {
@@ -231,17 +231,17 @@
 }
 
 .mm-up {
-  color: #58a6ff;
+  color: var(--ot-info-fg, #58a6ff);
 }
 
 .mm-down {
-  color: #f0a55a;
+  color: var(--ot-warning-fg, #f0a55a);
 }
 
 /* ---------- footer ---------- */
 .mm-footer {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 .mm-uptime {
@@ -253,7 +253,7 @@
   align-items: center;
   justify-content: center;
   min-height: 120px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 .mm-dots {

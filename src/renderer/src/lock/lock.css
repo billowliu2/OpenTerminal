@@ -37,7 +37,7 @@
   border: 1px solid var(--chrome-border, #2d2d2d);
   border-radius: 10px;
   background: var(--chrome-bg, #181818);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 18px 48px var(--ot-shadow, rgba(0, 0, 0, 0.45));
   text-align: center;
 }
 
@@ -70,7 +70,7 @@
   min-height: 18px;
   font-size: 12px;
   line-height: 18px;
-  color: #f85149;
+  color: var(--ot-danger-fg, #f85149);
 }
 
 .lock-screen-hint {

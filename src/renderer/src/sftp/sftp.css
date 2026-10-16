@@ -24,7 +24,7 @@
 .sftp-breadcrumb {
   padding: 3px 8px;
   font-size: 12px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   border-bottom: 1px solid var(--chrome-border);
   overflow-x: auto;
   white-space: nowrap;
@@ -152,17 +152,17 @@
 }
 
 .sftp-row-selected {
-  background: rgba(59, 142, 234, 0.18);
+  background: var(--ot-focus-ring, rgba(59, 142, 234, 0.18));
 }
 
 .sftp-icon {
   display: inline-flex;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: calc(14px * var(--sftp-scale, 1));
 }
 
 .sftp-icon-dir {
-  color: #e3b341;
+  color: var(--ot-warning-fg, #e3b341);
 }
 
 .sftp-name {
@@ -175,7 +175,7 @@
 
 .sftp-mode {
   text-align: center;
-  color: #9a9a9a;
+  color: var(--ot-text-muted, #9a9a9a);
   font-family: Consolas, 'Courier New', monospace;
   font-size: var(--sftp-fs-meta, 12px);
   white-space: nowrap;
@@ -184,7 +184,7 @@
 
 .sftp-owner {
   text-align: right;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: var(--sftp-fs-meta, 12px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -192,7 +192,7 @@
 
 .sftp-size {
   text-align: right;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: var(--sftp-fs-meta, 12px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -200,7 +200,7 @@
 
 .sftp-time {
   text-align: right;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: var(--sftp-fs-meta, 12px);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -210,12 +210,12 @@
 .sftp-error {
   padding: 12px;
   text-align: center;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 12px;
 }
 
 .sftp-error {
-  color: #f85149;
+  color: var(--ot-danger-fg, #f85149);
 }
 
 /* ---- permission / owner dialog ---- */
@@ -248,7 +248,7 @@
 }
 
 .sftp-perm-octal {
-  color: #3fb950;
+  color: var(--ot-success-fg, #3fb950);
 }
 
 .sftp-perm-grid {
@@ -264,7 +264,7 @@
   align-items: center;
   column-gap: 8px;
   font-size: 12px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 .sftp-perm-grid-head span {
@@ -305,7 +305,7 @@
 
 .sftp-perm-label {
   font-size: 12px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 .sftp-perm-own-field .ant-input {
@@ -314,7 +314,7 @@
 
 .sftp-perm-hint {
   font-size: 11px;
-  color: #6a6a6a;
+  color: var(--ot-text-muted, #6a6a6a);
 }
 
 /* ---- global transfer overlay ---- */
@@ -339,7 +339,7 @@
   border: 1px solid var(--chrome-border);
   border-radius: 6px;
   padding: 8px 10px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px var(--ot-shadow, rgba(0, 0, 0, 0.45));
 }
 
 .sftp-transfer-head {
@@ -357,11 +357,11 @@
 }
 
 .sftp-transfer-done .sftp-transfer-title {
-  color: #3fb950;
+  color: var(--ot-success-fg, #3fb950);
 }
 
 .sftp-transfer-error .sftp-transfer-title {
-  color: #f85149;
+  color: var(--ot-danger-fg, #f85149);
 }
 
 .sftp-transfer-cancelled .sftp-transfer-title {
@@ -423,7 +423,7 @@
 
 .sftp-transfer-err {
   font-size: 11px;
-  color: #f85149;
+  color: var(--ot-danger-fg, #f85149);
   margin-top: 3px;
   word-break: break-all;
 }

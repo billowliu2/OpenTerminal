@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SysinfoMeta, SysinfoSample } from '@shared/sysinfo'
 import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
-import { useSettingsStore } from '@renderer/settings/store'
+import { useResolvedTheme, useSettingsStore } from '@renderer/settings/store'
+import { isLightTheme, semanticVars } from '@renderer/theme/semantic'
 import { useWorkspaceModeStore } from '../workspace/workspaceModeStore'
 import './monitor.css'
 
@@ -105,11 +106,13 @@ function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChart
   )
 }
 
-/** Red/green/yellow threshold bar color for CPU usage. */
-function cpuColor(usage: number): string {
-  if (usage > 80) return '#f85149'
-  if (usage > 60) return '#e3b341'
-  return '#3fb950'
+/** Red/green/yellow threshold bar color for CPU usage. Takes the semantic
+ *  var map so light themes get the darkened (WCAG-compliant) variants —
+ *  canvas fills need actual color strings, CSS vars don't resolve there. */
+function cpuColor(usage: number, vars: Record<string, string>): string {
+  if (usage > 80) return vars.dangerFg
+  if (usage > 60) return vars.warningFg
+  return vars.successFg
 }
 
 /** Format a size in MB: show GB (1 decimal) once over 1024 MB. */
@@ -156,6 +159,11 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
   /** Switching workspace mode only hides the dockview (panels stay mounted), so
    *  polling has to stop explicitly while the SSH workspace is not visible. */
   const workspaceMode = useWorkspaceModeStore((s) => s.mode)
+  const theme = useResolvedTheme()
+  const vars = semanticVars(theme.colors, isLightTheme(theme.colors.background))
+  // #rrggbb + alpha → 'rgba(r, g, b, a)' — canvas fill needs a solid color.
+  const withAlpha = (hex: string, a: number): string =>
+    `rgba(${[1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)).join(', ')}, ${a})`
 
   useEffect(() => {
     if (workspaceMode !== 'ssh') return
@@ -226,15 +234,15 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
       <section className="mm-block" aria-label="CPU">
         <div className="mm-block-row">
           <span className="mm-label">CPU</span>
-          <span className="mm-value" style={{ color: cpuColor(cpu.usage) }}>
+          <span className="mm-value" style={{ color: cpuColor(cpu.usage, vars) }}>
             {cpu.usage.toFixed(0)}%<span className="mm-value-sub"> · {tFor(language, 'ssh.monitor.cores', { n: cpu.cores })}</span>
           </span>
         </div>
-        <Bar pct={cpu.usage} color={cpuColor(cpu.usage)} />
+        <Bar pct={cpu.usage} color={cpuColor(cpu.usage, vars)} />
         <div className="mm-sub mm-load">
           {tFor(language, 'ssh.monitor.loadavg', { value: cpu.loadavg.map((v) => v.toFixed(1)).join(' / ') })}
         </div>
-        <HistoryChart data={cpuHist} lineColor="#3fb950" fillColor="rgba(63,185,80,0.15)" height={48} maxY={100} />
+        <HistoryChart data={cpuHist} lineColor={vars.successFg} fillColor={withAlpha(vars.success, 0.15)} height={48} maxY={100} />
       </section>
 
       <section className="mm-block" aria-label={tFor(language, 'ssh.monitor.mem')}>
@@ -246,7 +254,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
         </div>
         <div className="mm-mem-row">
           <div className="mm-mem-bar">
-            <Bar pct={memPct} color="#d29922" />
+            <Bar pct={memPct} color={vars.warningFg} />
           </div>
           <span className="mm-mem-pct">{memPct.toFixed(0)}%</span>
         </div>
@@ -266,7 +274,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
                     {d.mount}
                   </span>
                   <div className="mm-disk-bar">
-                    <Bar pct={pct} color={cpuColor(pct)} />
+                    <Bar pct={pct} color={cpuColor(pct, vars)} />
                   </div>
                   <span className="mm-disk-size">
                     {formatSize(d.usedMb)} / {formatSize(d.totalMb)}
@@ -295,8 +303,8 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
           </div>
         </div>
         <div className="mm-net-charts">
-          <HistoryChart data={rxHist} lineColor="#58a6ff" fillColor="rgba(88,166,255,0.15)" height={40} />
-          <HistoryChart data={txHist} lineColor="#f2cc60" fillColor="rgba(242,204,96,0.15)" height={40} />
+          <HistoryChart data={rxHist} lineColor={vars.infoFg} fillColor={withAlpha(vars.info, 0.15)} height={40} />
+          <HistoryChart data={txHist} lineColor={vars.warningFg} fillColor={withAlpha(vars.warning, 0.15)} height={40} />
         </div>
       </section>
 

@@ -200,12 +200,12 @@
    antd's own checked colour loses to our text overrides, so pin it here. */
 .settings-radio-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled),
 .settings-language-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
-  color: #fff;
+  color: var(--tab-accent-fg, #fff);
 }
 
 .settings-radio-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover,
 .settings-language-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover {
-  color: #fff;
+  color: var(--tab-accent-fg, #fff);
 }
 
 /* Own positive spacing: the shared `.settings-render-hint` uses a negative
@@ -299,8 +299,8 @@
 }
 
 .theme-card-selected {
-  border-color: #3b8eea;
-  box-shadow: 0 0 0 1px #3b8eea inset;
+  border-color: var(--ot-focus-ring, #3b8eea);
+  box-shadow: 0 0 0 1px var(--ot-focus-ring, #3b8eea) inset;
 }
 
 .theme-card-bg {
@@ -333,7 +333,7 @@
   line-height: 1;
   padding: 2px 5px;
   border-radius: 4px;
-  background: rgba(59, 142, 234, 0.2);
+  background: var(--ot-focus-ring, rgba(59, 142, 234, 0.2));
   color: color-mix(in srgb, var(--chrome-accent, #3b8eea) 55%, var(--chrome-fg, #cccccc));
 }
 
@@ -510,11 +510,11 @@
 }
 
 .about-status.is-new {
-  color: #3fd06a;
+  color: var(--ot-success-fg, #3fd06a);
 }
 
 .about-error {
-  color: #f85149;
+  color: var(--ot-danger-fg, #f85149);
   margin-top: 4px;
   font-size: 12px;
   word-break: break-all;
@@ -596,11 +596,11 @@
 }
 
 .settings-lock-feedback.is-ok {
-  color: #3fb950;
+  color: var(--ot-success-fg, #3fb950);
 }
 
 .settings-lock-feedback.is-error {
-  color: #f85149;
+  color: var(--ot-danger-fg, #f85149);
 }
 
 .settings-lock-note {
@@ -627,5 +627,5 @@
   margin: -4px 0 10px;
   padding-left: 2px;
   font-size: 12px;
-  color: #d29922;
+  color: var(--ot-warning-fg, #d29922);
 }
