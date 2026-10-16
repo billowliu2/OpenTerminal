@@ -40,7 +40,7 @@
    so it reads as a soft slate bar, never a white line. */
 .terminal-view .xterm-viewport {
   scrollbar-width: thin;
-  scrollbar-color: rgba(125, 145, 170, 0.5) transparent;
+  scrollbar-color: var(--ot-scrollbar, rgba(125, 145, 170, 0.5)) transparent;
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar {
@@ -52,7 +52,7 @@
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar-thumb {
-  background: rgba(125, 145, 170, 0.5);
+  background: var(--ot-scrollbar, rgba(125, 145, 170, 0.5));
   border: 3px solid transparent;
   border-radius: 6px;
   background-clip: padding-box;
@@ -60,7 +60,7 @@
 }
 
 .terminal-view .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: rgba(150, 172, 200, 0.7);
+  background: var(--ot-scrollbar-active, rgba(150, 172, 200, 0.7));
   border: 3px solid transparent;
   background-clip: padding-box;
 }
@@ -147,7 +147,7 @@
   border: 1px solid var(--chrome-border);
   border-radius: 8px;
   background: var(--chrome-bg-deep);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 6px 20px var(--ot-shadow, rgba(0, 0, 0, 0.4));
   font-size: 12px;
   color: var(--chrome-fg);
   user-select: none;
@@ -210,7 +210,7 @@
   gap: 2px;
   padding: 2px;
   border-radius: 6px;
-  background: rgba(24, 26, 31, 0.85);
+  background: var(--ot-surface-raised, rgba(24, 26, 31, 0.85));
   border: 1px solid var(--chrome-border);
   /* Hidden until the terminal is hovered — it must not sit over the output. */
   opacity: 0;
@@ -234,14 +234,14 @@
   border: none;
   border-radius: 4px;
   background: transparent;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 12px;
   cursor: pointer;
 }
 
 .term-rec-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--ot-text, #ffffff);
+  background: var(--ot-hover, rgba(255, 255, 255, 0.1));
 }
 
 .term-rec-btn.is-recording {
@@ -278,7 +278,7 @@
   background: var(--chrome-bg);
   border: 1px solid var(--chrome-border);
   border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 8px 28px var(--ot-shadow, rgba(0, 0, 0, 0.55));
   user-select: none;
   box-sizing: border-box;
 }
@@ -308,8 +308,8 @@
 
 .term-suggest-item:hover,
 .term-suggest-item.is-active {
-  background: rgba(59, 142, 234, 0.18);
-  color: #ffffff;
+  background: var(--ot-focus-ring, rgba(59, 142, 234, 0.18));
+  color: var(--ot-text, #ffffff);
 }
 
 .term-suggest-cmd {
@@ -327,14 +327,14 @@
   line-height: 1;
   padding: 2px 5px;
   border-radius: 4px;
-  color: #9a9a9a;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--ot-text-muted, #9a9a9a);
+  background: var(--ot-hover, rgba(255, 255, 255, 0.08));
 }
 
 .term-suggest-hint {
   flex: 0 0 auto;
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   opacity: 0.9;
   padding-top: 4px;
   line-height: 13px;
@@ -416,7 +416,7 @@
   border: none;
   border-radius: 4px;
   background: var(--chrome-accent);
-  color: #fff;
+  color: var(--tab-accent-fg, #fff);
   font: inherit;
   cursor: pointer;
 }

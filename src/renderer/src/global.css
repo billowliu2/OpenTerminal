@@ -13,6 +13,30 @@
   --chrome-tab-ring-hover: rgba(255, 255, 255, 0.2);
   --chrome-tab-fg: #98a2ab;
   --chrome-tab-fg-hover: #d0d0d0;
+  /* Semantic layer; overwritten per theme by applyChromeTheme() via
+     semanticVars() — these dark values are the pre-JS fallback (and the
+     zero-regression dark branch). */
+  --ot-text: #cccccc;
+  --ot-text-secondary: rgba(204, 204, 204, 0.78);
+  --ot-text-muted: #8a8a8a;
+  --ot-surface: rgba(204, 204, 204, 0.05);
+  --ot-surface-raised: rgba(24, 26, 31, 0.85);
+  --ot-hover: rgba(255, 255, 255, 0.08);
+  --ot-border: rgba(255, 255, 255, 0.16);
+  --ot-border-strong: rgba(255, 255, 255, 0.16);
+  --ot-success: #3fb950;
+  --ot-success-fg: #3fb950;
+  --ot-danger: #f85149;
+  --ot-danger-fg: #f85149;
+  --ot-warning: #d29922;
+  --ot-warning-fg: #d29922;
+  --ot-info: #58a6ff;
+  --ot-info-fg: #58a6ff;
+  --ot-scrollbar: rgba(125, 145, 170, 0.5);
+  --ot-scrollbar-active: rgba(150, 172, 200, 0.7);
+  --ot-shadow: rgba(0, 0, 0, 0.45);
+  --ot-focus-ring: rgba(59, 142, 234, 0.2);
+  color-scheme: dark;
 }
 
 html,
@@ -32,7 +56,7 @@ body,
    tracks + arrow buttons that look broken on the dark surface. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(125, 145, 170, 0.5) transparent;
+  scrollbar-color: var(--ot-scrollbar, rgba(125, 145, 170, 0.5)) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -45,7 +69,7 @@ body,
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(125, 145, 170, 0.5);
+  background: var(--ot-scrollbar, rgba(125, 145, 170, 0.5));
   border: 3px solid transparent;
   border-radius: 6px;
   background-clip: padding-box;
@@ -53,7 +77,7 @@ body,
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(150, 172, 200, 0.7);
+  background: var(--ot-scrollbar-active, rgba(150, 172, 200, 0.7));
   border: 3px solid transparent;
   background-clip: padding-box;
 }
@@ -134,7 +158,7 @@ button {
   overflow: auto;
   white-space: pre-wrap;
   font-size: 12px;
-  color: #ff6b6b;
+  color: var(--ot-danger-fg, #ff6b6b);
 }
 
 .panel-error-retry {
