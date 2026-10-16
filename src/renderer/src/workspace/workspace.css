@@ -79,10 +79,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: #1f1f1f;
+  background: var(--ot-surface-raised, #1f1f1f);
   border: 1px solid var(--chrome-border);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 8px 24px var(--ot-shadow, rgba(0, 0, 0, 0.45));
 }
 
 .workspace-flyout-item {
@@ -93,7 +93,7 @@
   border: none;
   border-radius: 5px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--ot-text, rgba(255, 255, 255, 0.85));
   font-size: 13px;
   text-align: left;
   white-space: nowrap;
@@ -102,7 +102,7 @@
 
 .workspace-flyout-item:hover {
   background: var(--chrome-hover);
-  color: #ffffff;
+  color: var(--ot-text, #ffffff);
 }
 
 .workspace-flyout-divider {
@@ -177,8 +177,8 @@
   --dv-tabs-and-actions-container-height: 28px;
   --dv-tab-divider-color: transparent;
   /* Pane split dividers: soft slate band at rest, accent blue on hover/drag. */
-  --dv-sash-color: rgba(148, 163, 184, 0.28);
-  --dv-active-sash-color: rgba(59, 142, 234, 0.75);
+  --dv-sash-color: var(--ot-border, rgba(148, 163, 184, 0.28));
+  --dv-active-sash-color: var(--ot-info, rgba(59, 142, 234, 0.75));
   /* Tab surfaces. Dockview paints tabs through group-scoped rules that
      outspecify our .dv-tab rules, so theme the tabs via the vars those rules
      consume — otherwise the abyss defaults (dark navy) leak onto light themes. */
@@ -276,13 +276,13 @@
 }
 
 .workspace-empty-title {
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 14px;
   user-select: none;
 }
 
 .workspace-empty-hint {
-  color: #6a6a6a;
+  color: var(--ot-text-muted, #6a6a6a);
   font-size: 12px;
   user-select: none;
 }
@@ -339,13 +339,13 @@
   top: 4px;
   right: 4px;
   z-index: 4;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 13px;
 }
 
 .workspace-terminal-monitor-toggle:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--ot-text, #ffffff);
+  background: var(--ot-hover, rgba(255, 255, 255, 0.1));
 }
 
 /* ---- SSH bottom file browser (M8, FileZilla-style resizable bottom panel) ----
@@ -553,13 +553,13 @@ body.ssh-resizing .ssh-bottom-divider {
 .workspace-bcast-pop-empty {
   padding: 10px 0;
   text-align: center;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 12px;
 }
 
 .workspace-bcast-pop-hint {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   line-height: 1.4;
   border-top: 1px solid var(--chrome-border);
   padding-top: 6px;
@@ -658,7 +658,7 @@ body.ssh-resizing .ssh-bottom-divider {
 }
 
 .workspace-template-time {
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 12px;
   margin-top: 2px;
 }
@@ -666,7 +666,7 @@ body.ssh-resizing .ssh-bottom-divider {
 .workspace-template-empty {
   padding: 24px 0;
   text-align: center;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
 }
 
 /* ---- SSH connect flow modals ---- */
@@ -702,7 +702,7 @@ body.ssh-resizing .ssh-bottom-divider {
 }
 
 .hostkey-changed-title {
-  color: #ff4d4f;
+  color: var(--ot-danger-fg, #ff4d4f);
   font-weight: 600;
 }
 
@@ -722,7 +722,7 @@ body.ssh-resizing .ssh-bottom-divider {
 .connections-mode-title {
   font-size: 11px;
   letter-spacing: 0.4px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   padding: 10px 14px 2px;
   user-select: none;
 }
@@ -736,7 +736,7 @@ body.ssh-resizing .ssh-bottom-divider {
 }
 .commands-mode-badge-text {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   letter-spacing: 0.4px;
 }
 .commands-mode-badge-tag {
@@ -747,10 +747,10 @@ body.ssh-resizing .ssh-bottom-divider {
   line-height: 16px;
 }
 .commands-mode-badge--terminal .commands-mode-badge-tag {
-  color: #4cc38a;
-  background: rgba(76, 195, 138, 0.14);
+  color: var(--ot-success-fg, #4cc38a);
+  background: color-mix(in srgb, var(--ot-success, #3fb950) 14%, transparent);
 }
 .commands-mode-badge--ssh .commands-mode-badge-tag {
-  color: #6aa9ff;
-  background: rgba(106, 169, 255, 0.14);
+  color: var(--ot-info-fg, #6aa9ff);
+  background: color-mix(in srgb, var(--ot-info, #58a6ff) 14%, transparent);
 }

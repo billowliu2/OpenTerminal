@@ -50,24 +50,24 @@
   flex: 1 1 auto;
   font-size: 11px;
   font-weight: 600;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   letter-spacing: 0.6px;
 }
 
 .commands-clear-btn {
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 11px;
   padding: 0 2px;
 }
 
 .commands-clear-btn:hover {
-  color: #cf6679 !important;
+  color: var(--ot-danger-fg, #cf6679) !important;
 }
 
 .commands-empty {
   padding: 20px 8px;
   text-align: center;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   font-size: 12px;
 }
 
@@ -110,7 +110,7 @@
 
 .commands-row-sub {
   font-size: 11px;
-  color: #8a8a8a;
+  color: var(--ot-text-muted, #8a8a8a);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -120,7 +120,7 @@
 .commands-row-del {
   flex: 0 0 auto;
   display: none;
-  color: #9a9a9a;
+  color: var(--ot-text-muted, #9a9a9a);
 }
 
 .commands-row:hover .commands-row-del {
@@ -128,7 +128,7 @@
 }
 
 .commands-row-del:hover {
-  color: #cf6679 !important;
+  color: var(--ot-danger-fg, #cf6679) !important;
 }
 
 /* ---- add-library modal ---- */
@@ -141,7 +141,7 @@
 /* IPC/store failure during save: shown inside the dialog (in the app's danger
    colour) so a failed save is visible instead of a silent no-op. */
 .commands-save-error {
-  color: #f85149;
+  color: var(--ot-danger-fg, #f85149);
   font-size: 12px;
   word-break: break-all;
 }
