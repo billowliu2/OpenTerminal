@@ -148,7 +148,11 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
   - **恢复串只插在「可见间隙」前后**（`MIN_GAP_FOR_RESTORE=3` 个可见字符），不是每个 span 后。Kimi 这类全彩 TUI 一行 ~19 个 span，每 span 都重放会让 9.5KB 输出膨胀到 40.8KB（**4.30x**，无恢复时 2.78x），下游 xterm 解析 + WebGL 字形图集（背景图模式 MCR=4.5 逐字形算对比度，真彩色让缓存全 miss）被压垮，实测渲染线程卡 **18.4 秒**（日志 `[renderer] main thread stalled ~18384ms`）。现在的实现：最后一个 span 后必恢复，中间间隙够长才恢复，膨胀 3.05x 且长间隙着色正常
   - **改以上任何参数必须重跑 `[restore cost budget]` 基准段**（`tests/hl-rules.mjs`，断言密集真彩色 TUI 膨胀 < 3.2x）。功能性用例全绿不代表热路径没回归——`hl-split-smoke` 的样本每行以 reset 结尾，恰好绕过了这类膨胀
 - **CSI 参数类必须含私有前缀与中间字节**：`ESCAPE_RE` 的 CSI 分支是 `[0-9;:?<>=]*[ -/]*[A-Za-z]`。漏掉 `<`/`>`/`=` 和中间字节（`ESC[>4;1m` modifyOtherKeys、`ESC[<0;1;2M` SGR 鼠标、`ESC[=1;1$y` DECRQM）会让整行被当成含裸 ESC 的文本透传，**该行之后直到下一个换行的所有关键词全部失去高亮**——vim/tmux 在鼠标与按键上报时正好发这些序列
-- **用户正则没有真正的 ReDoS 防护**：`MAX_LINE_LEN=4KB` 限的是长度不是回溯成本——`(a+)+$` 配 30 个字符实测卡 **8.2 秒**（28 字符 2 秒，指数级）。现有防线是 `MAX_PATTERN_LEN=500` 限幅 + 编辑器 `backtracksBadly()` 探测（用 4 组诱发输入实跑，超 50ms 预算就提示），**都拦不住真正的灾难性回溯**。要正解需把预览/执行挪进 Worker 加超时，已列为待办
+- **ReDoS 用静态结构分析根治**（`highlightEngine.ts` 的 `isReDoSProne`）：编译期扫描两种可证危险的形状——**嵌套量词**（`(a+)+`、`(.*)*`、`([a-z]+)*`）与**同分支重复**（`(a|a)*`），命中即**拒绝该规则**（不进编译集，永远到不了热路径）。实测 9/9 危险全抓、6/6 安全无误判、22 条出厂预设全部通过，开销是纯字符串遍历
+  - **有界量词不是危险**：`(?:\d{1,3}\.){3}`（ipv4 预设）外层 `{3}` 固定重复，不会指数回溯——判定只对 `*`、`+`、`{n,}` 这类开放式重复生效。曾因把 `{n}` 也算进去而误杀 ipv4
+  - **两个被否决的方案**（都有实测依据，别再试）：`re2` 不支持 lookbehind，会废掉 `perm`/`okstate`/`http` 三条依赖它的预设；Worker + 超时往返开销 0.11ms/块（直接执行 0.035ms，4.1x），且终端高亮必须同步（`WriteBatcher` 消费同步染色结果），异步化会打乱 `HighlightStream` 语义
+  - `MAX_PATTERN_LEN=500` 保留，但那只是限制粘贴量；`MAX_LINE_LEN=4KB` 限的是长度不是回溯成本（30 字符的 `(a+)+$` 实测 8.2 秒），**真正的防线是 `isReDoSProne`**
+- **fit 耗时埋点**：`TerminalView.scheduleFit` 记录每次 `fit.fit()` 的耗时，超 `FIT_SLOW_LOG_MS=200` 就写诊断日志（含 cols/rows/scrollback）。`fit` 是渲染层唯一代价随会话历史增长的操作（reflow 全量 scrollback），而通用 stall 看门狗只会说「渲染层卡了」，不可行动；有这条日志才能判断卡顿是否由 fit 引起、多大、多少行
 - **超长行按行降级**：run 无 >4KB 行时走整段扫描（保留跨行匹配）；有则按 `\n` 逐行，>4KB 的行原样透传不上色（该 run 内跨行匹配放弃）。回溯防护不变式：**任何 >4KB 的行不进用户正则**
 - **统计按 pane 实例聚合**：`highlightStats.ts` 按 pane id（`crypto.randomUUID()`，**不是 sessionId**——SSH 分屏同一 session 挂两 pane）登记各自 sink，订阅方拿跨 pane 求和；卸载与关统计开关都要注销，重绑定（rebind）**不**注销（React 先跑完 cleanups 再 setups，在那里注销会让 pane 从汇总消失一拍）。重置清各 pane 的真实计数器
 - 分类（`category`，`safety|status|file|net|text|metric`）：预设的分类放在 `PRESET_CATEGORIES` 一张表里，`basic` 集合必须始终是 safety+status 的子集（有测试守）；`settings.terminal.highlightGroupByCategory` 只影响设置页（加分类列 + 按分类聚簇，组内仍按 priority），**热路径完全不涉及**

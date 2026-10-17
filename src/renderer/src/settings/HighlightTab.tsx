@@ -33,7 +33,7 @@ import { useResolvedTheme, useSettingsStore } from './store'
 import { HighlightImportExport } from './HighlightImportExport'
 import { HighlightProfiles } from './HighlightProfiles'
 import { ruleNote } from './ruleLabel'
-import { MAX_PATTERN_LEN, compileRules, previewSpans } from '../terminal/highlightEngine'
+import { MAX_PATTERN_LEN, compileRules, isReDoSProne, previewSpans } from '../terminal/highlightEngine'
 import {
   getHighlightStats,
   resetHighlightStats,
@@ -78,46 +78,20 @@ function categoryRank(rule: HighlightRule): number {
 
 function tryCompile(pattern: string): { ok: boolean; message?: string; slow?: boolean } {
   if (pattern.trim() === '') return { ok: true }
-  let regex: RegExp
   try {
     // eslint-disable-next-line no-new
-    regex = new RegExp(pattern)
+    new RegExp(pattern)
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : t('settings.highlight.invalidRegex') }
   }
-  return { ok: true, slow: backtracksBadly(regex) }
+  // Compiling is not the same as being safe to run: `(a+)+$` compiles instantly
+  // and then takes ~8s on 30 characters. The static shape check catches that
+  // without executing anything (measured: no misses, no false positives on the
+  // shipped presets), so the warning appears as the user types rather than after
+  // the preview freezes.
+  return { ok: true, slow: isReDoSProne(pattern) }
 }
 
-/**
- * Cheap ReDoS probe for the editor.
- *
- * `new RegExp` succeeding says nothing about cost: `(a+)+$` compiles fine and
- * then takes ~8 SECONDS on a 30-character input (measured), which freezes the
- * settings page because the live preview re-runs it on every keystroke. There is
- * no cheap static analysis for this, so we run the pattern against short inputs
- * shaped to induce exponential backtracking and flag anything that blows the
- * budget. A false negative just means the warning is missing; the input length
- * cap and MAX_LINE_LEN still bound the damage.
- */
-function backtracksBadly(regex: RegExp): boolean {
-  const shapes = [
-    'a'.repeat(24) + '!',
-    'a'.repeat(24) + ' a',
-    'ab'.repeat(16) + '!',
-    '1'.repeat(24) + 'x'
-  ]
-  const probe = new RegExp(regex.source, regex.flags.includes('i') ? 'i' : '')
-  for (const input of shapes) {
-    const started = performance.now()
-    try {
-      probe.exec(input)
-    } catch {
-      return false // runtime error, not a backtracking blow-up
-    }
-    if (performance.now() - started > 50) return true
-  }
-  return false
-}
 
 interface RuleDraft {
   pattern: string

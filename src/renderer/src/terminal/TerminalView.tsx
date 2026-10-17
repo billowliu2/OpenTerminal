@@ -24,6 +24,14 @@ import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
 import { WriteBatcher } from './writeBatcher'
 import { refitDelay } from './fitThrottle'
+
+/**
+ * A fit slower than this is worth recording: reflow cost scales with scrollback
+ * length, so a slow fit is the direct evidence that history size is hurting the
+ * renderer. Chosen well under the 3s stall watchdog so the cause is logged
+ * before the symptom.
+ */
+const FIT_SLOW_LOG_MS = 200
 import { quoteFontStack } from './fontStack'
 import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
@@ -702,10 +710,25 @@ export function TerminalView({
       lastFitAtRef.current = performance.now()
       const fit = fitAddonRef.current
       if (!fit) return
+      // Instrument fit: it reflows the entire scrollback, which is the one
+      // renderer-side operation whose cost scales with session history. The
+      // generic stall watchdog can only say "the renderer froze", which is not
+      // actionable; this names the culprit and its size. Only slow fits log, so
+      // the normal path pays a single performance.now().
+      const fitStart = performance.now()
       try {
         fit.fit()
       } catch {
         return
+      }
+      const fitMs = performance.now() - fitStart
+      if (fitMs > FIT_SLOW_LOG_MS) {
+        const t = termRef.current
+        const line = `fit took ${Math.round(fitMs)}ms (${t?.cols ?? '?'}x${t?.rows ?? '?'}, scrollback ${t?.options.scrollback ?? '?'})`
+        console.warn(`[renderer] ${line}`)
+        if (useSettingsStore.getState().settings.system.diagnosticLog !== false) {
+          window.api?.appLog?.(line)
+        }
       }
       const term = termRef.current
       if (!term || deadRef.current) return

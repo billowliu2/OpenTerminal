@@ -12,7 +12,7 @@
  *     --outfile=tests/.hl-rules.cjs --alias:@shared=./src/shared
  *   node tests/hl-rules.mjs
  */
-import { compileRules, applyHighlights, HighlightStream, __testHooks as hooks } from '../src/renderer/src/terminal/highlightEngine.ts'
+import { compileRules, applyHighlights, HighlightStream, isReDoSProne, __testHooks as hooks } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { previewSpans } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { DEFAULT_HIGHLIGHT_RULES } from '../src/shared/settings.ts'
 import {
@@ -1207,6 +1207,43 @@ console.log('[reset spellings and CSI parameters]')
   ]) {
     ok(applyHighlights(`${seq}WARNING after\n`, warn).includes('255;0;0'), `${label} keeps the rest of the line highlighted`)
   }
+}
+
+console.log('[ReDoS shapes]')
+{
+  // The hot path runs a user pattern on every output line, so exponential
+  // backtracking must be rejected BEFORE it can run. `(a+)+$` compiles in
+  // microseconds and then takes ~8s on 30 characters — no length or time guard
+  // downstream can fix that. These shapes are caught by a string scan at compile
+  // time, which is why the check has to be exact in both directions.
+  const dangerous = ['(a+)+$', '(a+)+', '(.*)*', '(.+)+', '([a-z]+)*', '(a*)*b', '(a|a)*', '(a|a)+', '(?:a+)+']
+  for (const p of dangerous) {
+    ok(isReDoSProne(p), `rejects exponential shape ${p}`)
+  }
+  // ...and it must not touch legitimate patterns. The most important case is the
+  // shipped presets: rejecting one of those would silently disable a built-in
+  // rule for every user. `ipv4` (`(?:\\d{1,3}\\.){3}`) is the tricky one — a
+  // BOUNDED outer quantifier cannot backtrack exponentially.
+  const safe = [
+    '\\b(?:ERROR|FAILED)\\b',
+    '\\d+%',
+    '(?<=^|\\s)[-dlbcps][rwxstST-]{9}(?![rwxstST-])',
+    '(?<!not\\s)\\b(?:SUCCESS|PASS|OK)\\b',
+    '\\b[a-z]+\\b',
+    '\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b'
+  ]
+  for (const p of safe) {
+    ok(!isReDoSProne(p), `accepts safe pattern ${p}`)
+  }
+  const flaggedPresets = DEFAULT_HIGHLIGHT_RULES.filter((r) => isReDoSProne(r.pattern)).map((r) => r.id)
+  ok(flaggedPresets.length === 0, `no shipped preset is rejected (flagged: ${flaggedPresets.join(', ') || 'none'})`)
+
+  // A rejected rule must not reach the compiled set at all.
+  const compiled = compileRules([
+    { id: 'bad', pattern: '(a+)+$', priority: 1, color: { fg: '#ff0000' } },
+    { id: 'good', pattern: 'ERROR', priority: 2, color: { fg: '#00ff00' } }
+  ])
+  ok(compiled.length === 1 && compiled[0].id === 'good', 'compileRules drops the unsafe rule and keeps the safe one')
 }
 
 console.log(failed === 0 ? '\n[hl-rules] ALL CHECKS PASSED' : `\n[hl-rules] ${failed} CHECK(S) FAILED`)
