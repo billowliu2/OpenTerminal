@@ -1238,12 +1238,15 @@ console.log('[ReDoS shapes]')
   const flaggedPresets = DEFAULT_HIGHLIGHT_RULES.filter((r) => isReDoSProne(r.pattern)).map((r) => r.id)
   ok(flaggedPresets.length === 0, `no shipped preset is rejected (flagged: ${flaggedPresets.join(', ') || 'none'})`)
 
-  // A rejected rule must not reach the compiled set at all.
+  // The heuristic is ADVISORY: it must not gate the hot path. Rejecting on it
+  // would silently disable legitimate rules (measured false positives) while
+  // still admitting hostile ones (measured misses: `[(](a+)+`, `(?:a|a)+`), so
+  // compileRules keeps both and only the editor surfaces the warning.
   const compiled = compileRules([
-    { id: 'bad', pattern: '(a+)+$', priority: 1, color: { fg: '#ff0000' } },
-    { id: 'good', pattern: 'ERROR', priority: 2, color: { fg: '#00ff00' } }
+    { id: 'flagged', pattern: '(a+)+$', priority: 1, color: { fg: '#ff0000' } },
+    { id: 'plain', pattern: 'ERROR', priority: 2, color: { fg: '#00ff00' } }
   ])
-  ok(compiled.length === 1 && compiled[0].id === 'good', 'compileRules drops the unsafe rule and keeps the safe one')
+  ok(compiled.length === 2, 'compileRules keeps flagged rules (the check is advisory, not a gate)')
 }
 
 console.log(failed === 0 ? '\n[hl-rules] ALL CHECKS PASSED' : `\n[hl-rules] ${failed} CHECK(S) FAILED`)

@@ -103,30 +103,32 @@ const MAX_LINE_LEN = 4 * 1024
 
 /**
  * Longest user pattern accepted. Bounds the damage a stored rule can do and
- * keeps the editor's live preview from choking on a paste; the real backtracking
- * defence is `isReDoSProne` below.
+ * keeps the editor's live preview from choking on a paste.
  */
 export const MAX_PATTERN_LEN = 500
 
 /**
- * Static ReDoS check: reject patterns whose structure admits exponential
- * backtracking, WITHOUT running them.
+ * Advisory ReDoS heuristic for the rule EDITOR: flags patterns whose shape
+ * admits exponential backtracking.
  *
- * Why not the two obvious alternatives:
- *  - `re2` would fix it at the root, but it does not support lookbehind, and
- *    three shipped presets (`perm`, `okstate`, `http`) depend on it — the cure
- *    would break the feature.
- *  - Moving execution to a Worker with a timeout costs ~0.11ms per round trip
- *    (measured; direct execution is ~0.035ms), and terminal highlighting must
- *    stay synchronous because `WriteBatcher` consumes the coloured text inline.
+ * Scope is deliberately limited to a warning. Measured misses — `[(](a+)+`
+ * (4s on 30 chars) and `(?:a|a)+` (7.5s) / `((a|a))+` (16s) both slip through —
+ * mean it must NOT gate the hot path: rejecting on a heuristic would silently
+ * disable legitimate rules while still letting hostile ones past. It is useful
+ * where a false negative costs nothing and a hit saves the user from typing a
+ * pattern that would freeze the settings page.
  *
- * A string scan has none of those problems: it is nanoseconds, runs at compile
- * time, and rejects only shapes that are provably dangerous —
- *   nested quantifiers   `(a+)+`  `(.*)*`  `([a-z]+)*`
- *   duplicated branches  `(a|a)*`  `(.|\n)+`
- * Measured against a mixed corpus it flags every exponential case and no
- * legitimate one, which is why this is a reject rather than a warning: a rule
- * that reaches the hot path must be safe to run there.
+ * Why not the two obvious alternatives, both measured:
+ *  - `re2` fixes it at the root but does not support lookbehind, and `perm`,
+ *    `okstate` and `http` presets depend on it — the cure breaks the feature.
+ *  - A Worker with a timeout is reliable (6/6 dangerous caught, main thread
+ *    responsive) but costs ~0.11ms per round trip versus ~0.035ms direct, and
+ *    terminal highlighting must stay synchronous because `WriteBatcher`
+ *    consumes the coloured text inline. It remains the right tool for rule
+ *    VALIDATION (low frequency, may be async) — just not for the hot path.
+ *
+ * Runtime cut-offs cannot help either: one `exec` on a catastrophic pattern
+ * blocks for 28s, so a clock check inside the match loop never gets to run.
  */
 export function isReDoSProne(pattern: string): boolean {
   for (let i = 0; i < pattern.length; i++) {
@@ -288,9 +290,12 @@ export function compileRules(rules: HighlightRule[]): CompiledRule[] {
     // Bounded like the other per-rule guards: a huge pattern only costs compile
     // time, but it also means someone pasted a blob into the editor.
     if (pattern.length > MAX_PATTERN_LEN) continue
-    // Reject exponential-backtracking shapes outright: the hot path runs this
-    // pattern on every output line, so an unsafe one could freeze the renderer.
-    if (isReDoSProne(pattern)) continue
+    // NOTE: the rule is deliberately NOT rejected for a ReDoS-prone shape here.
+    // `isReDoSProne` is an advisory heuristic used by the editor only — it has
+    // measured misses (`[(](a+)+`, `(?:a|a)+`) and false positives, so using it
+    // as a gate would silently disable legitimate rules while still letting
+    // some hostile ones through. The real bounds on this path remain
+    // MAX_LINE_LEN (no line over 4KB reaches a user regex) and MAX_PER_RULE.
     let regex: RegExp
     try {
       // 'g' always; 'i' when the rule asks for case-insensitive matching; 'm'
