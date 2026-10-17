@@ -5,6 +5,11 @@ import { Ipc } from '../shared/ipc'
 import {
   DEFAULT_HIGHLIGHT_RULES,
   DEFAULT_SETTINGS,
+  clampFontSetting,
+  FONT_LIMITS,
+  pickCursorInactiveStyle,
+  pickCursorStyle,
+  pickRendererMode,
   isHighlightCategory,
   isLockAutoDelay,
   isUpdateCheckInterval,
@@ -18,6 +23,7 @@ import {
 import { DEFAULT_DARK, type TerminalTheme, type ThemeColors } from '../shared/theme'
 import { DEFAULT_LANGUAGE, isLanguage, setLanguage } from '../shared/i18n'
 import { sanitizeProfiles } from '../shared/highlightProfiles'
+import { sanitizeLinkRules } from '../shared/linkRules'
 import { broadcast } from './broadcast'
 import { writeJson } from './store'
 import { applyGlobalShortcut } from './globalShortcuts'
@@ -91,6 +97,12 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
   if (rule.caseInsensitive !== undefined && typeof rule.caseInsensitive !== 'boolean') {
     warnings.push(`highlightRules[${index}].caseInsensitive ignored (not a boolean)`)
   }
+  if (rule.lineAnchor !== undefined && typeof rule.lineAnchor !== 'boolean') {
+    warnings.push(`highlightRules[${index}].lineAnchor ignored (not a boolean)`)
+  }
+  if (rule.notify !== undefined && typeof rule.notify !== 'boolean') {
+    warnings.push(`highlightRules[${index}].notify ignored (not a boolean)`)
+  }
   if (rule.basic !== undefined && typeof rule.basic !== 'boolean') {
     warnings.push(`highlightRules[${index}].basic ignored (not a boolean)`)
   }
@@ -131,6 +143,8 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
     bands,
     // `undefined` rather than `false` so the flag stays absent unless it is on.
     caseInsensitive: rule.caseInsensitive === true ? true : undefined,
+    lineAnchor: rule.lineAnchor === true ? true : undefined,
+    notify: rule.notify === true ? true : undefined,
     basic: rule.basic === true ? true : undefined,
     category: isHighlightCategory(rule.category) ? rule.category : undefined,
     note: typeof rule.note === 'string' ? rule.note : undefined
@@ -143,6 +157,7 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
  * load-time refresh below may swap in the current preset for it.
  */
 const LEGACY_BUILTIN_PATTERNS: Record<string, string[]> = {
+  perm: ['^[-dlbcps][rwxstST-]{9}'],
   okstate: ['\\b(SUCCESS|PASS|OK|DONE|PASSED)\\b'],
   badstate: ['\\b(FAILED|ERROR|FAIL|FATAL|WARN|WARNING|DENIED)\\b']
 }
@@ -314,6 +329,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
   let customThemes: unknown = DEFAULT_SETTINGS.customThemes
   let highlightRules: unknown = DEFAULT_HIGHLIGHT_RULES
   let highlightProfiles: unknown = []
+  let linkRules: unknown = []
 
   if (raw !== null && typeof raw === 'object') {
     const packageSettings = raw as {
@@ -321,6 +337,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
       customThemes?: unknown
       highlightRules?: unknown
       highlightProfiles?: unknown
+      linkRules?: unknown
     }
     if (packageSettings.terminal !== null && typeof packageSettings.terminal === 'object') {
       const candidate = packageSettings.terminal as Record<string, unknown>
@@ -334,6 +351,26 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         }
       }
       terminal = merged as unknown as TerminalSettings
+      // A bad value in any of these is FATAL rather than cosmetic: xterm's
+      // `term.options.x = v` setter (the settings hot-update path) throws with
+      // no try/catch, and the throw unmounts the whole dockview pane. The cursor
+      // option is swallowed during construction while still blowing up on
+      // hot-update, so the pane's "retry" button re-crashes forever — a hand-
+      // edited or legacy value must therefore be repaired here, on load.
+      terminal.lineHeight = clampFontSetting('lineHeight', terminal.lineHeight, DEFAULT_SETTINGS.terminal.lineHeight)
+      terminal.fontSize = clampFontSetting('fontSize', terminal.fontSize, DEFAULT_SETTINGS.terminal.fontSize)
+      terminal.letterSpacing = clampFontSetting(
+        'letterSpacing',
+        terminal.letterSpacing,
+        DEFAULT_SETTINGS.terminal.letterSpacing
+      )
+      terminal.scrollback = clampFontSetting('scrollback', terminal.scrollback, DEFAULT_SETTINGS.terminal.scrollback)
+      terminal.cursorStyle = pickCursorStyle(terminal.cursorStyle, DEFAULT_SETTINGS.terminal.cursorStyle)
+      terminal.cursorInactiveStyle = pickCursorInactiveStyle(
+        terminal.cursorInactiveStyle,
+        DEFAULT_SETTINGS.terminal.cursorInactiveStyle
+      )
+      terminal.rendererMode = pickRendererMode(terminal.rendererMode, DEFAULT_SETTINGS.terminal.rendererMode)
     }
     if (Array.isArray(packageSettings.customThemes)) {
       customThemes = packageSettings.customThemes
@@ -343,6 +380,9 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
     }
     if (packageSettings.highlightProfiles !== undefined) {
       highlightProfiles = packageSettings.highlightProfiles
+    }
+    if (packageSettings.linkRules !== undefined) {
+      linkRules = packageSettings.linkRules
     }
   }
 
@@ -393,6 +433,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         new Set(rules.map((rule) => rule.id)),
         (message) => errors.push(message)
       ),
+      linkRules: sanitizeLinkRules(linkRules, (message) => errors.push(message)),
       system: system as SystemSettings,
       lock
     },
@@ -516,6 +557,7 @@ function defaultSettings(): AppSettings {
     customThemes: [...DEFAULT_SETTINGS.customThemes],
     highlightRules: copyDefaultRules(),
     highlightProfiles: [],
+    linkRules: [],
     system: { ...DEFAULT_SYSTEM },
     lock: { ...DEFAULT_SETTINGS.lock }
   }
@@ -544,9 +586,34 @@ export function loadSettings(): AppSettings {
     }
     const { settings, errors } = deepMerge(raw)
     reportWarnings(errors)
+    healClampedFontSettings(raw, settings)
     return settings
   } catch (err) {
     return discardUnparseableSettings(err)
+  }
+}
+
+/**
+ * Rewrite the file when the sanitizer had to clamp a fatal numeric font value.
+ * Without this the bad number stays on disk and is re-clamped on every start:
+ * harmless at runtime, but it leaves settings.json disagreeing with what the
+ * app actually uses, and any hand-edit that "works" on disk keeps looking valid.
+ * Best-effort — a failed heal must never stop the app from loading.
+ */
+function healClampedFontSettings(raw: unknown, healed: AppSettings): void {
+  try {
+    const stored = (raw as { terminal?: Record<string, unknown> }).terminal
+    if (stored === null || typeof stored !== 'object') return
+    const fatalKeys = [
+      ...(Object.keys(FONT_LIMITS) as Array<keyof typeof FONT_LIMITS>),
+      'cursorStyle',
+      'cursorInactiveStyle',
+      'rendererMode'
+    ] as Array<keyof TerminalSettings>
+    const changed = fatalKeys.some((key) => stored[key] !== undefined && stored[key] !== healed.terminal[key])
+    if (changed) writeJson(settingsPath(), healed)
+  } catch {
+    // Ignore: the in-memory settings are already correct.
   }
 }
 

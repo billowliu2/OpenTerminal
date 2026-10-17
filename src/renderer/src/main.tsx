@@ -3,7 +3,7 @@ import { useEffect, type ReactNode } from 'react'
 import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd'
 import type { AppApi } from '@shared/api'
 import type { LockSettingsState } from '@shared/ipc'
-import { DEFAULT_SETTINGS } from '@shared/settings'
+import { DEFAULT_SETTINGS, FONT_LIMITS } from '@shared/settings'
 import { getThemeById } from '@shared/theme'
 import App from './App'
 import { ErrorBoundary } from './ErrorBoundary'
@@ -154,8 +154,8 @@ if (typeof window !== 'undefined' && !window.api) {
   ;(window as unknown as { api: AppApi }).api = api
 }
 
-const MIN_FONT = 8
-const MAX_FONT = 40
+const MIN_FONT = FONT_LIMITS.fontSize.min
+const MAX_FONT = FONT_LIMITS.fontSize.max
 const RESET_FONT = 14
 
 /**

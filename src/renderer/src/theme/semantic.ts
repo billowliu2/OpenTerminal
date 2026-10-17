@@ -88,74 +88,90 @@ export const SEMANTIC = {
   focusRing: 'rgba(59, 142, 234, 0.2)'
 } as const
 
-/** Values for --ot-* variables (camelCase keys; chrome.ts converts them to
- *  kebab-case, so `textMuted` lands as `--ot-text-muted`). */
-export function semanticVars(colors: ThemeLike, light: boolean): Record<string, string> {
+/** The CSS custom property names semanticVars() emits. There is exactly ONE
+ *  naming system: the keys ARE the final names, so a typo is a type error at
+ *  the read site instead of a silently unset variable (custom property names
+ *  are case-sensitive — a camelCase key would never match `var(--ot-*)` and the
+ *  element would fall back to the dark :root literal). tests/ot-var-names.mjs
+ *  asserts every key matches /^--ot-[a-z0-9-]+$/ so camelCase cannot creep
+ *  back in. Keep this union and the two branches in semanticVars() in sync. */
+export type OtVarName =
+  | '--ot-text'
+  | '--ot-text-secondary'
+  | '--ot-text-muted'
+  | '--ot-surface'
+  | '--ot-surface-raised'
+  | '--ot-hover'
+  | '--ot-border'
+  | '--ot-border-strong'
+  | '--ot-success'
+  | '--ot-success-fg'
+  | '--ot-danger'
+  | '--ot-danger-fg'
+  | '--ot-warning'
+  | '--ot-warning-fg'
+  | '--ot-info'
+  | '--ot-info-fg'
+  | '--ot-scrollbar'
+  | '--ot-scrollbar-active'
+  | '--ot-shadow'
+  | '--ot-focus-ring'
+
+/** semanticVars() result. `color-scheme` is not an --ot-* variable but rides
+ *  along so native scrollbars and form controls follow the same switch. */
+export type SemanticVars = Record<OtVarName | 'color-scheme', string>
+
+/** Values for the --ot-* variables, keyed by their final CSS custom property
+ *  names (chrome.ts writes them straight onto <html>). */
+export function semanticVars(colors: ThemeLike, light: boolean): SemanticVars {
   const bg = colors.background
   const fg = colors.foreground
   if (!light) {
     return {
-      text: fg,
-      textSecondary: mix(bg, fg, 0.78) ?? fg,
-      textMuted: SEMANTIC.muted,
-      surface: mix(bg, fg, 0.05) ?? bg,
-      surfaceRaised: SEMANTIC.surfaceRaised,
-      hover: SEMANTIC.hover,
-      border: mix(bg, fg, 0.16) ?? bg,
-      borderStrong: SEMANTIC.borderStrong,
-      success: SEMANTIC.success,
-      successFg: SEMANTIC.success,
-      danger: SEMANTIC.danger,
-      dangerFg: SEMANTIC.danger,
-      warning: SEMANTIC.warning,
-      warningFg: SEMANTIC.warning,
-      info: SEMANTIC.info,
-      infoFg: SEMANTIC.info,
-      scrollbar: SEMANTIC.scrollbar,
-      scrollbarActive: SEMANTIC.scrollbarActive,
-      shadow: SEMANTIC.shadow,
-      focusRing: SEMANTIC.focusRing,
-      colorScheme: 'dark'
+      '--ot-text': fg,
+      '--ot-text-secondary': mix(bg, fg, 0.78) ?? fg,
+      '--ot-text-muted': SEMANTIC.muted,
+      '--ot-surface': mix(bg, fg, 0.05) ?? bg,
+      '--ot-surface-raised': SEMANTIC.surfaceRaised,
+      '--ot-hover': SEMANTIC.hover,
+      '--ot-border': mix(bg, fg, 0.16) ?? bg,
+      '--ot-border-strong': SEMANTIC.borderStrong,
+      '--ot-success': SEMANTIC.success,
+      '--ot-success-fg': SEMANTIC.success,
+      '--ot-danger': SEMANTIC.danger,
+      '--ot-danger-fg': SEMANTIC.danger,
+      '--ot-warning': SEMANTIC.warning,
+      '--ot-warning-fg': SEMANTIC.warning,
+      '--ot-info': SEMANTIC.info,
+      '--ot-info-fg': SEMANTIC.info,
+      '--ot-scrollbar': SEMANTIC.scrollbar,
+      '--ot-scrollbar-active': SEMANTIC.scrollbarActive,
+      '--ot-shadow': SEMANTIC.shadow,
+      '--ot-focus-ring': SEMANTIC.focusRing,
+      'color-scheme': 'dark'
     }
   }
   return {
-    text: darkenToRatio(fg, bg, 7),
-    textSecondary: darkenToRatio(mix(bg, fg, 0.75) ?? fg, bg, 4.5),
-    textMuted: darkenToRatio(SEMANTIC.muted, bg, 4.5),
-    surface: mix(bg, fg, 0.04) ?? bg,
-    surfaceRaised: mix(bg, '#000000', 0.045) ?? bg,
-    hover: 'rgba(0, 0, 0, 0.06)',
-    border: mix(bg, '#000000', 0.14) ?? bg,
-    borderStrong: 'rgba(0, 0, 0, 0.22)',
-    success: darkenToRatio(SEMANTIC.success, bg, 3),
-    successFg: darkenToRatio(SEMANTIC.success, bg, 4.5),
-    danger: darkenToRatio(SEMANTIC.danger, bg, 3),
-    dangerFg: darkenToRatio(SEMANTIC.danger, bg, 4.5),
-    warning: darkenToRatio(SEMANTIC.warning, bg, 3),
-    warningFg: darkenToRatio(SEMANTIC.warning, bg, 4.5),
-    info: darkenToRatio(SEMANTIC.info, bg, 3),
-    infoFg: darkenToRatio(SEMANTIC.info, bg, 4.5),
-    scrollbar: 'rgba(0, 0, 0, 0.28)',
-    scrollbarActive: 'rgba(0, 0, 0, 0.45)',
-    shadow: 'rgba(0, 0, 0, 0.15)',
-    focusRing: SEMANTIC.focusRing,
-    colorScheme: 'light'
+    '--ot-text': darkenToRatio(fg, bg, 7),
+    '--ot-text-secondary': darkenToRatio(mix(bg, fg, 0.75) ?? fg, bg, 4.5),
+    '--ot-text-muted': darkenToRatio(SEMANTIC.muted, bg, 4.5),
+    '--ot-surface': mix(bg, fg, 0.04) ?? bg,
+    '--ot-surface-raised': mix(bg, '#000000', 0.045) ?? bg,
+    '--ot-hover': 'rgba(0, 0, 0, 0.06)',
+    '--ot-border': mix(bg, '#000000', 0.14) ?? bg,
+    '--ot-border-strong': 'rgba(0, 0, 0, 0.22)',
+    '--ot-success': darkenToRatio(SEMANTIC.success, bg, 3),
+    '--ot-success-fg': darkenToRatio(SEMANTIC.success, bg, 4.5),
+    '--ot-danger': darkenToRatio(SEMANTIC.danger, bg, 3),
+    '--ot-danger-fg': darkenToRatio(SEMANTIC.danger, bg, 4.5),
+    '--ot-warning': darkenToRatio(SEMANTIC.warning, bg, 3),
+    '--ot-warning-fg': darkenToRatio(SEMANTIC.warning, bg, 4.5),
+    '--ot-info': darkenToRatio(SEMANTIC.info, bg, 3),
+    '--ot-info-fg': darkenToRatio(SEMANTIC.info, bg, 4.5),
+    '--ot-scrollbar': 'rgba(0, 0, 0, 0.28)',
+    '--ot-scrollbar-active': 'rgba(0, 0, 0, 0.45)',
+    '--ot-shadow': 'rgba(0, 0, 0, 0.15)',
+    '--ot-focus-ring': SEMANTIC.focusRing,
+    'color-scheme': 'light'
   }
-}
-
-/** Final CSS custom property name for a semanticVars() key. Custom property
- *  names are case-sensitive, so this kebab conversion is the only thing tying
- *  the camelCase keys to the --ot-* names the stylesheets read — a miss leaves
- *  the variable unset and the element falls back to the dark :root literal.
- *  Exported so chrome.ts and tests/ot-var-names.mjs share one implementation. */
-export function cssVarName(key: string): string {
-  if (key === 'colorScheme') return 'color-scheme'
-  return `--ot-${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`
-}
-
-/** semanticVars() keyed by their final CSS custom property names. */
-export function semanticCssVars(colors: ThemeLike, light: boolean): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [key, value] of Object.entries(semanticVars(colors, light))) out[cssVarName(key)] = value
-  return out
 }

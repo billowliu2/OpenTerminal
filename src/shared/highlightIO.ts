@@ -126,6 +126,8 @@ function coerceImported(value: unknown, index: number, warnings: string[]): High
     color: { fg, ...(bg ? { bg } : {}) },
     ...(Array.isArray(raw.bands) ? { bands: raw.bands as HighlightRule['bands'] } : {}),
     ...(raw.caseInsensitive === true ? { caseInsensitive: true } : {}),
+    ...(raw.lineAnchor === true ? { lineAnchor: true } : {}),
+    ...(raw.notify === true ? { notify: true } : {}),
     ...(raw.basic === true ? { basic: true } : {}),
     ...(isHighlightCategory(raw.category) ? { category: raw.category } : {}),
     ...(typeof raw.note === 'string' && raw.note.trim() !== '' ? { note: raw.note.trim() } : {}),

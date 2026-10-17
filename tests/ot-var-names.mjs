@@ -10,12 +10,13 @@
  *   2) the :root static fallback block declares exactly the emitted names;
  *   3) both semanticVars() branches emit the same key set (a key that only
  *      exists on one branch leaves the other theme with a stale :root value).
- * Also self-tests the kebab converter so a no-op can't make (1) vacuous.
+ * It also asserts the keys ARE the final CSS names (lowercase --ot-*), so the
+ * camelCase intermediate naming that broke v1.0.29 can never come back.
  * Run: node tests/ot-var-names.mjs  (must exit 0)
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import { cssVarName, semanticCssVars } from '../src/renderer/src/theme/semantic.ts'
+import { semanticVars } from '../src/renderer/src/theme/semantic.ts'
 
 let failed = 0
 const ok = (cond, msg) => {
@@ -24,22 +25,28 @@ const ok = (cond, msg) => {
 }
 
 const ROOT = path.resolve('src/renderer/src')
-// The naming lives in semantic.ts (cssVarName) and is the SAME function
-// chrome.ts calls via semanticCssVars — so a regression there fails here.
+// Single naming system: semanticVars() keys ARE the custom property names, so
+// what chrome.ts writes is exactly what this test inspects.
 const names = (vars) => new Set(Object.keys(vars).filter((k) => k !== 'color-scheme'))
 
-// --- self-test: the converter must actually convert ------------------------
-console.log('cssVarName:')
-ok(cssVarName('textMuted') === '--ot-text-muted', 'textMuted -> --ot-text-muted')
-ok(cssVarName('dangerFg') === '--ot-danger-fg', 'dangerFg -> --ot-danger-fg')
-ok(cssVarName('text') === '--ot-text', 'text -> --ot-text (unchanged)')
-ok(cssVarName('colorScheme') === 'color-scheme', 'colorScheme -> color-scheme')
-
 // --- what JS emits, per branch ---------------------------------------------
-const darkVars = semanticCssVars({ background: '#1e1e1e', foreground: '#cccccc' }, false)
-const lightVars = semanticCssVars({ background: '#f6f8fa', foreground: '#383a42' }, true)
+const darkVars = semanticVars({ background: '#1e1e1e', foreground: '#cccccc' }, false)
+const lightVars = semanticVars({ background: '#f6f8fa', foreground: '#383a42' }, true)
 const darkNames = names(darkVars)
 const lightNames = names(lightVars)
+
+// --- self-test: the keys must BE the final CSS names ------------------------
+// Custom properties are case-sensitive: a camelCase key would never satisfy
+// var(--ot-text-muted), so a miss here is the silent-fallback regression.
+console.log('keys are final CSS names (lowercase --ot-*):')
+for (const [label, vars] of [['dark', darkVars], ['light', lightVars]]) {
+  const keys = Object.keys(vars).filter((k) => k !== 'color-scheme')
+  const bad = keys.filter((k) => !/^--ot-[a-z0-9-]+$/.test(k)).sort()
+  ok(bad.length === 0, `${label}: all ${keys.length} keys match /^--ot-[a-z0-9-]+$/${bad.length ? ` — bad: ${bad.join(', ')}` : ''}`)
+  ok(keys.length > 0, `${label}: emits names (guard is not vacuous)`)
+}
+ok(Object.keys(darkVars).some((k) => k === '--ot-text-muted'), 'multi-word name is kebab-case (--ot-text-muted)')
+ok(Object.keys(darkVars).some((k) => k === '--ot-danger-fg'), 'compound name is kebab-case (--ot-danger-fg)')
 
 console.log('branches emit the same key set:')
 const onlyDark = [...darkNames].filter((n) => !lightNames.has(n)).sort()

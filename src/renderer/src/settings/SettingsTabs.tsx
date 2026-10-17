@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
 import { Input, InputNumber, Radio, Select, Switch } from 'antd'
-import { UPDATE_CHECK_INTERVALS, type UpdateCheckInterval } from '@shared/settings'
+import { FONT_LIMITS, UPDATE_CHECK_INTERVALS, type UpdateCheckInterval } from '@shared/settings'
 import type { ThemeColors } from '@shared/theme'
 import { DEFAULT_LANGUAGE, LANGUAGES, t, type Language } from '@shared/i18n'
 import { isReservedAccelerator } from '@shared/reservedAccelerators'
+import { quoteFontStack } from '@renderer/terminal/fontStack'
 import { useSettingsStore, useResolvedTheme } from './store'
 import {
   DEFAULT_FONT_STACK,
@@ -15,10 +16,97 @@ import {
   weightOptions
 } from './fields'
 
+/**
+ * Glyphs that expose a proportional face: a narrow cluster and a wide cluster.
+ * Every one of them has to advance by the same width for the face to be usable
+ * in a terminal grid.
+ */
+const MONO_SAMPLE = 'i1l.,:;|Wm0@'
+
+/**
+ * Shared 2D context for the monospace probe. `measureText` is cheap, creating a
+ * canvas is not, and the probe runs once per system font on every mount of the
+ * font pane (the font list is only fetched on mount).
+ */
+let probeCtx: CanvasRenderingContext2D | null | undefined
+
+function probeContext(): CanvasRenderingContext2D | null {
+  if (probeCtx === undefined) {
+    probeCtx = document.createElement('canvas').getContext('2d')
+  }
+  return probeCtx
+}
+
+/**
+ * True when every sampled glyph advances by the same, non-zero width.
+ *
+ * Canvas silently falls back to a default face for a family it cannot resolve,
+ * and that fallback is proportional in practice, so a zero/failed measurement
+ * only ever costs a missing badge — never a wrong one.
+ */
+function isMonospaceFont(name: string): boolean {
+  const ctx = probeContext()
+  const stack = quoteFontStack(name)
+  if (!ctx || !stack) return false
+  ctx.font = `16px ${stack}`
+  let advance = 0
+  for (const ch of MONO_SAMPLE) {
+    const w = ctx.measureText(ch).width
+    if (!(w > 0)) return false
+    if (advance === 0) advance = w
+    else if (Math.abs(w - advance) > 0.01) return false
+  }
+  return advance > 0
+}
+
+/** Font dropdown row: the name drawn in its own face plus a monospace chip. */
+function FontOptionLabel({ name, mono }: { name: string; mono: boolean }): React.JSX.Element {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, maxWidth: '100%' }}>
+      <span
+        style={{
+          fontFamily: quoteFontStack(name),
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}
+      >
+        {name}
+      </span>
+      {mono && (
+        <span
+          title={t('settings.font.monoBadge')}
+          style={{
+            flex: '0 0 auto',
+            padding: '1px 4px',
+            borderRadius: 3,
+            fontSize: 10,
+            lineHeight: '14px',
+            background: 'var(--ot-focus-ring, rgba(59, 142, 234, 0.2))',
+            color: 'var(--ot-info, #58a6ff)'
+          }}
+        >
+          {t('settings.font.monoBadge')}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** Substring match on the option's family name, so a filter never touches the badge. */
+function filterFontOption(input: string, option?: { value?: unknown; searchText?: string }): boolean {
+  const needle = input.trim().toLowerCase()
+  if (!needle) return true
+  const text = option?.searchText ?? (typeof option?.value === 'string' ? option.value : '')
+  return text.toLowerCase().includes(needle)
+}
+
 export function FontSettingsTab(): React.JSX.Element {
   const settings = useSettingsStore((s) => s.settings)
   const updateTerminal = useSettingsStore((s) => s.updateTerminal)
   const theme = useResolvedTheme()
+  const fontFamily = settings.terminal.fontFamily
+  const cjkFontFamily = settings.terminal.cjkFontFamily ?? ''
 
   const [fonts, setFonts] = useState<string[]>([])
 
@@ -32,23 +120,30 @@ export function FontSettingsTab(): React.JSX.Element {
     return []
   })
 
+  /**
+   * Dropdown entries, monospace first. The probe runs once per font list (the
+   * list only changes when `listFonts()` resolves) and the sort is by the
+   * original index within each bucket, so equal fonts keep the OS order.
+   */
   const fontOptions = useMemo(() => {
     const seen = new Set<string>()
-    const items: Array<{ value: string; label: ReactNode }> = []
+    const mono: Array<{ value: string; label: ReactNode }> = []
+    const other: Array<{ value: string; label: ReactNode }> = []
     for (const f of fonts) {
       if (seen.has(f)) continue
       seen.add(f)
-      items.push({ value: f, label: <span style={{ fontFamily: f }}>{f}</span> })
+      const isMono = isMonospaceFont(f)
+      const item = { value: f, label: <FontOptionLabel name={f} mono={isMono} /> }
+      if (isMono) mono.push(item)
+      else other.push(item)
     }
-    return items
+    return [...mono, ...other]
   }, [fonts])
 
   /** map the persisted family to a recognized option value (default / system font / verbatim) */
   const selectedFont = (): string => {
-    const cur = settings.terminal.fontFamily
-    if (cur === DEFAULT_FONT_STACK) return 'default'
-    if (fonts.includes(cur)) return cur
-    return cur
+    if (fontFamily === DEFAULT_FONT_STACK) return 'default'
+    return fontFamily
   }
 
   const handleFontChange = (value: string): void => {
@@ -56,6 +151,18 @@ export function FontSettingsTab(): React.JSX.Element {
       fontFamily: value === 'default' ? DEFAULT_FONT_STACK : value
     })
   }
+
+  /** CJK fallback slot: '' means "append nothing"; otherwise a bare family name. */
+  const cjkOptions = [
+    { value: '', searchText: t('settings.font.cjkFamilyNone'), label: t('settings.font.cjkFamilyNone') },
+    ...fontOptions
+  ]
+
+  const previewFontStack = useMemo(() => {
+    // the store holds the resolved stack, but tolerate a 'default'/empty value
+    const base = !fontFamily || fontFamily === 'default' ? DEFAULT_FONT_STACK : fontFamily
+    return quoteFontStack([base, cjkFontFamily].filter(Boolean).join(', '))
+  }, [fontFamily, cjkFontFamily])
 
   return (
     <div className="settings-pane">
@@ -72,14 +179,27 @@ export function FontSettingsTab(): React.JSX.Element {
             options={[
               {
                 value: 'default',
+                searchText: t('settings.font.default'),
                 label: <span style={{ fontFamily: DEFAULT_FONT_STACK }}>{t('settings.font.default')}</span>
               },
               ...fontOptions
             ]}
-            filterOption={(input, option) =>
-              typeof option?.value === 'string' &&
-              option.value.toLowerCase().includes(input.toLowerCase())
-            }
+            filterOption={filterFontOption}
+          />
+        }
+      />
+      <SettingRow
+        label={t('settings.font.cjkFamily')}
+        desc={t('settings.font.cjkFamilyExtra')}
+        control={
+          <Select
+            className="settings-select"
+            showSearch
+            placeholder={t('settings.font.placeholder')}
+            value={cjkFontFamily}
+            onChange={(v: string) => void updateTerminal({ cjkFontFamily: v })}
+            options={cjkOptions}
+            filterOption={filterFontOption}
           />
         }
       />
@@ -89,8 +209,8 @@ export function FontSettingsTab(): React.JSX.Element {
         control={
           <InputNumber
             className="settings-input-number"
-            min={8}
-            max={40}
+            min={FONT_LIMITS.fontSize.min}
+            max={FONT_LIMITS.fontSize.max}
             value={settings.terminal.fontSize}
             onChange={(v) => {
               if (v !== null) void updateTerminal({ fontSize: v })
@@ -132,8 +252,8 @@ export function FontSettingsTab(): React.JSX.Element {
         control={
           <InputNumber
             className="settings-input-number"
-            min={0}
-            max={10}
+            min={FONT_LIMITS.letterSpacing.min}
+            max={FONT_LIMITS.letterSpacing.max}
             step={0.5}
             value={settings.terminal.letterSpacing}
             onChange={(v) => {
@@ -148,8 +268,8 @@ export function FontSettingsTab(): React.JSX.Element {
         control={
           <InputNumber
             className="settings-input-number"
-            min={0.8}
-            max={2}
+            min={FONT_LIMITS.lineHeight.min}
+            max={FONT_LIMITS.lineHeight.max}
             step={0.05}
             value={settings.terminal.lineHeight}
             onChange={(v) => {
@@ -160,7 +280,7 @@ export function FontSettingsTab(): React.JSX.Element {
       />
 
       <TerminalPreview
-        fontFamily={settings.terminal.fontFamily}
+        fontFamily={previewFontStack}
         fontSize={settings.terminal.fontSize}
         fontWeight={settings.terminal.fontWeight}
         lineHeight={settings.terminal.lineHeight}
@@ -656,13 +776,27 @@ function TerminalPreview({
       <span style={{ color: colors.green }}>index.ts</span>
     </span>,
     <span>
+      <span style={{ color: colors.red }}>-rw-r--r--</span>{' '}
+      <span style={{ color: colors.brightBlack }}>1 bill users 1024 10月 17 09:30</span>{' '}
+      <span style={{ color: colors.brightBlue }}>会议记录.md</span>
+    </span>,
+    <span>
+      <span style={{ color: colors.green }}>✓ </span>
+      <span style={{ color: colors.white }}>构建完成，耗时 3.2s</span>
+    </span>,
+    <span>
+      <span style={{ color: colors.brightBlack }}>正在编译 </span>
+      <span style={{ color: colors.yellow }}>src/组件/终端视图.tsx</span>
+      <span style={{ color: colors.white }}> …</span>
+    </span>,
+    <span>
       <span style={{ color: colors.brightCyan }}>
         bill@desktop:~$ _
       </span>
     </span>
   ]
   const gridStyle: React.CSSProperties = {
-    fontFamily,
+    fontFamily: quoteFontStack(fontFamily),
     fontSize,
     fontWeight,
     lineHeight,

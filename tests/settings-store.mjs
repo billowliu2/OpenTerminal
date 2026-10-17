@@ -20,6 +20,7 @@ import { mkdtempSync, readFileSync, existsSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
+import { DEFAULT_HIGHLIGHT_RULES } from '../src/shared/settings.ts'
 
 const require = createRequire(import.meta.url)
 const userData = mkdtempSync(join(tmpdir(), 'ot-settings-'))
@@ -58,6 +59,33 @@ for (const action of ['tray', 'exit', 'ask']) {
 {
   const back = (await roundTrip({ system: { ...store.loadSettings().system, closeAction: 'nonsense' } })).system.closeAction
   ok(back === 'tray', `unknown closeAction falls back to 'tray' (got '${back}')`)
+}
+
+// ---- 1b. numeric font settings are clamped on load ---------------------------
+// xterm's constructor THROWS on lineHeight < 1 and the throw unmounts the whole
+// dockview pane. The value is persisted, so one bad entry bricked every start
+// until the file was hand-edited. The sanitizer must repair it instead.
+console.log('[font settings clamp]')
+{
+  const term = store.loadSettings().terminal
+  for (const [key, bad, want] of [
+    ['lineHeight', 0.85, 1],
+    ['lineHeight', 0.95, 1],
+    ['lineHeight', 9, 2],
+    ['fontSize', 4, 8],
+    ['fontSize', 99, 40],
+    ['letterSpacing', -3, 0],
+    ['letterSpacing', 50, 10]
+  ]) {
+    const back = (await roundTrip({ terminal: { ...term, [key]: bad } })).terminal[key]
+    ok(back === want, `${key} ${bad} is clamped to ${want} on load (got ${back})`)
+  }
+  // A legal value must survive untouched — the clamp is not a reset.
+  const legal = (await roundTrip({ terminal: { ...term, lineHeight: 1.35, fontSize: 18, letterSpacing: 1.5 } })).terminal
+  ok(
+    legal.lineHeight === 1.35 && legal.fontSize === 18 && legal.letterSpacing === 1.5,
+    'legal font values are preserved verbatim'
+  )
 }
 
 // ---- 2. highlight-rule repair ----------------------------------------------
@@ -178,6 +206,51 @@ console.log('[value bands]')
   ok(dropped.length === 1 && dropped[0].basic === undefined, 'a non-boolean basic flag is dropped')
 }
 {
+  // lineAnchor: a rule anchored per line must come back still anchored, and a
+  // rule that never opted in must stay absent (not `false`) so settings.json
+  // stays compact.
+  const kept = (await roundTrip({ highlightRules: [rule({ lineAnchor: true })] })).highlightRules
+  ok(kept.length === 1 && kept[0].lineAnchor === true, 'a line-anchored rule keeps its flag')
+  const absent = (await roundTrip({ highlightRules: [rule()] })).highlightRules
+  ok(absent.length === 1 && absent[0].lineAnchor === undefined, 'a rule without the flag keeps it undefined')
+  const dropped = (await roundTrip({ highlightRules: [rule({ lineAnchor: 'yes' })] })).highlightRules
+  ok(
+    dropped.length === 1 && dropped[0].lineAnchor === undefined,
+    'a non-boolean lineAnchor flag is dropped'
+  )
+}
+{
+  // notify (per-rule "alert on hit"): same shape as lineAnchor — `true` survives,
+  // absent stays absent, anything non-boolean is dropped rather than coerced.
+  const kept = (await roundTrip({ highlightRules: [rule({ notify: true })] })).highlightRules
+  ok(kept.length === 1 && kept[0].notify === true, 'a notify rule keeps its flag')
+  const absent = (await roundTrip({ highlightRules: [rule()] })).highlightRules
+  ok(absent.length === 1 && absent[0].notify === undefined, 'a rule without the flag keeps it undefined')
+  const dropped = (await roundTrip({ highlightRules: [rule({ notify: 'yes' })] })).highlightRules
+  ok(
+    dropped.length === 1 && dropped[0].notify === undefined,
+    'a non-boolean notify flag is dropped'
+  )
+  // An explicit `false` is indistinct from absent after a save: the sanitizer
+  // normalises it away so settings.json never grows a dead key.
+  const off = (await roundTrip({ highlightRules: [rule({ notify: false })] })).highlightRules
+  ok(off.length === 1 && off[0].notify === undefined, 'notify: false is normalised to undefined')
+}
+{
+  // The preset rule set ships `secret` with the alert on (a leaked key is what
+  // the feature exists for) and nothing else flagged. Read from the preset
+  // constant rather than from disk: the user's stored set may legitimately have
+  // the flag off (see the upgrade note in the report), so this asserts the ship
+  // default, not the loaded result.
+  const flagged = DEFAULT_HIGHLIGHT_RULES.filter((r) => r.notify === true).map((r) => r.id)
+  ok(
+    flagged.length === 1 && flagged[0] === 'secret',
+    `only the secret preset notifies by default (got ${flagged.join(',')})`
+  )
+  const secret = DEFAULT_HIGHLIGHT_RULES.find((r) => r.id === 'secret')
+  ok(secret?.basic === true && secret?.notify === true, 'the secret preset notifies in both highlight modes')
+}
+{
   for (const on of [true, false]) {
     const back = await roundTrip({
       terminal: { ...store.loadSettings().terminal, highlightStats: on }
@@ -195,6 +268,26 @@ console.log('[value bands]')
       `tab close confirm switches '${on}' survive the round trip`
     )
   }
+}
+{
+  // cjkFontFamily: the CJK fallback slot appended to the font stack. Empty is
+  // the default (append nothing, unchanged behaviour); a real family name and
+  // a non-string — the settings file is hand-editable, and a number here would
+  // otherwise reach `appendCjk` and be concatenated into the stack as text.
+  ok(store.loadSettings().terminal.cjkFontFamily === '', 'the CJK fallback defaults to empty')
+  for (const cjk of ['Microsoft YaHei', "'Noto Sans CJK SC'", '']) {
+    const back = await roundTrip({
+      terminal: { ...store.loadSettings().terminal, cjkFontFamily: cjk }
+    })
+    ok(back.terminal.cjkFontFamily === cjk, `CJK fallback '${cjk}' survives the round trip`)
+  }
+  const dropped = await roundTrip({
+    terminal: { ...store.loadSettings().terminal, cjkFontFamily: 42 }
+  })
+  ok(
+    dropped.terminal.cjkFontFamily === '',
+    `a non-string CJK fallback is dropped back to empty (got '${dropped.terminal.cjkFontFamily}')`
+  )
 }
 {
   const rules = [rule({ id: 'keep-1' }), rule({ id: 'keep-2' })]

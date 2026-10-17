@@ -12,7 +12,7 @@ import type { HighlightRule } from '@shared/settings'
 
 export interface CompiledRule {
   id: string
-  /** compiled with the 'g' flag (plus 'i' for case-insensitive rules) */
+  /** compiled with the 'g' flag (plus 'i'/'m' when the rule asks for them) */
   regex: RegExp
   /** hex fg, e.g. "#3fb950" — kept for introspection; `open` is precomputed from it */
   fg: string
@@ -42,6 +42,21 @@ export interface RuleStat {
  */
 export type StatsSink = Map<string, RuleStat>
 
+/**
+ * Optional outlet for *match events*: called once per span the engine actually
+ * paints, with the owning rule's id and the matched text.
+ *
+ * "Actually paints" is the whole contract — a match another rule claimed first,
+ * one dropped by the per-rule budget, and a line skipped for being over
+ * MAX_LINE_LEN all report nothing, so a consumer never sees a hit that is not
+ * visible on screen. `text` is the raw matched substring: consumers that show
+ * something to the user must not render it (for the secret rule it *is* the
+ * secret); it is there for consumers that only need a shape or a length.
+ *
+ * Undefined on the default path: the engine skips the call entirely.
+ */
+export type MatchListener = (ruleId: string, text: string) => void
+
 type Token = { kind: 'seq' | 'text'; value: string }
 /** A claimed span carries its precomputed SGR open sequence, never a hex colour. */
 type Span = { start: number; end: number; open: string }
@@ -62,22 +77,38 @@ type Span = { start: number; end: number; open: string }
  *    the leading bytes of a longer sequence.
  */
 const ESCAPE_RE =
-  /(\x1b\[[0-9;:?]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[=>]|\x1b[0-9:;<?@A-OQ-WYZ\\`a-z{|}~])/g
+  /(\x1b\[[0-9;:?<>=]*[ -/]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[=>]|\x1b[0-9:;<?@A-OQ-WYZ\\`a-z{|}~])/g
 
 /** Matches a single rule may inject per chunk (bomb guard). */
 const MAX_PER_RULE = 300
 /** Chunks larger than this are returned unmodified (budget guard). */
 const MAX_CHUNK = 512 * 1024
 /**
- * Longest newline-free segment of a plain-text run a user rule is applied to.
+ * Longest line a user rule is applied to.
  * MAX_PER_RULE bounds the match *count*, not a pattern's backtracking *cost*:
  * a pathological pattern like `(a+)+b` walks the whole line before the count
- * can stop it, which freezes the renderer on one very long line. A run holding
- * such a line is passed through unhighlighted — ordinary output (many short
- * lines, whatever the chunk size) is unaffected, since the bound is per line,
- * not per run.
+ * can stop it, which freezes the renderer on one very long line. Ordinary
+ * output (many short lines, whatever the chunk size) is unaffected, since the
+ * bound is per line, not per run.
+ *
+ * A run whose lines are all short is scanned whole, which is what lets rules
+ * match across a newline (`\\n/tmp` for the path rule, `^`-anchored presets at
+ * every line start). Only when the run holds an over-long line does `applyRun`
+ * degrade to line-at-a-time scanning: each short line is still scanned, the
+ * over-long one is passed through raw, and cross-line matches are given up for
+ * that run alone — one base64 blob or minified JSON no longer costs the rest
+ * of the run its highlighting.
  */
 const MAX_LINE_LEN = 4 * 1024
+
+/**
+ * Longest user pattern accepted. This is NOT a backtracking defence — a 30-char
+ * `(a+)+$` already burns ~8s on 30 chars (`MAX_LINE_LEN` bounds length, not
+ * cost) — it bounds the damage a stored rule can do and keeps the editor's
+ * live preview from freezing on a paste. Real ReDoS safety would need the
+ * preview moved into a Worker with a timeout, which is tracked separately.
+ */
+export const MAX_PATTERN_LEN = 500
 
 /** "#rrggbb" or 3-digit "#rgb" → {r,g,b}; any malformed input → white. */
 export function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -116,6 +147,11 @@ export function tokenize(input: string): Token[] {
   return out
 }
 
+/** Flags a rule compiles with: global, plus `i` / `m` when the rule opts in. */
+function flagsFor(rule: HighlightRule): string {
+  return `g${rule.caseInsensitive === true ? 'i' : ''}${rule.lineAnchor === true ? 'm' : ''}`
+}
+
 /** Compile only enabled + safely-compilable rules, sorted by priority asc. */
 export function compileRules(rules: HighlightRule[]): CompiledRule[] {
   const out: CompiledRule[] = []
@@ -123,12 +159,17 @@ export function compileRules(rules: HighlightRule[]): CompiledRule[] {
     if (!rule || rule.enabled === false) continue
     const pattern = rule.pattern
     if (typeof pattern !== 'string' || pattern.length === 0) continue
+    // Bounded like the other per-rule guards: a huge pattern only costs compile
+    // time, but it also means someone pasted a blob into the editor.
+    if (pattern.length > MAX_PATTERN_LEN) continue
     let regex: RegExp
     try {
-      // 'g' always; 'i' when the rule asks for case-insensitive matching.
+      // 'g' always; 'i' when the rule asks for case-insensitive matching; 'm'
+      // when it asks for per-line anchoring, so `^ERROR$` fires on each line of
+      // a multi-line run instead of only on the run's first/last line.
       // Lookbehinds (used by the preset success rule to leave `not ok` alone)
       // need no special handling — they are plain V8 regex syntax.
-      regex = new RegExp(pattern, rule.caseInsensitive === true ? 'gi' : 'g')
+      regex = new RegExp(pattern, flagsFor(rule))
     } catch {
       continue // invalid pattern → silently skip
     }
@@ -168,9 +209,113 @@ function compileBands(bands: HighlightRule['bands'], bgPart: string): CompiledRu
   return kept
 }
 
-/** Wrap one plain-text span with its precomputed SGR open sequence. */
-function wrap(text: string, open: string): string {
-  return `${open}${text}\x1b[0m`
+/**
+ * SGR sequences replayed after a highlight span, so the span never disturbs the
+ * colours the *application* had active when it emitted the text.
+ *
+ * `wrap` closes a span with a reset; without a restore that reset also wipes
+ * whatever SGR the application set earlier in the stream, so
+ * `\x1b[33mWARNING tail` came back with `tail` in the default colour instead of
+ * the application's yellow. A CSI is only replayed when its final byte is `m`
+ * (SGR): cursor moves, OSC titles and the rest are state from another axis and
+ * replaying them would move the cursor or reset the title a second time.
+ */
+const SGR_ONLY_RE = /\x1b\[[0-9:;<=>?]*m/g
+
+/**
+ * Cap on the accumulated restore string. Applications that repaint every cell
+ * emit thousands of SGRs between resets; replaying all of them after *every*
+ * span would multiply the chunk size by the span count. Past the cap the
+ * restore is dropped (plain reset), which is the pre-fix behaviour — bounded
+ * output matters more than an exact colour in that extreme.
+ */
+const MAX_RESTORE_LEN = 256
+
+/**
+ * Replay budget per span, counted in SEQUENCES rather than bytes. The restore
+ * string is repeated for EVERY span in the run, so its real cost is
+ * (state size x spans): on Kimi-style TUI output (~19 spans/line) an unbounded
+ * restore inflated a 9.5KB chunk to 40.8KB (4.30x, vs 2.78x without it), and the
+ * renderer froze for 18.4s. Bytes are the wrong unit though — one foreground
+ * colour is `ESC[31m` (5B), `ESC[38;5;196m` (11B) or `ESC[38;2;r;g;bm` (up to
+ * 19B), so a byte cap silently kept indexed colours working while dropping
+ * truecolor. Counting sequences treats those three identically: replay the
+ * state when it is a couple of attributes, drop it when the application is
+ * stacking a whole paint job per cell.
+ */
+const MAX_REPLAY_SEQUENCES = 3
+
+/**
+ * The application's active SGR state: every `…m` CSI emitted since the last
+ * reset, concatenated in order (`''` when the application has set none).
+ *
+ * It is tracked by `applyHighlights` and, crucially, *shared across chunks* by
+ * `HighlightStream`: a push that ends mid-stream leaves the colours set by
+ * earlier pushes in force for the next one, exactly as the terminal sees them.
+ * Without that, streamed output would only restore the colours set inside the
+ * same chunk and split-vs-whole output would diverge.
+ */
+class SgrState {
+  private value = ''
+  private count = 0
+
+  /** SGR state on entering the next text run (see `wrap`). Empty when the
+   *  accumulated chain is too long to replay profitably: every span would pay
+   *  for it, and a per-cell repainting TUI emits dozens of spans per line. */
+  get restore(): string {
+    return this.count > 0 && this.count <= MAX_REPLAY_SEQUENCES ? this.value : ''
+  }
+
+  /** Fold one escape-sequence token in; non-SGR tokens leave the state alone. */
+  absorb(token: string): void {
+    if (!token.endsWith('m') || token.charCodeAt(0) !== 0x1b) return
+    // A reset is any SGR whose parameters are all zero or empty — ECMA-48 says
+    // `ESC[m`, `ESC[0m`, `ESC[00m`, `ESC[0;0m` and friends all mean "reset
+    // everything". Matching only the two canonical spellings let the others be
+    // *appended* to the accumulator instead of clearing it, so the state grew a
+    // few bytes per line until it blew MAX_RESTORE_LEN and every later span lost
+    // its restore. `ESC[0;32m` (a reset plus a colour, common in Go/Java log
+    // libraries) must clear the state first and then record the new colour.
+    SGR_ONLY_RE.lastIndex = 0
+    let m: RegExpExecArray | null
+    // A token may hold several sequences; only the SGR ones are replayed.
+    while ((m = SGR_ONLY_RE.exec(token)) !== null) {
+      const seq = m[0]
+      const params = seq.slice(2, -1)
+      const resets = params === '' || /^[0;:]*$/.test(params)
+      if (resets) {
+        this.value = ''
+        this.count = 0
+        continue
+      }
+      // `ESC[0;32m` starts with a reset parameter: drop what came before it.
+      const afterReset = /^0+[;:](.*)$/.exec(params)
+      if (afterReset) {
+        this.value = ''
+        this.count = 0
+      }
+      this.value += seq
+      this.count += 1
+      if (this.value.length > MAX_RESTORE_LEN) {
+        // Too much state to replay economically: fall back to a plain reset
+        // rather than inflating every span by hundreds of bytes. Per-cell
+        // repainters (TUI frames) hit this constantly, and repeating the whole
+        // chain after each span multiplies chunk size by the span count.
+        this.value = ''
+        this.count = 0
+        return
+      }
+    }
+  }
+}
+
+/**
+ * Wrap one plain-text span in its precomputed SGR open sequence.
+ * `restore` is the application's SGR state on entering the run ('' when it had
+ * none), replayed after the reset so the span leaves the screen as it found it.
+ */
+function wrap(text: string, open: string, restore: string): string {
+  return `${open}${text}${restore === '' ? '\x1b[0m' : `\x1b[0m${restore}`}`
 }
 
 /**
@@ -236,23 +381,73 @@ function hasLongLine(text: string): boolean {
   }
 }
 
-/**
- * Apply all rules to a single plain-text run. Consumes from `budgets` (per-rule
- * remaining match allowance shared across the whole chunk). Returns the
- * SGR-injected text. With a global budget of zero for every rule the run is
- * returned untouched, as is a run holding an over-long line (see MAX_LINE_LEN).
- */
 /** Millisecond clock for the optional stats sink; `performance` when present. */
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
-function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?: StatsSink, spent?: { n: number }): string {
+/**
+ * Apply all rules to a single plain-text run. Consumes from `budgets` (per-rule
+ * remaining match allowance shared across the whole chunk). Returns the
+ * SGR-injected text.
+ *
+ * Two layers:
+ *  - every line short (the normal case): the whole run is scanned in one pass,
+ *    so a rule can match across a newline — untouched from before.
+ *  - any line over MAX_LINE_LEN: degrade to scanning line by line, so the
+ *    over-long line alone goes through raw while its short neighbours still
+ *    highlight. Cross-line matches are given up for that run, which is the
+ *    price of never handing a >4KB line to a user pattern.
+ */
+function applyRun(
+  text: string,
+  rules: CompiledRule[],
+  budgets: number[],
+  restore: string,
+  stats?: StatsSink,
+  spent?: { n: number },
+  onMatch?: MatchListener
+): string {
   if (text.length === 0) {
     if (spent !== undefined) spent.n = 0
     return ''
   }
-  if (hasLongLine(text)) {
+  if (!hasLongLine(text)) return applyShortRun(text, rules, budgets, restore, stats, spent, onMatch)
+
+  let made = 0
+  let out = ''
+  // `\n` slices exactly, so joining the parts back reproduces the run byte for
+  // byte whatever happens to each line.
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    if (i > 0) out += '\n'
+    const line = lines[i]
+    if (line.length > MAX_LINE_LEN) {
+      out += line // too long to hand to a user pattern — passed through raw
+      continue
+    }
+    const runSpent = { n: 0 }
+    out += applyShortRun(line, rules, budgets, restore, stats, runSpent, onMatch)
+    made += runSpent.n
+  }
+  if (spent !== undefined) spent.n = made
+  return out
+}
+
+/**
+ * Scan one run that is known to be free of over-long lines. `restore` is the
+ * application's SGR state on entering the run (see `wrap`).
+ */
+function applyShortRun(
+  text: string,
+  rules: CompiledRule[],
+  budgets: number[],
+  restore: string,
+  stats?: StatsSink,
+  spent?: { n: number },
+  onMatch?: MatchListener
+): string {
+  if (text.length === 0) {
     if (spent !== undefined) spent.n = 0
-    return text
+    return ''
   }
   const claimed: Span[] = []
   let totalMade = 0
@@ -275,6 +470,10 @@ function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?
         made++
         totalMade++
         budgets[ri]--
+        // Report only what will actually paint: `claim` returning true is the
+        // single point where a span becomes visible, so a stolen span, an
+        // exhausted budget and a skipped over-long line all stay silent here.
+        if (onMatch !== undefined) onMatch(rule.id, m[0])
         if (budgets[ri] <= 0) break
       }
       if (rule.regex.lastIndex === start) rule.regex.lastIndex++ // hard anti-recurse
@@ -289,11 +488,34 @@ function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?
   if (spent !== undefined) spent.n = totalMade
   if (claimed.length === 0) return text
   // `claim` keeps the spans sorted by start — no final sort needed here.
+  //
+  // `restore` is paid per span and its cost is the whole point of the budget:
+  // on a dense TUI line (Kimi emits ~19 spans/line) replaying it after every
+  // span inflated a 9.5KB chunk to 40.8KB (4.30x vs 2.78x), which froze the
+  // renderer for 18.4s. Two rules keep the colour where it is visible and skip
+  // it where it is not:
+  //   - after the LAST span it always pays (that text runs to the next escape),
+  //   - between spans it only pays when the gap is worth seeing — a gap of a
+  //     space or two between two coloured words reads as separation either way.
+  // Gaps are measured on visible characters, and a long one (a mostly-plain line
+  // with a couple of matches) gets its colour back.
+  const MIN_GAP_FOR_RESTORE = 3
   let out = ''
   let pos = 0
-  for (const c of claimed) {
-    if (c.start > pos) out += text.slice(pos, c.start)
-    out += wrap(text.slice(c.start, c.end), c.open)
+  const last = claimed.length - 1
+  for (let i = 0; i <= last; i++) {
+    const c = claimed[i]
+    if (c.start > pos) {
+      const gap = text.slice(pos, c.start)
+      // The gap between two spans carries the application's colour only if the
+      // previous span restored it. Restoring is worth it for a visible gap (a
+      // mostly-plain line with a couple of matches); a one- or two-character gap
+      // between two coloured words reads the same either way, and skipping it
+      // keeps dense TUI lines from being inflated span-by-span.
+      const restoreGap = i > 0 && gap.length >= MIN_GAP_FOR_RESTORE
+      out += restoreGap ? `${restore}${gap}` : gap
+    }
+    out += wrap(text.slice(c.start, c.end), c.open, i === last ? restore : '')
     pos = c.end
   }
   if (pos < text.length) out += text.slice(pos)
@@ -305,12 +527,30 @@ function applyRun(text: string, rules: CompiledRule[], budgets: number[], stats?
  * there are no enabled rules, the chunk is empty, or it exceeds the budget.
  * With a `stats` sink attached, per-rule hit counts and scan times are added to
  * it — the settings page's stats view is the only caller that passes one.
+ *
+ * `sgr` carries the application's SGR state. It is optional: a one-shot caller
+ * (the settings preview) leaves it out and starts from "nothing set", while
+ * `HighlightStream` threads one instance through every chunk so a colour set in
+ * an earlier chunk is still restored in a later one.
+ *
+ * `onMatch` (see `MatchListener`) is the match-event outlet. Undefined on the
+ * default path — the check happens once inside the scan loop, per claimed span,
+ * so a caller that does not ask for events pays one `!== undefined` test per
+ * coloured span and nothing else. No de-duplication or rate limiting happens
+ * here: a rule that matched 200 times reports 200 times, and pacing is the
+ * consumer's business.
  */
-export function applyHighlights(chunk: string, rules: CompiledRule[], stats?: StatsSink): string {
+export function applyHighlights(
+  chunk: string,
+  rules: CompiledRule[],
+  stats?: StatsSink,
+  sgr: SgrState = new SgrState(),
+  onMatch?: MatchListener
+): string {
   if (!chunk || rules.length === 0) return chunk
   if (chunk.length > MAX_CHUNK) return chunk
 
-  let budgets = rules.map(() => MAX_PER_RULE)
+  const budgets = rules.map(() => MAX_PER_RULE)
   let usedBudget = false
   let out = ''
   // applyRun reports how many matches it claimed, replacing the old two
@@ -319,6 +559,7 @@ export function applyHighlights(chunk: string, rules: CompiledRule[], stats?: St
   for (const token of tokenize(chunk)) {
     if (token.kind === 'seq') {
       out += token.value
+      sgr.absorb(token.value)
       continue
     }
     // Double insurance: a residual raw ESC that somehow survives tokenization is
@@ -328,7 +569,9 @@ export function applyHighlights(chunk: string, rules: CompiledRule[], stats?: St
       continue
     }
     spent.n = 0
-    out += applyRun(token.value, rules, budgets, stats, spent)
+    // The state is read per run: a run's spans restore whatever was active when
+    // the run began, which is what the application had on screen at that point.
+    out += applyRun(token.value, rules, budgets, sgr.restore, stats, spent, onMatch)
     if (spent.n > 0) usedBudget = true
   }
   return usedBudget ? out : chunk
@@ -436,12 +679,20 @@ const MAX_CARRY = 1024
 export class HighlightStream {
   private rules: CompiledRule[]
   private stats?: StatsSink
+  private onMatch?: MatchListener
   private buffer = ''
   /** Whether `buffer` holds any ESC — lets push skip the O(buffer) escape scans on escape-free floods. */
   private bufferHasEsc = false
+  /**
+   * The application's SGR state, kept for the lifetime of the stream: a colour
+   * set in one chunk stays in force for the next, so split output restores the
+   * same sequences as single-chunk output.
+   */
+  private sgr = new SgrState()
 
-  constructor(rules: CompiledRule[]) {
+  constructor(rules: CompiledRule[], onMatch?: MatchListener) {
     this.rules = rules
+    this.onMatch = onMatch
   }
 
   /** Swap the active rules without touching any buffered content. */
@@ -454,12 +705,25 @@ export class HighlightStream {
     this.stats = stats
   }
 
+  /** Attach or drop the match-event outlet (see `MatchListener`). */
+  setOnMatch(onMatch: MatchListener | undefined): void {
+    this.onMatch = onMatch
+  }
+
   /** True while content is held back (a pending flush will release it). */
   hasPending(): boolean {
     return this.buffer.length > 0
   }
 
-  /** Join held bytes with `chunk`, return content safe to hand to xterm. */
+  /**
+   * Join held bytes with `chunk`, return content safe to hand to xterm.
+   *
+   * Every `applyHighlights` call below passes the same `onMatch`, so a match
+   * reports exactly once no matter which path (fast text path, incomplete-escape
+   * carry, closed-escape split) happened to release the bytes — a rule whose
+   * span straddles a chunk boundary still reports when it is finally painted,
+   * which is the property `hl-split-smoke` guards for the output bytes.
+   */
   push(chunk: string): string {
     // Fast path: neither the held text nor the new chunk contains a single ESC,
     // so findIncompleteIndex/lastEscapeEnd would both come back -1. Skip their
@@ -471,7 +735,7 @@ export class HighlightStream {
       if (this.buffer.length > MAX_CHUNK) {
         const raw = this.buffer
         this.buffer = ''
-        return applyHighlights(raw, this.rules, this.stats)
+        return applyHighlights(raw, this.rules, this.stats, this.sgr, this.onMatch)
       }
       return ''
     }
@@ -487,11 +751,11 @@ export class HighlightStream {
         // the fragment raw (applyHighlights skips raw \x1b in text runs).
         this.buffer = ''
         this.bufferHasEsc = false
-        return applyHighlights(head, this.rules, this.stats) + tail
+        return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch) + tail
       }
       this.buffer = tail
       this.bufferHasEsc = true // the held tail starts at the dangling ESC
-      return applyHighlights(head, this.rules, this.stats)
+      return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch)
     }
 
     // (b) no incomplete escape -> find the last *closed* escape and emit only
@@ -504,7 +768,7 @@ export class HighlightStream {
         const raw = this.buffer
         this.buffer = ''
         this.bufferHasEsc = false
-        return applyHighlights(raw, this.rules, this.stats)
+        return applyHighlights(raw, this.rules, this.stats, this.sgr, this.onMatch)
       }
       // The buffer (or the chunk that just joined it) brought the ESC in.
       this.bufferHasEsc = true
@@ -513,7 +777,7 @@ export class HighlightStream {
     const head = this.buffer.slice(0, lastEnd)
     this.buffer = this.buffer.slice(lastEnd)
     this.bufferHasEsc = this.buffer.includes('\x1b')
-    return applyHighlights(head, this.rules, this.stats)
+    return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch)
   }
 
   /** Flush any held content (session end) — highlighted as a final run. */
@@ -521,7 +785,7 @@ export class HighlightStream {
     const b = this.buffer
     this.buffer = ''
     this.bufferHasEsc = false
-    return applyHighlights(b, this.rules, this.stats)
+    return applyHighlights(b, this.rules, this.stats, this.sgr, this.onMatch)
   }
 }
 

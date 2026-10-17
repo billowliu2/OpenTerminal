@@ -23,14 +23,14 @@ ok(isLightTheme('#282a36') === false, '#282a36 is dark')
 
 console.log('dark branch locks anchors (zero regression):')
 const dark = semanticVars({ background: '#1e1e1e', foreground: '#cccccc' }, false)
-ok(dark['textMuted'] === SEMANTIC.muted, 'textMuted = anchor')
-ok(dark['success'] === SEMANTIC.success, 'success = anchor')
-ok(dark['danger'] === SEMANTIC.danger, 'danger = anchor')
-ok(dark['warning'] === SEMANTIC.warning, 'warning = anchor')
-ok(dark['info'] === SEMANTIC.info, 'info = anchor')
-ok(dark['scrollbar'] === SEMANTIC.scrollbar, 'scrollbar = anchor')
-ok(dark['shadow'] === SEMANTIC.shadow, 'shadow = anchor')
-ok(dark['colorScheme'] === 'dark', 'colorScheme dark')
+ok(dark['--ot-text-muted'] === SEMANTIC.muted, '--ot-text-muted = anchor')
+ok(dark['--ot-success'] === SEMANTIC.success, '--ot-success = anchor')
+ok(dark['--ot-danger'] === SEMANTIC.danger, '--ot-danger = anchor')
+ok(dark['--ot-warning'] === SEMANTIC.warning, '--ot-warning = anchor')
+ok(dark['--ot-info'] === SEMANTIC.info, '--ot-info = anchor')
+ok(dark['--ot-scrollbar'] === SEMANTIC.scrollbar, '--ot-scrollbar = anchor')
+ok(dark['--ot-shadow'] === SEMANTIC.shadow, '--ot-shadow = anchor')
+ok(dark['color-scheme'] === 'dark', 'color-scheme dark')
 
 console.log('light branch meets ratios:')
 for (const bg of ['#f6f8fa', '#fafafa', '#fdf6e3']) {
@@ -44,13 +44,13 @@ for (const bg of ['#f6f8fa', '#fafafa', '#fdf6e3']) {
     const x = L(a), y = L(b)
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
   }
-  for (const key of ['textMuted', 'textSecondary', 'successFg', 'dangerFg', 'warningFg', 'infoFg']) {
+  for (const key of ['--ot-text-muted', '--ot-text-secondary', '--ot-success-fg', '--ot-danger-fg', '--ot-warning-fg', '--ot-info-fg']) {
     ok(cr(v[key], bg) >= 4.5, `${bg} ${key} ${v[key]} >= 4.5 (${cr(v[key], bg).toFixed(2)})`)
   }
-  for (const key of ['success', 'danger', 'warning', 'info']) {
+  for (const key of ['--ot-success', '--ot-danger', '--ot-warning', '--ot-info']) {
     ok(cr(v[key], bg) >= 3, `${bg} ${key} ${v[key]} >= 3.0 (${cr(v[key], bg).toFixed(2)})`)
   }
-  ok(v['colorScheme'] === 'light', `${bg} colorScheme light`)
+  ok(v['color-scheme'] === 'light', `${bg} color-scheme light`)
 }
 
 if (failed > 0) {

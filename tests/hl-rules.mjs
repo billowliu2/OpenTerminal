@@ -12,7 +12,7 @@
  *     --outfile=tests/.hl-rules.cjs --alias:@shared=./src/shared
  *   node tests/hl-rules.mjs
  */
-import { compileRules, applyHighlights, __testHooks as hooks } from '../src/renderer/src/terminal/highlightEngine.ts'
+import { compileRules, applyHighlights, HighlightStream, __testHooks as hooks } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { previewSpans } from '../src/renderer/src/terminal/highlightEngine.ts'
 import { DEFAULT_HIGHLIGHT_RULES } from '../src/shared/settings.ts'
 import {
@@ -805,6 +805,408 @@ console.log('[escape sequences]')
   ok(hooks.isIncompleteEscape('\x1b7') === false, 'a complete two-byte Fe escape is complete')
   ok(hooks.findIncompleteIndex('DONE \x1bP0;1;0qcut') === 5, 'the stream holds from the DCS initiator')
   ok(hooks.findIncompleteIndex('DONE \x1b7') === -1, 'a trailing DECSC is not held as incomplete')
+}
+
+// ---- 20. linux permission strings (ls -l) ----------------------------------
+console.log('[permissions]')
+{
+  // A multi-line ls -l dump arrives as one text run: every line's mode string
+  // must light up, not just the first. The old `^` pattern anchored the run
+  // start, so line two and down came back uncoloured.
+  const lsDump = '-rw-r--r-- 1 root root 10 x\n-rwxr-xr-x 1 root root 20 y\n'
+  ok(colored(lsDump, OK_GREEN, '-rw-r--r--'), 'the first line\'s mode string highlights')
+  ok(
+    colored(lsDump, OK_GREEN, '-rwxr-xr-x'),
+    'the second line\'s mode string highlights too (no run-start anchoring)'
+  )
+
+  // A coloured prompt cuts the run at the escape, so the mode string no longer
+  // starts the run: the lookbehind must accept the surrounding space instead.
+  ok(
+    colored('\x1b[32m$\x1b[0m -rw-r--r-- 1 a b\n', OK_GREEN, '-rw-r--r--'),
+    'a mode string right after an escape sequence highlights'
+  )
+
+  // ...but glued to a word it is not a permission string at all.
+  ok(
+    !colored('x-rw-r--r--y something', OK_GREEN, '-rw-r--r--'),
+    'a non-space character in front of the mode string keeps it plain'
+  )
+
+  // and a longer-than-10 mode string must not be clipped to its first ten
+  // characters and highlighted.
+  ok(
+    !applyHighlights('drwxr-xr-xr-x file', rules).includes(`${sgr(OK_GREEN)}drwxr-xr-x\x1b[0m`),
+    'an eleven-character mode string is not trimmed and highlighted'
+  )
+
+  // ACL/SELinux '+' and macOS '@' attribute markers must not break the match:
+  // the trailing boundary only rejects another mode character, not markers.
+  ok(
+    colored('-rw-r--r--+ 1 bill staff 512 Oct 17 10:00 acl.txt', OK_GREEN, '-rw-r--r--'),
+    'an ACL "+" suffix after the mode string still highlights'
+  )
+  ok(
+    colored('-rw-r--r--@ 1 bill staff 512 Oct 17 10:00 xattr.txt', OK_GREEN, '-rw-r--r--'),
+    'a macOS "@" suffix after the mode string still highlights'
+  )
+}
+
+// ---- 21. a span must not clear the application's own SGR -------------------
+console.log('[sgr restore]')
+{
+  // `wrap` closes every span with a reset. Before the restore, that reset also
+  // wiped whatever SGR the *application* had set, so the tail of a yellow
+  // warning came back in the default colour.
+  const yellow = applyHighlights('\x1b[33mWARNING tail here', rules)
+  ok(
+    yellow.includes(`${sgr(WARN_YELLOW)}WARNING\x1b[0m\x1b[33m tail here`),
+    'the application\u2019s yellow is replayed after the span, not just a bare reset'
+  )
+  ok(
+    !yellow.endsWith('WARNING\x1b[0m tail here'),
+    'the span no longer leaves the text after it in the default colour'
+  )
+
+  // consecutive SGRs are replayed as a set, in order: dropping the bold would
+  // silently un-bold everything after the span.
+  const bold = applyHighlights('\x1b[1m\x1b[31mERR rest', rules)
+  ok(
+    bold.includes(`${sgr(BAD_RED)}ERR\x1b[0m\x1b[1m\x1b[31m rest`),
+    'consecutive SGRs are all replayed, in their original order'
+  )
+
+  // no SGR in front of the run: unchanged, plain reset (the pre-existing shape)
+  const plain = applyHighlights('ERROR rest', rules)
+  ok(
+    plain === `${sgr(BAD_RED)}ERROR\x1b[0m rest`,
+    'a run with no preceding SGR still closes with a bare reset'
+  )
+
+  // a reset inside the chunk clears the state: only the SGRs after it replay
+  ok(
+    applyHighlights('\x1b[33m\x1b[0mWARNING tail', rules) ===
+      `\x1b[33m\x1b[0m${sgr(WARN_YELLOW)}WARNING\x1b[0m tail`,
+    'an SGR reset before the run clears what would be replayed'
+  )
+
+  // non-SGR sequences are never replayed — replaying a cursor move would move
+  // the cursor a second time on every span.
+  const cursor = applyHighlights('\x1b[2AWARNING tail', rules)
+  ok(
+    cursor === `\x1b[2A${sgr(WARN_YELLOW)}WARNING\x1b[0m tail`,
+    'non-SGR sequences (cursor moves) are passed through but never replayed'
+  )
+  ok(
+    applyHighlights('\x1b]0;title\x07WARNING tail', rules) ===
+      `\x1b]0;title\x07${sgr(WARN_YELLOW)}WARNING\x1b[0m tail`,
+    'an OSC title is passed through but never replayed'
+  )
+
+  // Every span in a run restores, not just the first — but the gap between two
+  // spans now carries the restore instead of the preceding span's tail, so that
+  // a dense line pays for the restore once per VISIBLE gap. Both spellings put
+  // the application's yellow back between `WARNING` and `ERROR`.
+  const two = applyHighlights('\x1b[33mWARNING ERROR tail', rules)
+  ok(
+    two.startsWith(`\x1b[33m${sgr(WARN_YELLOW)}WARNING\x1b[0m`),
+    'the first span keeps its highlight'
+  )
+  ok(
+    two.includes(`${sgr(BAD_RED)}ERROR\x1b[0m\x1b[33m tail`),
+    'the last span replays the active SGR before the trailing text'
+  )
+
+  // the state survives across chunks: a colour set in one push must still be
+  // restored by a span that lands in a later one, or split output would differ
+  // from single-chunk output.
+  const stream = new HighlightStream(rules)
+  const streamed = stream.push('\x1b[33m') + stream.push('WARNING tail here') + stream.flush()
+  ok(
+    streamed === applyHighlights('\x1b[33mWARNING tail here', rules),
+    'the SGR state carries across stream pushes (split == single chunk)'
+  )
+
+  // a run split by an escape sequence inside the span keeps the known shape:
+  // the text before the escape is one run, the text after it another, and only
+  // the first is coloured.
+  ok(
+    applyHighlights('ERR\x1b[0mOR', rules) === `${sgr(BAD_RED)}ERR\x1b[0m\x1b[0mOR`,
+    'an escape in the middle of a word still cuts the run (only the first half colours)'
+  )
+}
+
+// ---- 22. an over-long line only costs itself -------------------------------
+console.log('[long lines]')
+{
+  const LONG = 'A'.repeat(5000)
+  // regression: one base64 blob used to switch highlighting off for the whole
+  // run, so the ERROR on the next line came back uncoloured.
+  const mixed = applyHighlights(`${LONG} ERROR\nERROR still here`, rules)
+  ok(
+    mixed === `${LONG} ERROR\n${sgr(BAD_RED)}ERROR\x1b[0m still here`,
+    'a 5KB line passes through raw while the next line still highlights'
+  )
+
+  // ...and the same holds when the long line is in the middle or at the end
+  ok(
+    applyHighlights(`ok\n${LONG}\nerror here`, rules).endsWith(`\n${LONG}\n${sgr(BAD_RED)}error\x1b[0m here`),
+    'a long line in the middle does not stop the line after it from colouring'
+  )
+  ok(
+    applyHighlights(`ERROR\n${LONG}`, rules) === `${sgr(BAD_RED)}ERROR\x1b[0m\n${LONG}`,
+    'a long line at the end does not stop the line before it from colouring'
+  )
+
+  // every line over the bound: the run comes back untouched
+  ok(
+    applyHighlights(`${LONG}\n${LONG}`, rules) === `${LONG}\n${LONG}`,
+    'a run whose every line is over-long is returned byte-for-byte unchanged'
+  )
+
+  // the bound is exactly MAX_LINE_LEN (4096) per line, terminator included in
+  // the count: a line of exactly 4096 is still scanned, 4097 goes through raw.
+  const atBound = `${'E'.repeat(4096 - ' ERROR'.length)} ERROR`
+  ok(atBound.length === 4096, 'the boundary sample is exactly 4096 characters')
+  ok(
+    applyHighlights(atBound, rules).endsWith(`${sgr(BAD_RED)}ERROR\x1b[0m`),
+    'a line exactly at the 4KB bound is still scanned'
+  )
+  const overBound = `E${atBound}`
+  ok(
+    applyHighlights(overBound, rules) === overBound,
+    'a line one byte over the 4KB bound goes through raw'
+  )
+
+  // no over-long line → one whole-run scan, so rules keep matching across a
+  // newline (the path rule claims the leading "\n" of the second line).
+  ok(
+    applyHighlights('see the file\n/tmp/x here', rules).includes(`${sgr('#58a6ff')}\n/tmp/x\x1b[0m`),
+    'a run with no over-long line still matches across a newline'
+  )
+
+  // budgets stay shared across the degraded per-line scan: the long line does
+  // not hand each short line a fresh allowance
+  const sink = new Map()
+  applyHighlights(`${LONG}\nERROR\nERROR\nERROR`, rules, sink)
+  ok(
+    sink.get('badstate')?.hits === 3,
+    `the per-rule budget and hit count span every line of a degraded run (hits=${sink.get('badstate')?.hits})`
+  )
+}
+
+// ---- 23. per-line anchoring (user "lineAnchor" switch) ---------------------
+console.log('[line anchor]')
+{
+  const TEXT = 'a\nERROR\nERROR b\n'
+  const plain = compileRules([
+    { id: 'anch', pattern: '^ERROR$', enabled: true, priority: 1, color: { fg: BAD_RED } }
+  ])
+  const perLine = compileRules([
+    {
+      id: 'anch',
+      pattern: '^ERROR$',
+      enabled: true,
+      priority: 1,
+      color: { fg: BAD_RED },
+      lineAnchor: true
+    }
+  ])
+
+  // Without 'm' the anchors bind to the whole run: `a\nERROR\nERROR b\n` neither
+  // starts nor ends with ERROR, so nothing matches at all.
+  ok(
+    applyHighlights(TEXT, plain) === TEXT,
+    'without lineAnchor, ^ERROR$ does not match inside a multi-line run'
+  )
+
+  // With 'm' each line is its own anchor: only the bare ERROR line matches —
+  // `ERROR b` is not followed by end-of-line.
+  const out = applyHighlights(TEXT, perLine)
+  ok(
+    out === `a\n${sgr(BAD_RED)}ERROR\x1b[0m\nERROR b\n`,
+    'lineAnchor makes ^ERROR$ match the standalone ERROR line only'
+  )
+  ok(
+    !out.includes(`${sgr(BAD_RED)}ERROR\x1b[0m b`),
+    'lineAnchor still does not claim a longer line (ERROR b)'
+  )
+
+  // Anchoring only moves the boundaries: '$' works the same way.
+  const tail = compileRules([
+    { id: 'tail', pattern: 'ERROR$', enabled: true, priority: 1, color: { fg: BAD_RED }, lineAnchor: true }
+  ])
+  const tailOut = applyHighlights(TEXT, tail)
+  ok(
+    tailOut.includes(`${sgr(BAD_RED)}ERROR\x1b[0m\n`) && tailOut.includes('ERROR b\n') &&
+      !tailOut.includes(`${sgr(BAD_RED)}ERROR b`),
+    'lineAnchor anchors $ at each line end as well'
+  )
+
+  // The two flags compose: 'i' and 'm' both apply when both switches are on.
+  const both = compileRules([
+    {
+      id: 'both',
+      pattern: '^error$',
+      enabled: true,
+      priority: 1,
+      color: { fg: BAD_RED },
+      caseInsensitive: true,
+      lineAnchor: true
+    }
+  ])
+  ok(
+    applyHighlights(TEXT, both) === `a\n${sgr(BAD_RED)}ERROR\x1b[0m\nERROR b\n`,
+    'lineAnchor composes with caseInsensitive (gim flags)'
+  )
+}
+
+// ---- 24. match events (P2-1: `onMatch` outlet) ------------------------------
+console.log('[match events]')
+{
+  // Only spans that actually get painted are reported, and each carries the
+  // rule id plus the raw matched text.
+  const events = []
+  const one = compileRules([
+    { id: 'ok', pattern: '\\bOK\\b', enabled: true, priority: 1, color: { fg: OK_GREEN } }
+  ])
+  const out = applyHighlights('all OK here', one, undefined, undefined, (id, text) =>
+    events.push([id, text])
+  )
+  ok(
+    out === `all ${sgr(OK_GREEN)}OK\x1b[0m here`,
+    'onMatch does not change the highlighted output'
+  )
+  ok(
+    events.length === 1 && events[0][0] === 'ok' && events[0][1] === 'OK',
+    `one painted span reports (ruleId, text) (got ${JSON.stringify(events)})`
+  )
+}
+{
+  // A match a higher-priority rule claimed first never paints, so it must not
+  // report either — otherwise a consumer would alert about colour that is not
+  // on screen. `done` is the documented case: shellkw beats status words.
+  const events = []
+  const overlap = compileRules([
+    { id: 'first', pattern: '\\bdone\\b', enabled: true, priority: 1, color: { fg: OK_GREEN } },
+    { id: 'second', pattern: '\\b(done|DONE)\\b', enabled: true, priority: 2, color: { fg: BAD_RED } }
+  ])
+  applyHighlights('job done', overlap, undefined, undefined, (id, text) => events.push([id, text]))
+  ok(
+    events.length === 1 && events[0][0] === 'first',
+    `a span stolen by a higher-priority rule reports nothing (got ${JSON.stringify(events)})`
+  )
+}
+{
+  // The per-rule budget is the other silent case: a rule that hits MAX_PER_RULE
+  // (300) times in one run reports exactly that many times, not one more.
+  let count = 0
+  const many = compileRules([
+    { id: 'x', pattern: 'ERROR', enabled: true, priority: 1, color: { fg: BAD_RED } }
+  ])
+  applyHighlights(Array.from({ length: 301 }, () => 'ERROR').join(' '), many, undefined, undefined, () => {
+    count++
+  })
+  ok(count === 300, `matches past the per-rule budget stop reporting (reported ${count})`)
+}
+{
+  // Regression: passing no listener must produce byte-identical output.
+  const plain = compileRules(DEFAULT_HIGHLIGHT_RULES)
+  const sample =
+    'ERROR: rm -rf /tmp/x\nOK 45% http://example.com\nperm -rwxr-xr-x 2026-10-17 12:34\n'
+  const withHook = applyHighlights(sample, plain, undefined, undefined, () => undefined)
+  ok(applyHighlights(sample, plain) === withHook, 'a no-op listener leaves the bytes untouched')
+}
+{
+  // Stream: the listener is threaded through every push path, so a match that
+  // only completes once the held carry is flushed still reports exactly once.
+  const events = []
+  const stream = new HighlightStream(
+    compileRules([
+      { id: 'ok', pattern: '\\bOK\\b', enabled: true, priority: 1, color: { fg: OK_GREEN } }
+    ]),
+    (id, text) => events.push([id, text])
+  )
+  let out = ''
+  for (const piece of ['all ', 'OK', ' here\n']) out += stream.push(piece)
+  out += stream.flush()
+  ok(
+    out === `all ${sgr(OK_GREEN)}OK\x1b[0m here\n`,
+    'split pushes still produce the whole-run output'
+  )
+  ok(
+    events.length === 1 && events[0][1] === 'OK',
+    `a match split across chunks reports once (got ${JSON.stringify(events)})`
+  )
+}
+{
+  // Rules without the flag are irrelevant to the engine: it reports every painted
+  // span and leaves the notify policy to the consumer.
+  const events = []
+  const mixed = compileRules([
+    { id: 'silent', pattern: '\\bWARN\\b', enabled: true, priority: 1, color: { fg: WARN_YELLOW } }
+  ])
+  applyHighlights('WARN', mixed, undefined, undefined, (id) => events.push(id))
+  ok(events.length === 1 && events[0] === 'silent', 'the engine reports un-flagged rules too')
+}
+
+console.log('[restore cost budget]')
+{
+  // Replaying the app's SGR state after EVERY span costs (state length x spans).
+  // A dense truecolor TUI line (Kimi-style: ~19 spans) made the engine inflate
+  // a 9.5KB chunk to 40.8KB — 4.30x, versus 2.78x before the restore existed.
+  // Downstream xterm could not keep up and the renderer froze for 18.4s. The
+  // budget is deliberately expressed as a size ratio over a big chunk so that
+  // raising MAX_REPLAY_COST fails HERE rather than in a user's terminal.
+  const tuiLine = (i) =>
+    '\x1b[38;2;120;130;140m' + `item ${i} 68% 2026-10-17T18:30:00 /src/a/b/c.ts:42:7 ERROR ` + '\x1b[0m\n'
+  const dense = Array.from({ length: 120 }, (_, i) => tuiLine(i)).join('')
+  const denseOut = applyHighlights(dense, rules)
+  const ratio = denseOut.length / dense.length
+  ok(ratio < 3.2, `dense truecolor TUI stays within budget (${ratio.toFixed(2)}x < 3.2x; regression was 4.30x)`)
+
+  // The budget must not kill the case it exists for: a single-colour state is
+  // short enough to replay, so the app's colour survives the span.
+  const yellow = applyHighlights('\x1b[33mWARNING tail here\x1b[0m\n', rules)
+  ok(yellow.length > '\x1b[33mWARNING tail here\x1b[0m\n'.length, 'the matched word still gets its highlight')
+  ok(
+    yellow.slice(yellow.indexOf('WARNING') + 'WARNING'.length).includes('\x1b[33m'),
+    'and the application\'s own yellow is replayed after the span (short state still worth it)'
+  )
+}
+
+console.log('[reset spellings and CSI parameters]')
+{
+  // ECMA-48 has many spellings of "reset everything". Recognising only the two
+  // canonical ones let the other spellings be APPENDED to the SGR accumulator,
+  // so it grew a few bytes per line until it blew the cap and every later span
+  // lost its restore. Go/Java log libraries routinely emit ESC[0;32m.
+  const warn = compileRules([{ id: 'w', pattern: 'WARNING', priority: 1, color: { fg: '#ff0000' } }])
+  const tailAfter = (input) => {
+    const out = applyHighlights(input, warn)
+    return out.slice(out.indexOf('WARNING') + 'WARNING'.length)
+  }
+  for (const [label, reset, want] of [
+    ['ESC[0m', '\x1b[0m', '\x1b[32m'],
+    ['ESC[00m', '\x1b[00m', '\x1b[32m'],
+    ['ESC[0;0m', '\x1b[0;0m', '\x1b[32m'],
+    ['ESC[0;32m', '\x1b[0;32m', '\x1b[0;32m']
+  ]) {
+    const tail = tailAfter(`\x1b[33mA${reset}\x1b[32mWARNING tail`)
+    ok(tail.includes(want), `${label} clears the accumulated state (tail keeps ${JSON.stringify(want)})`)
+  }
+
+  // CSI parameter bytes include the private prefixes `<`, `>`, `=` and the
+  // intermediate bytes ` -/`. Without them the whole line was treated as text
+  // containing a raw ESC, so every keyword after one lost its highlight — and
+  // these sequences are exactly what vim/tmux emit for mouse and key reporting.
+  for (const [label, seq] of [
+    ['ESC[>4;1m (modifyOtherKeys)', '\x1b[>4;1m'],
+    ['ESC[<0;1;2M (SGR mouse)', '\x1b[<0;1;2M'],
+    ['ESC[=1;1$y (DECRQM)', '\x1b[=1;1$y']
+  ]) {
+    ok(applyHighlights(`${seq}WARNING after\n`, warn).includes('255;0;0'), `${label} keeps the rest of the line highlighted`)
+  }
 }
 
 console.log(failed === 0 ? '\n[hl-rules] ALL CHECKS PASSED' : `\n[hl-rules] ${failed} CHECK(S) FAILED`)

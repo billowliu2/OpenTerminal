@@ -37,6 +37,19 @@ export interface HighlightRule {
   /** match without regard to letter case (compiled with the 'i' flag) */
   caseInsensitive?: boolean
   /**
+   * Anchor `^` / `$` per line (compiled with the 'm' flag). Without it a pattern
+   * like `^ERROR$` is anchored to the whole text run, which never matches in
+   * multi-line output — the run spans every line the program printed.
+   */
+  lineAnchor?: boolean
+  /**
+   * Raise an in-app alert when this rule paints a span (per-rule "notify on
+   * hit"). The engine only reports the event (`MatchListener`); the terminal
+   * decides whether to show anything, so a rule carrying this flag still
+   * highlights exactly the same way when nothing consumes the event.
+   */
+  notify?: boolean
+  /**
    * Part of the "basic" set: still applied when the highlight mode is
    * `basic` (the cheap, low-noise subset — status, danger, secrets).
    */
@@ -50,6 +63,13 @@ export interface HighlightRule {
 
 export interface TerminalSettings {
   fontFamily: string
+  /**
+   * CJK fallback family appended to the tail of `fontFamily`'s stack. An empty
+   * string appends nothing (unchanged behaviour); non-empty means the glyphs
+   * the primary faces lack — wide CJK, and the emoji/box-drawing they drag
+   * along — resolve here instead of whatever the last-resort system font picks.
+   */
+  cjkFontFamily?: string
   fontSize: number
   /** 100..900 */
   fontWeight: number
@@ -152,6 +172,63 @@ export function isLockAutoDelay(value: unknown): value is LockAutoDelay {
 }
 
 /**
+ * Legal ranges for the numeric terminal-font settings, shared by the settings UI,
+ * the main-process sanitizer and the font hotkeys so they cannot disagree.
+ *
+ * `lineHeight` starts at **1**, not 0.8: xterm throws
+ * "lineHeight cannot be less than 1" from the Terminal constructor, and that
+ * throw happened inside a dockview pane — the error boundary unmounted the whole
+ * pane, and because the bad value had already been persisted the app came back
+ * broken on every restart.
+ */
+export const FONT_LIMITS = {
+  fontSize: { min: 8, max: 40 },
+  lineHeight: { min: 1, max: 2 },
+  letterSpacing: { min: 0, max: 10 },
+  /** xterm throws "scrollback cannot be less than 0"; the UI already floors it at 100. */
+  scrollback: { min: 100, max: 100000 }
+} as const
+
+/** Clamp one numeric font setting into its legal range; non-finite → fallback. */
+export function clampFontSetting(key: keyof typeof FONT_LIMITS, value: unknown, fallback: number): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : fallback
+  const { min, max } = FONT_LIMITS[key]
+  return Math.min(max, Math.max(min, n))
+}
+
+/**
+ * xterm's own whitelists. Assigning an unrecognised value to a *live* terminal
+ * (`term.options.x = v`, the settings hot-update path) THROWS with no try/catch
+ * around it, so a single bad string unmounts the pane. Worse, the cursor option
+ * is swallowed during construction, so the pane's "retry" button re-crashes
+ * forever. Keep these in sync with xterm's OptionsService.
+ */
+export const CURSOR_STYLES = ['block', 'underline', 'bar'] as const
+export const CURSOR_INACTIVE_STYLES = ['outline', 'block', 'bar', 'underline', 'none'] as const
+export const RENDERER_MODES = ['auto', 'webgl', 'dom'] as const
+
+export function pickCursorStyle(value: unknown, fallback: (typeof CURSOR_STYLES)[number]) {
+  return CURSOR_STYLES.includes(value as (typeof CURSOR_STYLES)[number])
+    ? (value as (typeof CURSOR_STYLES)[number])
+    : fallback
+}
+
+export function pickCursorInactiveStyle(
+  value: unknown,
+  fallback: (typeof CURSOR_INACTIVE_STYLES)[number]
+) {
+  return CURSOR_INACTIVE_STYLES.includes(value as (typeof CURSOR_INACTIVE_STYLES)[number])
+    ? (value as (typeof CURSOR_INACTIVE_STYLES)[number])
+    : fallback
+}
+
+export function pickRendererMode(value: unknown, fallback: (typeof RENDERER_MODES)[number]) {
+  return RENDERER_MODES.includes(value as (typeof RENDERER_MODES)[number])
+    ? (value as (typeof RENDERER_MODES)[number])
+    : fallback
+}
+
+/**
  * Screen-lock preferences. The password itself is never stored here — the
  * verifier lives in `<userData>/lock.json` (src/main/lockStore.ts), so settings
  * can be copied around, synced or logged without leaking it.
@@ -230,6 +307,22 @@ export interface HighlightProfile {
   ruleIds: string[]
 }
 
+/**
+ * A user-defined clickable link rule: a regex over a terminal line plus a URL
+ * template expanded with its capture groups (`$0` whole match, `$1`–`$9`
+ * groups). Validation and template expansion live in `linkRules.ts`.
+ */
+export interface LinkRule {
+  id: string
+  /** regex source, compiled with the 'g' flag at use site */
+  pattern: string
+  /** URL template; must expand to an http(s) target to be clickable */
+  template: string
+  /** absent means enabled */
+  enabled?: boolean
+  note?: string
+}
+
 export interface AppSettings {
   terminal: TerminalSettings
   /** user-created themes; builtin themes are immutable and live in shared/theme.ts */
@@ -238,6 +331,8 @@ export interface AppSettings {
   highlightRules: HighlightRule[]
   /** named rule subsets for per-host highlighting (see terminal.highlightPerHost) */
   highlightProfiles: HighlightProfile[]
+  /** user-defined clickable link rules (see shared/linkRules.ts); absent = none */
+  linkRules?: LinkRule[]
   system: SystemSettings
   /** screen lock; the password verifier lives outside settings (lock.json) */
   lock: LockSettings
@@ -254,6 +349,7 @@ const RULE = (
     caseInsensitive?: boolean
     bands?: HighlightRule['bands']
     basic?: boolean
+    notify?: boolean
   }
 ): HighlightRule => ({
   id,
@@ -266,6 +362,7 @@ const RULE = (
   ...(opts?.caseInsensitive ? { caseInsensitive: true } : {}),
   ...(opts?.bands ? { bands: opts.bands } : {}),
   ...(opts?.basic ? { basic: true } : {}),
+  ...(opts?.notify ? { notify: true } : {}),
   builtin: true
 })
 
@@ -296,7 +393,7 @@ const RULE = (
  * which is what makes a progress bar readable at a glance.
  */
 export const DEFAULT_HIGHLIGHT_RULES: HighlightRule[] = [
-  RULE('perm', '^[-dlbcps][rwxstST-]{9}', 1, '#3fb950', 'Linux 权限与用户'),
+  RULE('perm', '(?<=^|\\s)[-dlbcps][rwxstST-]{9}(?![rwxstST-])', 1, '#3fb950', 'Linux 权限与用户'),
   RULE('path', '(?:^|[\\s:=])(?:/[A-Za-z0-9_.\\-/@+]+|~[A-Za-z0-9_.\\-/]*)', 2, '#58a6ff', 'Linux 文件路径'),
   RULE(
     'danger',
@@ -418,7 +515,10 @@ export const DEFAULT_HIGHLIGHT_RULES: HighlightRule[] = [
     '\\b(?:sk-[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{30,}|eyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,})\\b|-----BEGIN [A-Z ]*PRIVATE KEY-----|\\bBearer\\s+[A-Za-z0-9._-]{16,}',
     31,
     '#ff7b72',
-    '疑似密钥/令牌'
+    '疑似密钥/令牌',
+    // The one preset that alerts on a hit: a leaked key scrolling past is
+    // exactly what a terminal should interrupt you for.
+    { notify: true }
   )
 ]
 
@@ -467,6 +567,7 @@ for (const rule of DEFAULT_HIGHLIGHT_RULES) {
 export const DEFAULT_SETTINGS: AppSettings = {
   terminal: {
     fontFamily: "'Cascadia Mono', Consolas, 'JetBrains Mono', 'Courier New', monospace",
+    cjkFontFamily: '',
     fontSize: 14,
     fontWeight: 400,
     boldFontWeight: 700,
@@ -501,6 +602,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customThemes: [],
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
   highlightProfiles: [],
+  linkRules: [],
   // Every 4 hours by default: often enough for a terminal app that runs all day,
   // and the download stays manual (autoDownloadUpdate) until the user opts in.
   system: {

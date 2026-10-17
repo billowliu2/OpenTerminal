@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SysinfoMeta, SysinfoSample } from '@shared/sysinfo'
 import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
 import { useResolvedTheme, useSettingsStore } from '@renderer/settings/store'
-import { isLightTheme, semanticVars } from '@renderer/theme/semantic'
+import { isLightTheme, semanticVars, type SemanticVars } from '@renderer/theme/semantic'
 import { useWorkspaceModeStore } from '../workspace/workspaceModeStore'
 import './monitor.css'
 
@@ -109,10 +109,10 @@ function HistoryChart({ data, lineColor, fillColor, height, maxY }: HistoryChart
 /** Red/green/yellow threshold bar color for CPU usage. Takes the semantic
  *  var map so light themes get the darkened (WCAG-compliant) variants —
  *  canvas fills need actual color strings, CSS vars don't resolve there. */
-function cpuColor(usage: number, vars: Record<string, string>): string {
-  if (usage > 80) return vars.dangerFg
-  if (usage > 60) return vars.warningFg
-  return vars.successFg
+function cpuColor(usage: number, vars: SemanticVars): string {
+  if (usage > 80) return vars['--ot-danger-fg']
+  if (usage > 60) return vars['--ot-warning-fg']
+  return vars['--ot-success-fg']
 }
 
 /** Format a size in MB: show GB (1 decimal) once over 1024 MB. */
@@ -242,7 +242,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
         <div className="mm-sub mm-load">
           {tFor(language, 'ssh.monitor.loadavg', { value: cpu.loadavg.map((v) => v.toFixed(1)).join(' / ') })}
         </div>
-        <HistoryChart data={cpuHist} lineColor={vars.successFg} fillColor={withAlpha(vars.success, 0.15)} height={48} maxY={100} />
+        <HistoryChart data={cpuHist} lineColor={vars['--ot-success-fg']} fillColor={withAlpha(vars['--ot-success'], 0.15)} height={48} maxY={100} />
       </section>
 
       <section className="mm-block" aria-label={tFor(language, 'ssh.monitor.mem')}>
@@ -254,7 +254,7 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
         </div>
         <div className="mm-mem-row">
           <div className="mm-mem-bar">
-            <Bar pct={memPct} color={vars.warningFg} />
+            <Bar pct={memPct} color={vars['--ot-warning-fg']} />
           </div>
           <span className="mm-mem-pct">{memPct.toFixed(0)}%</span>
         </div>
@@ -303,8 +303,8 @@ export function MonitorPanel({ sessionId }: MonitorPanelProps): React.JSX.Elemen
           </div>
         </div>
         <div className="mm-net-charts">
-          <HistoryChart data={rxHist} lineColor={vars.infoFg} fillColor={withAlpha(vars.info, 0.15)} height={40} />
-          <HistoryChart data={txHist} lineColor={vars.warningFg} fillColor={withAlpha(vars.warning, 0.15)} height={40} />
+          <HistoryChart data={rxHist} lineColor={vars['--ot-info-fg']} fillColor={withAlpha(vars['--ot-info'], 0.15)} height={40} />
+          <HistoryChart data={txHist} lineColor={vars['--ot-warning-fg']} fillColor={withAlpha(vars['--ot-warning'], 0.15)} height={40} />
         </div>
       </section>
 

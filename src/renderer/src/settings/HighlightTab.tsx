@@ -21,12 +21,19 @@ import {
   type HighlightCategory,
   type HighlightMode
 } from '@shared/settings'
-import type { HighlightRule } from '@shared/settings'
+import type { HighlightRule, LinkRule } from '@shared/settings'
+import {
+  EMPTY_LINK_RULES,
+  LINK_NOTE_MAX,
+  LINK_PATTERN_MAX,
+  LINK_TEMPLATE_MAX,
+  isSafeLinkTemplate
+} from '@shared/linkRules'
 import { useResolvedTheme, useSettingsStore } from './store'
 import { HighlightImportExport } from './HighlightImportExport'
 import { HighlightProfiles } from './HighlightProfiles'
 import { ruleNote } from './ruleLabel'
-import { compileRules, previewSpans } from '../terminal/highlightEngine'
+import { MAX_PATTERN_LEN, compileRules, previewSpans } from '../terminal/highlightEngine'
 import {
   getHighlightStats,
   resetHighlightStats,
@@ -69,15 +76,47 @@ function categoryRank(rule: HighlightRule): number {
   return index < 0 ? HIGHLIGHT_CATEGORIES.length : index
 }
 
-function tryCompile(pattern: string): { ok: boolean; message?: string } {
+function tryCompile(pattern: string): { ok: boolean; message?: string; slow?: boolean } {
   if (pattern.trim() === '') return { ok: true }
+  let regex: RegExp
   try {
     // eslint-disable-next-line no-new
-    new RegExp(pattern)
-    return { ok: true }
+    regex = new RegExp(pattern)
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : t('settings.highlight.invalidRegex') }
   }
+  return { ok: true, slow: backtracksBadly(regex) }
+}
+
+/**
+ * Cheap ReDoS probe for the editor.
+ *
+ * `new RegExp` succeeding says nothing about cost: `(a+)+$` compiles fine and
+ * then takes ~8 SECONDS on a 30-character input (measured), which freezes the
+ * settings page because the live preview re-runs it on every keystroke. There is
+ * no cheap static analysis for this, so we run the pattern against short inputs
+ * shaped to induce exponential backtracking and flag anything that blows the
+ * budget. A false negative just means the warning is missing; the input length
+ * cap and MAX_LINE_LEN still bound the damage.
+ */
+function backtracksBadly(regex: RegExp): boolean {
+  const shapes = [
+    'a'.repeat(24) + '!',
+    'a'.repeat(24) + ' a',
+    'ab'.repeat(16) + '!',
+    '1'.repeat(24) + 'x'
+  ]
+  const probe = new RegExp(regex.source, regex.flags.includes('i') ? 'i' : '')
+  for (const input of shapes) {
+    const started = performance.now()
+    try {
+      probe.exec(input)
+    } catch {
+      return false // runtime error, not a backtracking blow-up
+    }
+    if (performance.now() - started > 50) return true
+  }
+  return false
 }
 
 interface RuleDraft {
@@ -88,6 +127,10 @@ interface RuleDraft {
   bands?: { min: number; fg: string }[]
   category?: HighlightCategory
   caseInsensitive: boolean
+  /** anchor `^`/`$` per line (regex 'm' flag) */
+  lineAnchor: boolean
+  /** raise an in-app alert when this rule paints a span */
+  notify: boolean
   note?: string
   enabled: boolean
   basic: boolean
@@ -163,6 +206,9 @@ export function HighlightTab(): React.JSX.Element {
 
   const [statsTick, setStatsTick] = useState(0)
   useEffect(() => subscribeHighlightStats(() => setStatsTick((n) => n + 1)), [])
+  // Already merged across every open pane (hits and ms summed per rule), so the
+  // hits/time columns and the reset button need no per-pane notion: one row per
+  // rule, and a reset zeroes all panes at once.
   const ruleStats = useMemo(() => getHighlightStats().rules, [statsTick])
 
   /** Only present while the stats switch is on. */
@@ -371,6 +417,258 @@ export function HighlightTab(): React.JSX.Element {
         onClose={closeEditor}
         ruleId={editor.id}
       />
+      <ClickableLinkRules />
+    </div>
+  )
+}
+
+/**
+ * User-defined clickable link rules ("pattern match → URL template → click").
+ *
+ * It lives at the bottom of the highlight tab because it is the same mental
+ * model as a highlight rule — a regex over terminal output — with a different
+ * payoff: instead of colouring the span, it turns the span into a link. The
+ * provider reads the rules through a ref, so saving here takes effect on the
+ * next hover without touching a single open session.
+ */
+function ClickableLinkRules(): React.JSX.Element {
+  const linkRules = useSettingsStore((s) => s.settings.linkRules ?? EMPTY_LINK_RULES)
+  const setLinkRules = useSettingsStore((s) => s.setLinkRules)
+
+  /** null = dialog closed; '' = creating; otherwise the rule being edited. */
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [pattern, setPattern] = useState('')
+  const [template, setTemplate] = useState('')
+  const [note, setNote] = useState('')
+  const [enabled, setEnabled] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const editing = linkRules.find((rule) => rule.id === editingId)
+
+  // seed the dialog each time it opens
+  useEffect(() => {
+    if (editingId === null) return
+    setPattern(editing?.pattern ?? '')
+    setTemplate(editing?.template ?? '')
+    setNote(editing?.note ?? '')
+    setEnabled(editing?.enabled !== false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId])
+
+  const compile = tryCompile(pattern)
+  const templateOk = template.trim() === '' || isSafeLinkTemplate(template)
+  const valid =
+    pattern.trim() !== '' && compile.ok && template.trim() !== '' && templateOk
+
+  const patchRule = async (target: LinkRule, partial: Partial<LinkRule>): Promise<void> => {
+    // read at call time: the render-scoped array goes stale inside a React batch
+    const current = useSettingsStore.getState().settings.linkRules ?? EMPTY_LINK_RULES
+    await setLinkRules(current.map((rule) => (rule.id === target.id ? { ...rule, ...partial } : rule)))
+  }
+
+  const handleSave = async (): Promise<void> => {
+    if (!valid) return
+    setSaving(true)
+    try {
+      const trimmedNote = note.trim()
+      const current = useSettingsStore.getState().settings.linkRules ?? EMPTY_LINK_RULES
+      if (editing !== undefined) {
+        const next: LinkRule = {
+          ...editing,
+          pattern: pattern.trim(),
+          template: template.trim(),
+          // explicit override: unchecking must clear an `enabled: true` the
+          // edited rule may already carry
+          enabled,
+          ...(trimmedNote ? { note: trimmedNote } : { note: undefined })
+        }
+        await setLinkRules(current.map((rule) => (rule.id === next.id ? next : rule)))
+      } else {
+        const fresh: LinkRule = {
+          id: crypto.randomUUID(),
+          pattern: pattern.trim(),
+          template: template.trim(),
+          enabled,
+          ...(trimmedNote ? { note: trimmedNote } : {})
+        }
+        await setLinkRules([...current, fresh])
+      }
+      setEditingId(null)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const columns: ColumnsType<LinkRule> = [
+    {
+      title: t('settings.highlight.linkEnabled'),
+      dataIndex: 'enabled',
+      width: 64,
+      align: 'center',
+      render: (value: boolean | undefined, record) => (
+        <Switch
+          size="small"
+          checked={value !== false}
+          onChange={(checked) => void patchRule(record, { enabled: checked })}
+        />
+      )
+    },
+    {
+      title: t('settings.highlight.linkPattern'),
+      dataIndex: 'pattern',
+      ellipsis: true,
+      render: (value: string, record) => {
+        const { ok, message } = tryCompile(value)
+        return (
+          <div className="hl-pattern-cell">
+            <Tooltip title={value}>
+              <span className={ok ? 'hl-pattern-text' : 'hl-pattern-text hl-pattern-bad'}>{value}</span>
+            </Tooltip>
+            {!ok && (
+              <Tooltip title={message}>
+                <span className="hl-warn-icon">⚠</span>
+              </Tooltip>
+            )}
+            {record.note != null && record.note !== '' && (
+              <span className="hl-cell-note">{record.note}</span>
+            )}
+          </div>
+        )
+      }
+    },
+    {
+      title: t('settings.highlight.linkTemplate'),
+      dataIndex: 'template',
+      ellipsis: true,
+      render: (value: string) => (
+        <Tooltip title={value}>
+          <span
+            className={isSafeLinkTemplate(value) ? 'hl-pattern-text' : 'hl-pattern-text hl-pattern-bad'}
+          >
+            {value}
+          </span>
+        </Tooltip>
+      )
+    },
+    {
+      title: t('settings.highlight.actions'),
+      key: 'action',
+      width: 120,
+      align: 'center',
+      render: (_value, record) => (
+        <div className="hl-actions">
+          <Button size="small" onClick={() => setEditingId(record.id)}>
+            {t('common.edit')}
+          </Button>
+          <Popconfirm
+            title={t('settings.highlight.linkDeleteTitle')}
+            description={t('settings.deleteConfirmDesc')}
+            okText={t('common.delete')}
+            cancelText={t('common.cancel')}
+            okButtonProps={{ danger: true }}
+            onConfirm={() =>
+              void setLinkRules(
+                (useSettingsStore.getState().settings.linkRules ?? EMPTY_LINK_RULES).filter(
+                  (rule) => rule.id !== record.id
+                )
+              )
+            }
+          >
+            <Button size="small" danger>
+              {t('common.delete')}
+            </Button>
+          </Popconfirm>
+        </div>
+      )
+    }
+  ]
+
+  return (
+    <div className="hl-profiles">
+      <div className="hl-profiles-head">
+        <span className="hl-editor-sub-label">{t('settings.highlight.linksTitle')}</span>
+        <Button size="small" onClick={() => setEditingId('')}>
+          {t('settings.highlight.linkAdd')}
+        </Button>
+      </div>
+      <span className="hl-editor-hint">{t('settings.highlight.linksHint')}</span>
+      <Table
+        size="small"
+        rowKey="id"
+        columns={columns}
+        dataSource={linkRules}
+        pagination={false}
+        locale={{ emptyText: t('settings.highlight.linkEmpty') }}
+      />
+
+      <Modal
+        open={editingId !== null}
+        onCancel={() => setEditingId(null)}
+        onOk={() => void handleSave()}
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
+        confirmLoading={saving}
+        destroyOnHidden
+        width={560}
+        title={
+          editing ? t('settings.highlight.linkEditTitle') : t('settings.highlight.linkCreateTitle')
+        }
+        okButtonProps={{ disabled: !valid }}
+      >
+        <div className="hl-editor">
+          <div className="hl-editor-row">
+            <span className="hl-editor-label">{t('settings.highlight.linkPattern')}</span>
+            <div className="hl-editor-control">
+              <Input.TextArea
+                value={pattern}
+                onChange={(e) => setPattern(e.target.value)}
+                placeholder={t('settings.highlight.patternPlaceholder')}
+                autoSize={{ minRows: 1, maxRows: 4 }}
+                maxLength={LINK_PATTERN_MAX}
+                className={compile.ok ? undefined : 'hl-editor-input-bad'}
+              />
+              {!compile.ok && compile.message != null && (
+                <div className="hl-editor-error">{compile.message}</div>
+              )}
+              {compile.ok && compile.slow && (
+                <div className="hl-editor-error">{t('settings.highlight.patternSlow')}</div>
+              )}
+              <span className="hl-editor-hint">{t('settings.highlight.linkPatternHint')}</span>
+            </div>
+          </div>
+          <div className="hl-editor-row">
+            <span className="hl-editor-label">{t('settings.highlight.linkTemplate')}</span>
+            <div className="hl-editor-control">
+              <Input
+                value={template}
+                onChange={(e) => setTemplate(e.target.value)}
+                placeholder="https://example.com/item/$1"
+                maxLength={LINK_TEMPLATE_MAX}
+                className={templateOk ? undefined : 'hl-editor-input-bad'}
+              />
+              {!templateOk && (
+                <div className="hl-editor-error">
+                  {t('settings.highlight.linkInvalidTemplate')}
+                </div>
+              )}
+              <span className="hl-editor-hint">{t('settings.highlight.linkTemplateHint')}</span>
+            </div>
+          </div>
+          <div className="hl-editor-row">
+            <span className="hl-editor-label">{t('settings.highlight.note')}</span>
+            <Input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={t('settings.highlight.notePlaceholder')}
+              maxLength={LINK_NOTE_MAX}
+            />
+          </div>
+          <div className="hl-editor-row">
+            <span className="hl-editor-label">{t('settings.highlight.linkEnabled')}</span>
+            <Switch checked={enabled} onChange={setEnabled} />
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -379,6 +677,11 @@ function PatternCell({ rule }: { rule: HighlightRule }): React.JSX.Element {
   const { ok, message } = tryCompile(rule.pattern)
   return (
     <div className="hl-pattern-cell">
+      {rule.lineAnchor === true && (
+        <Tooltip title={t('settings.highlight.lineAnchor')}>
+          <span className="hl-case-badge">{'^$'}</span>
+        </Tooltip>
+      )}
       {rule.caseInsensitive === true && (
         <Tooltip title={t('settings.highlight.caseInsensitive')}>
           <span className="hl-case-badge">Aa</span>
@@ -426,6 +729,8 @@ function HighlightEditor({
     fg: '#3fb950',
     bg: undefined,
     caseInsensitive: false,
+    lineAnchor: false,
+    notify: false,
     note: undefined,
     enabled: true,
     basic: false
@@ -447,7 +752,8 @@ function HighlightEditor({
       priority: draft.priority,
       color: { fg: draft.fg, ...(showBg && draft.bg ? { bg: draft.bg } : {}) },
       ...(draft.bands && draft.bands.length > 0 ? { bands: draft.bands } : {}),
-      ...(draft.caseInsensitive ? { caseInsensitive: true } : {})
+      ...(draft.caseInsensitive ? { caseInsensitive: true } : {}),
+      ...(draft.lineAnchor ? { lineAnchor: true } : {})
     }
     const active = [...highlightRules.filter((rule) => rule.id !== ruleId), draftRule]
     // The preview has to show the colours the terminal will use, so the theme
@@ -460,6 +766,7 @@ function HighlightEditor({
     draft.bg,
     draft.bands,
     draft.caseInsensitive,
+    draft.lineAnchor,
     showBg,
     highlightRules,
     ruleId,
@@ -490,10 +797,12 @@ function HighlightEditor({
     const note = editing ? editing.note : undefined
     const enabled = editing ? editing.enabled : true
     const caseInsensitive = editing ? editing.caseInsensitive === true : false
+    const lineAnchor = editing ? editing.lineAnchor === true : false
+    const notify = editing ? editing.notify === true : false
     const basic = editing ? editing.basic === true : false
     const bands = editing?.bands
     const category = editing?.category
-    setDraft({ pattern, priority, fg, bg, bands, category, caseInsensitive, note, enabled, basic })
+    setDraft({ pattern, priority, fg, bg, bands, category, caseInsensitive, lineAnchor, notify, note, enabled, basic })
     setShowBg(bg != null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -535,6 +844,8 @@ function HighlightEditor({
     try {
       const color: HighlightRule['color'] = { fg: draft.fg, ...(showBg && draft.bg ? { bg: draft.bg } : {}) }
       const caseInsensitive = draft.caseInsensitive ? true : undefined
+      const lineAnchor = draft.lineAnchor ? true : undefined
+      const notify = draft.notify ? true : undefined
       const bands = draft.bands && draft.bands.length > 0 ? draft.bands : undefined
       if (isCreate) {
         const rule: HighlightRule = {
@@ -546,6 +857,8 @@ function HighlightEditor({
           bands,
           category: draft.category,
           caseInsensitive,
+          lineAnchor,
+          notify,
           ...(draft.basic ? { basic: true as const } : {}),
           note: draft.note?.trim() ? draft.note.trim() : undefined
         }
@@ -563,6 +876,8 @@ function HighlightEditor({
           bands,
           category: draft.category,
           caseInsensitive,
+          lineAnchor,
+          notify,
           // explicit override (not a conditional spread): unchecking must clear
           // a basic flag the edited rule may already carry
           basic: draft.basic ? true : undefined,
@@ -598,10 +913,14 @@ function HighlightEditor({
               onChange={(e) => patch({ pattern: e.target.value })}
               placeholder={t('settings.highlight.patternPlaceholder')}
               autoSize={{ minRows: 1, maxRows: 4 }}
+              maxLength={MAX_PATTERN_LEN}
               className={compile.ok ? undefined : 'hl-editor-input-bad'}
             />
             {!compile.ok && compile.message != null && (
               <div className="hl-editor-error">{compile.message}</div>
+            )}
+            {compile.ok && compile.slow && (
+              <div className="hl-editor-error">{t('settings.highlight.patternSlow')}</div>
             )}
             <div className="hl-editor-inline">
               <Switch
@@ -611,6 +930,24 @@ function HighlightEditor({
               />
               <span className="hl-editor-sub-label">{t('settings.highlight.caseInsensitive')}</span>
               <span className="hl-editor-hint">{t('settings.highlight.caseInsensitiveHint')}</span>
+            </div>
+            <div className="hl-editor-inline">
+              <Switch
+                size="small"
+                checked={draft.lineAnchor}
+                onChange={(c) => patch({ lineAnchor: c })}
+              />
+              <span className="hl-editor-sub-label">{t('settings.highlight.lineAnchor')}</span>
+              <span className="hl-editor-hint">{t('settings.highlight.lineAnchorHint')}</span>
+            </div>
+            <div className="hl-editor-inline">
+              <Switch
+                size="small"
+                checked={draft.notify}
+                onChange={(c) => patch({ notify: c })}
+              />
+              <span className="hl-editor-sub-label">{t('settings.highlight.notify')}</span>
+              <span className="hl-editor-hint">{t('settings.highlight.notifyHint')}</span>
             </div>
           </div>
         </div>

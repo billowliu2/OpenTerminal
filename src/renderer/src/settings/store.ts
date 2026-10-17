@@ -19,6 +19,8 @@ export interface SettingsState {
   setHighlightRules: (rules: AppSettings['highlightRules']) => Promise<void>
   /** replace highlightProfiles array and persist */
   setHighlightProfiles: (profiles: AppSettings['highlightProfiles']) => Promise<void>
+  /** replace linkRules array and persist */
+  setLinkRules: (rules: NonNullable<AppSettings['linkRules']>) => Promise<void>
   /** shallow-merge into settings.system and persist */
   updateSystem: (partial: Partial<SystemSettings>) => Promise<void>
   /** shallow-merge into settings.lock and persist */
@@ -65,6 +67,7 @@ async function persist(
     if (written.highlightProfiles !== prev.highlightProfiles) {
       patch.highlightProfiles = written.highlightProfiles
     }
+    if (written.linkRules !== prev.linkRules) patch.linkRules = written.linkRules
     const terminal = diffGroup(prev.terminal, written.terminal)
     // Main merges each group one level deep, so a group holding only the
     // changed sub-keys is a valid patch payload even though the contract types
@@ -131,6 +134,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const prev = get().settings
     const next: AppSettings = { ...prev, highlightProfiles: profiles }
     await persist(get, set, next, prev, 'setHighlightProfiles')
+  },
+
+  setLinkRules: async (rules) => {
+    const prev = get().settings
+    const next: AppSettings = { ...prev, linkRules: rules }
+    await persist(get, set, next, prev, 'setLinkRules')
   },
 
   updateSystem: async (partial) => {

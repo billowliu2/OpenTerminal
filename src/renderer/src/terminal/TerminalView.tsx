@@ -4,24 +4,27 @@ import type { ILink, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon } from '@xterm/addon-search'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { ClearOutlined, CopyOutlined, ExportOutlined, FolderOpenOutlined, PauseOutlined, SearchOutlined, SelectOutlined, SnippetsOutlined, SoundOutlined } from '@ant-design/icons'
-import { Checkbox, Modal } from 'antd'
+import { App as AntdApp, Checkbox, Modal } from 'antd'
 import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
 import { isLightTheme } from '@renderer/theme/semantic'
 import type { CommandItem } from '@shared/commands'
-import { highlightModeOf, type TerminalSettings } from '@shared/settings'
+import { highlightModeOf, type HighlightRule, type TerminalSettings } from '@shared/settings'
 import { rulesForProfile } from '@shared/highlightProfiles'
+import { compileLinkRules, EMPTY_LINK_RULES, findRuleLinks, mergeLinkSpans, type CompiledLinkRule } from '@shared/linkRules'
 import { useResolvedTheme, useSettingsStore } from '@renderer/settings/store'
 import { useShallow } from 'zustand/react/shallow'
 import { writeBroadcast } from '@renderer/workspace/broadcastStore'
-import { compileRules, HighlightStream, type RuleStat } from './highlightEngine'
-import { publishHighlightStats } from './highlightStats'
+import { compileRules, HighlightStream, type MatchListener, type RuleStat } from './highlightEngine'
+import { publishHighlightStats, unregisterHighlightStats } from './highlightStats'
 import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
 import { WriteBatcher } from './writeBatcher'
 import { refitDelay } from './fitThrottle'
+import { quoteFontStack } from './fontStack'
 import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
 import { getSessionCwd, setSessionCwd } from '@renderer/workspace/sessionCwdStore'
@@ -38,6 +41,23 @@ function toFontWeight(n: number): 'normal' | 'bold' | number {
   if (n === 400) return 'normal'
   if (n === 700) return 'bold'
   return n
+}
+
+/**
+ * Append the CJK fallback family to the tail of the configured stack.
+ *
+ * The primary faces are chosen for code (narrow, boxed ASCII); the wide CJK
+ * cells — and the emoji/box-drawing glyphs a CJK font tends to carry — fall
+ * through to whatever the OS picks last, which is exactly where a terminal
+ * ends up with double-width cells rendered at a different advance and columns
+ * drifting out of alignment. Pinning a CJK family at the end makes those cells
+ * come from one known face. Appending happens before quoting so the stack is
+ * split once, on the user's text.
+ */
+function appendCjk(family: string, cjk: string | undefined): string {
+  const extra = (cjk ?? '').trim()
+  if (!extra) return family
+  return `${family}, ${extra}`
 }
 
 /**
@@ -139,6 +159,27 @@ function searchResultText(result: SearchResult, language: Language): string {
 
 /** M5: cap for the floating completion popup height in px. */
 const SUGGEST_POPUP_H = 200
+
+/**
+ * Minimum gap between two "rule hit" alerts for the same rule in one pane.
+ * A leaking-secret rule matches every token of a repeating command's output,
+ * so without this one `kubectl get secret` would stack a hundred cards.
+ */
+const NOTIFY_COOLDOWN_MS = 60_000
+
+/**
+ * Display name of a rule for the alert body: the translated note for a built-in,
+ * the user's own note for a rule they wrote, and the pattern as the last resort
+ * (a rule with neither is still identifiable that way). The matched text is
+ * never part of this — see `notifyMatch`.
+ */
+function notifyRuleName(rule: HighlightRule, language: Language): string {
+  const key = `settings.highlight.builtin.${rule.id}`
+  const translated = tFor(language, key)
+  if (translated !== key) return translated
+  const note = rule.note?.trim()
+  return note !== undefined && note !== '' ? note : rule.pattern
+}
 
 /** M5: estimated popup height for a given number of suggestion rows. */
 function estimatePopupHeight(itemCount: number): number {
@@ -289,6 +330,11 @@ export function TerminalView({
   isSsh = false,
   connectionId
 }: TerminalViewProps): React.JSX.Element {
+  // antd's context-bound notification instance: it inherits the ConfigProvider
+  // theme, and its portal lives outside `#root` — which is exactly what the lock
+  // screen's MutationObserver marks inert, so a hit alert cannot steal focus
+  // from the password field.
+  const { notification } = AntdApp.useApp()
   // Field-level subscriptions. A single `s.settings` subscription made every
   // pane re-write every xterm option and refit on ANY settings write — the
   // whole-`settings` object identity changes even when an unrelated group
@@ -299,6 +345,7 @@ export function TerminalView({
     useShallow((s) => ({
       fontSize: s.settings.terminal.fontSize,
       fontFamily: s.settings.terminal.fontFamily,
+      cjkFontFamily: s.settings.terminal.cjkFontFamily,
       fontWeight: s.settings.terminal.fontWeight,
       boldFontWeight: s.settings.terminal.boldFontWeight,
       letterSpacing: s.settings.terminal.letterSpacing,
@@ -336,6 +383,9 @@ export function TerminalView({
       stats: s.settings.terminal.highlightStats
     }))
   )
+  // Clickable link rules: one field, its own subscription, so an unrelated
+  // settings write cannot recompile the provider's rule set.
+  const linkRules = useSettingsStore((s) => s.settings.linkRules ?? EMPTY_LINK_RULES)
   const toolbar = useSettingsStore(
     useShallow((s) => ({
       showRecButton: s.settings.terminal.showRecButton,
@@ -420,26 +470,115 @@ export function TerminalView({
     }
   }, [connectionId, highlightOpts.perHost])
 
-  const compiledRules = useMemo(() => {
+  /**
+   * The rules this pane actually runs: mode filter, then the bound host profile.
+   * Single source of truth — both the compiled set and the "notify on hit" set
+   * are derived from it, so a rule silenced by `basic` mode or left out by the
+   * host profile can never alert either.
+   */
+  const activeRules = useMemo<HighlightRule[]>(() => {
     if (highlightOpts.mode === 'off') return []
     const active =
       highlightOpts.mode === 'basic'
         ? highlightOpts.rules.filter((rule) => rule.basic === true)
         : highlightOpts.rules
-    const perHost = highlightOpts.perHost
+    return highlightOpts.perHost
       ? rulesForProfile(active, boundProfileId, highlightOpts.profiles)
       : active
+  }, [highlightOpts, boundProfileId])
+
+  const compiledRules = useMemo(() => {
     // Palette-consistent highlighting (opt-in): the rule keeps its meaning, the
     // colour comes from the theme the terminal is actually drawn with.
     return compileRules(
-      highlightOpts.themeColors ? applyThemeColors(perHost, highlightTheme) : perHost
+      highlightOpts.themeColors ? applyThemeColors(activeRules, highlightTheme) : activeRules
     )
-  }, [highlightOpts, boundProfileId, highlightTheme])
+  }, [activeRules, highlightOpts.themeColors, highlightTheme])
+
+  // Rules flagged "notify on hit", resolved against the active set: the match
+  // event carries only a rule id, so this map is what turns it into a name.
+  // Rebuilt with the rule set (not per chunk) — the write path just does a Map
+  // lookup.
+  const notifyRules = useMemo(() => {
+    const map = new Map<string, HighlightRule>()
+    for (const rule of activeRules) {
+      if (rule.notify === true) map.set(rule.id, rule)
+    }
+    return map
+  }, [activeRules])
+  const notifyRulesRef = useRef(notifyRules)
+  useEffect(() => {
+    notifyRulesRef.current = notifyRules
+  }, [notifyRules])
+
+  // User clickable-link rules, compiled once per rules change and read through
+  // a ref by the link provider. The provider is registered with the terminal
+  // (once per session bind), so re-pointing the ref is the hot update — a
+  // rebuilt provider would mean tearing down and recreating the terminal just
+  // to add a URL pattern.
+  const compiledLinkRules = useMemo<CompiledLinkRule[]>(
+    () => compileLinkRules(linkRules),
+    [linkRules]
+  )
+  const linkRulesRef = useRef(compiledLinkRules)
+  useEffect(() => {
+    linkRulesRef.current = compiledLinkRules
+  }, [compiledLinkRules])
+
+  /**
+   * Match-event consumer for the rules flagged `notify`. Per-pane cooldown:
+   * `secret` fires on every token in a looping command's output, and one alert
+   * per rule per minute is the difference between a warning and a machine gun.
+   * The map is per pane instance (not global) so two panes each get their own
+   * budget — a pane is what the user is actually looking at.
+   *
+   * The notification body names the rule and nothing else: the matched text is
+   * the secret in the very case this feature exists for, so it must never reach
+   * a rendered string (or a log).
+   *
+   * Runs inside the highlight path, so it is wrapped in a try/catch: a broken
+   * notification surface must never take the terminal's write path down with it.
+   */
+  const [notifyLastAt] = useState(() => new Map<string, number>())
+  const notifyMatch = useCallback<MatchListener>(
+    (ruleId) => {
+      const rule = notifyRulesRef.current.get(ruleId)
+      if (rule === undefined) return
+      const at = Date.now()
+      const last = notifyLastAt.get(ruleId)
+      if (last !== undefined && at - last < NOTIFY_COOLDOWN_MS) return
+      notifyLastAt.set(ruleId, at)
+      try {
+        // Read the language at fire time: this callback outlives any one render,
+        // and a notification built from a captured value would keep the language
+        // the pane was mounted with.
+        const language = useSettingsStore.getState().settings.system.language ?? DEFAULT_LANGUAGE
+        notification.warning({
+          // One slot per rule: a repeat replaces the previous card instead of
+          // stacking a second one on top of it.
+          key: `hl-notify-${ruleId}`,
+          title: tFor(language, 'settings.highlight.notifyTitle'),
+          description: tFor(language, 'settings.highlight.notifyBody', {
+            name: notifyRuleName(rule, language)
+          }),
+          duration: 10
+        })
+      } catch {
+        /* a missing notification surface must not break the write path */
+      }
+    },
+    [notification, notifyLastAt]
+  )
 
   // Optional per-rule stats (settings → highlight → "count hits and time").
   // Attached and detached here, so toggling the switch never rebuilds the
   // terminal, and published on a timer — a busy terminal would otherwise
-  // re-render the settings page once per chunk.
+  // re-render the settings page once per chunk. The publish registers this
+  // pane's map under a per-instance id, so the settings page sees every pane's
+  // numbers added up instead of whichever pane happened to publish last. The id
+  // is NOT the session id: an SSH split shows one session in two panes, and a
+  // shared key would let the second pane overwrite the first one's counters.
+  const [statsPaneId] = useState(() => crypto.randomUUID())
   const statsRef = useRef<Map<string, RuleStat> | null>(null)
   useEffect(() => {
     const sink = highlightOpts.stats
@@ -447,16 +586,32 @@ export function TerminalView({
       : null
     statsRef.current = sink
     streamRef.current?.setStats(sink ?? undefined)
-    if (sink === null) return undefined
-    publishHighlightStats(new Map(sink))
-    const timer = window.setInterval(() => publishHighlightStats(new Map(sink)), 1000)
+    if (sink === null) {
+      // Switching the feature off unmounts the sink but not the pane, so its
+      // frozen counters have to leave the registry too — otherwise they would
+      // sit in the merged totals while other panes keep publishing.
+      unregisterHighlightStats(statsPaneId)
+      return undefined
+    }
+    publishHighlightStats(statsPaneId, sink)
+    const timer = window.setInterval(() => publishHighlightStats(statsPaneId, sink), 1000)
     return () => window.clearInterval(timer)
-  }, [highlightOpts.stats])
+  }, [highlightOpts.stats, statsPaneId])
+  // Deregister on unmount only. A session rebind tears the terminal down
+  // through the layout effect's cleanup below, but the pane keeps living — and
+  // React runs all cleanups before the next setups, so unregistering there
+  // would leave a rebound pane missing from the totals until its next publish.
+  useEffect(() => () => unregisterHighlightStats(statsPaneId), [statsPaneId])
   // Push the latest compiled rules into the stream from an effect — assigning
   // during render would be a side effect in the render body.
   useEffect(() => {
     streamRef.current?.setRules(compiledRules)
   }, [compiledRules])
+  // Same for the match outlet: it is stable (useCallback with fixed deps), but
+  // re-attaching keeps a stream created before this effect ran in sync.
+  useEffect(() => {
+    streamRef.current?.setOnMatch(notifyMatch)
+  }, [notifyMatch])
 
   // M5: load completion candidates once per session (history + library cached).
   const ensureCompletionCache = useCallback((): void => {
@@ -851,11 +1006,17 @@ export function TerminalView({
     const lightTheme = isLightTheme(themeColors.background)
     const term = new Terminal({
       fontSize: fontOpts.fontSize,
-      fontFamily: fontOpts.fontFamily,
+      fontFamily: quoteFontStack(appendCjk(fontOpts.fontFamily, fontOpts.cjkFontFamily)),
       fontWeight: toFontWeight(fontOpts.fontWeight),
       fontWeightBold: toFontWeight(fontOpts.boldFontWeight),
       letterSpacing: fontOpts.letterSpacing,
       lineHeight: fontOpts.lineHeight,
+      // Squeeze glyphs that overflow a single cell back into their cell. The
+      // default font sets draw box-drawing/block characters, and some CJK
+      // faces, wider than the advance xterm assumes, which paints over the
+      // neighbouring cell and breaks column alignment across the whole line.
+      // WebGL renderer only (the DOM renderer lays out per cell by the browser).
+      rescaleOverlappingGlyphs: true,
       scrollback: fontOpts.scrollback,
       cursorBlink: fontOpts.cursorBlink,
       cursorStyle: fontOpts.cursorStyle,
@@ -863,7 +1024,6 @@ export function TerminalView({
       theme: withChromeColors(themeColors as ITheme, bgOpts.image !== ''),
       allowProposedApi: true,
       allowTransparency: true,
-      overviewRuler: { width: 9, showTopBorder: false, showBottomBorder: false },
       // Light themes ship WCAG-compliant palettes, but apps still emit
       // dark-tuned bright/bold colors; bold must NOT jump to the bright set.
       drawBoldTextInBrightColors: !lightTheme,
@@ -875,15 +1035,24 @@ export function TerminalView({
       // theme colors. (Spelled minimumContrastRatio — minContrastRatio is
       // silently ignored.)
       minimumContrastRatio: bgOpts.image || lightTheme ? 4.5 : 1,
-      automaticFontFallback: true,
       convertEol: false,
       windowsPty: { backend: 'conpty', buildNumber: 0 }
-    } as Terminal['options'] & object)
+    })
 
     term.attachCustomKeyEventHandler(onTerminalKey)
 
     if (!hostRef.current) return
     term.open(hostRef.current)
+
+    // Unicode 11 width tables. xterm ships Unicode 6 by default, where emoji
+    // and a chunk of the CJK/emoji presentation ranges are measured as narrow:
+    // a shell that emits those characters leaves xterm's column count out of
+    // step with the app's own idea of the line width, so everything after them
+    // on that line misaligns. The addon registers the table and belongs to this
+    // terminal instance, so it is disposed with `term`.
+    const unicode11 = new Unicode11Addon()
+    term.loadAddon(unicode11)
+    term.unicode.activeVersion = '11'
 
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -958,7 +1127,7 @@ export function TerminalView({
     // unsubscribe functions — keep the two shapes apart or cleanup throws.
     // A fresh HighlightStream is created per session so carry data never leaks
     // across a sessionId rebind (e.g. template apply).
-    const stream = new HighlightStream(compiledRules)
+    const stream = new HighlightStream(compiledRules, notifyMatch)
     streamRef.current = stream
     // A session created while stats are on keeps collecting into the same map.
     stream.setStats(statsRef.current ?? undefined)
@@ -994,6 +1163,15 @@ export function TerminalView({
     // the pointer cursor + underline advertise it on hover. A plain click stays
     // with the terminal (cursor placement / selection), so a link can never
     // open by accident while selecting text.
+    //
+    // Two sources feed one range list: the built-in URL heuristics
+    // (`findUrls`) and the user's own clickable-link rules. The user rules win
+    // every overlap — a rule is a deliberate statement about this output, while
+    // the built-ins are guesses — and `findRuleLinks` has already dropped any
+    // target that is not http(s), so a `file://`/`javascript:` template can
+    // never even become an underlined range. Rules are read through
+    // `linkRulesRef`, which is what makes editing them take effect without
+    // rebuilding the terminal.
     const linkProvider = term.registerLinkProvider({
       provideLinks: (bufferLineNumber, callback) => {
         const buffer = term.buffer.active
@@ -1027,13 +1205,16 @@ export function TerminalView({
             rowAt.push(row)
           }
         }
-        const links: ILink[] = findUrls(text).map((found) => {
+        const found = mergeLinkSpans(findRuleLinks(text, linkRulesRef.current), findUrls(text))
+        const links: ILink[] = found.map((link) => {
           return {
             range: {
-              start: { x: colAt[found.start] ?? 1, y: (rowAt[found.start] ?? first) + 1 },
-              end: { x: colAt[found.end - 1] ?? 1, y: (rowAt[found.end - 1] ?? first) + 1 }
+              start: { x: colAt[link.start] ?? 1, y: (rowAt[link.start] ?? first) + 1 },
+              end: { x: colAt[link.end - 1] ?? 1, y: (rowAt[link.end - 1] ?? first) + 1 }
             },
-            text: found.url,
+            // The prompt shows the expanded target, so a template's result is
+            // visible before the click rather than after it.
+            text: link.url,
             decorations: { pointerCursor: true, underline: true },
             activate: (event: MouseEvent): void => {
               const mod = navigator.platform.toLowerCase().includes('mac')
@@ -1041,7 +1222,7 @@ export function TerminalView({
                 : event.ctrlKey
               if (!mod) return
               // The main process routes window.open through shell.openExternal.
-              window.open(found.url, '_blank', 'noopener')
+              window.open(link.url, '_blank', 'noopener')
             }
           }
         })
@@ -1252,7 +1433,7 @@ export function TerminalView({
     const term = termRef.current
     if (!term) return
     term.options.fontSize = fontOpts.fontSize
-    term.options.fontFamily = fontOpts.fontFamily
+    term.options.fontFamily = quoteFontStack(appendCjk(fontOpts.fontFamily, fontOpts.cjkFontFamily))
     term.options.fontWeight = toFontWeight(fontOpts.fontWeight)
     term.options.fontWeightBold = toFontWeight(fontOpts.boldFontWeight)
     term.options.letterSpacing = fontOpts.letterSpacing
