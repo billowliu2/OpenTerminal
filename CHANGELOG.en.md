@@ -1,5 +1,40 @@
 # OpenTerminal Changelog
 
+## v1.0.30 - 2026-10-18
+
+This release improves CJK text rendering, keyword highlighting, and custom link rules; adds ReDoS protection for user-defined regular expressions; and introduces a more precise renderer performance timeline for diagnosing long freezes.
+
+### Improved: CJK and font rendering
+- The terminal now uses the Unicode 11 width table, improving alignment for Chinese text, full-width punctuation, and table lines
+- A separate CJK fallback font slot was added to terminal font settings
+- The WebGL renderer now rescales overlapping glyphs, reducing glyph overlap
+- The font list marks monospace fonts, and the preview includes mixed Chinese/Latin samples so alignment issues are visible before applying a font
+
+### New: highlighting and clickable link rules
+- Highlight rules have a new per-line matching switch, so anchors such as `^ERROR$` apply to every line
+- Custom clickable link rules are here: regex capture groups can expand into `http/https` link templates and open with Ctrl+Click
+- Highlight rules can raise an in-app alert on match, useful for errors or secret leaks in long-running task output
+- Overlong output now degrades line by line: only lines over 4KB are skipped instead of disabling highlighting for the whole chunk
+
+### Fixed: highlight and font setting stability
+- Fixed permission-bit highlighting for multi-line and colored `ls -l` output
+- Fixed highlighted spans erasing the application's own colors; colored TUI output keeps its original styling
+- Fixed crashes and silently ignored settings caused by invalid line height, cursor style, scrollback, or renderer mode; damaged legacy settings are repaired at startup
+- Fixed font names containing spaces, parentheses, and similar characters silently failing in some cases
+
+### Security: ReDoS protection for custom regexes
+- Custom highlight and link rules are dynamically validated in a main-process worker before they can run synchronously in the terminal
+- Each rule has a 500ms hard timeout; timed-out rules are quarantined instead of freezing the UI
+- Editor previews, imports, existing settings, and hand-edited settings files all pass through the same gate
+- Built-in presets are exempt; installations without custom rules do not start a worker and add no hot-path overhead
+- Existing custom rules are revalidated automatically after upgrading and may briefly show a pending state
+
+### Diagnostics: renderer freeze timeline
+- Renderer freeze logs now distinguish real long tasks from timer, sleep, and scheduler delays
+- New logs cover fit/reflow, xterm write consumption, write queues, and WebGL lifecycle events
+- Diagnostic logs are rate-limited and contain metadata only, never terminal content
+- When reporting a freeze, attaching the day's diagnostic log makes it much easier to identify reflow, output backlog, GPU, or external-program causes
+
 ## v1.0.29 - 2026-10-16
 
 This release fixes light themes: on white themes the text inside the terminal (especially the colored output of programs) was almost unreadable, and settings dialogs and other surfaces rendered with dark-theme colors on a light background.
