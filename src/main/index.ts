@@ -5,7 +5,12 @@ import { pathToFileURL } from 'url'
 import { devRendererUrl } from './devEnv'
 import { isTrustedRendererUrl, registerIpc } from './ipc'
 import { killAllPtys, killPtysByOwner } from './pty'
-import { applyStartupSystemSettings, loadSettings, setUpdateScheduleApplier } from './settingsStore'
+import { applyStartupSystemSettings, loadSettings, setRuleValidationApplier, setUpdateScheduleApplier } from './settingsStore'
+import { setValidatorWorkerFactory, shutdownRuleValidator, validateSettingsRules } from './redosValidator'
+// The probe worker is built as its own main-process chunk; this import hands
+// the validator a factory rather than a live thread, so nothing starts until a
+// rule actually needs proving.
+import createProbeWorker from './redosProbeWorker?nodeWorker'
 import { getLockController, initLockController } from './lockController'
 import { applyMenuLockState } from './lockMenu'
 import { isLockBlockedShortcut, isPanicLockChord } from './lockShortcuts'
@@ -103,6 +108,12 @@ if (!gotSingleInstanceLock) {
       // updater.ts already imports settingsStore: the reverse import would be a
       // cycle, arming the timer against a half-initialised updater.
       setUpdateScheduleApplier(applyUpdateSchedule)
+      // Rule validation: the worker factory (a factory, not a thread — the pool
+      // stays empty until a rule needs proving) plus the applier that re-probes
+      // stored rules after every settings save. Wiring the applier also runs one
+      // pass now, which is what re-proves the rules already on disk.
+      setValidatorWorkerFactory(() => createProbeWorker({}))
+      setRuleValidationApplier(validateSettingsRules)
       // OS-level effects (login item, sleep blocker) must apply even if the
       // settings dialog is never opened this run.
       applyStartupSystemSettings(loadSettings())
@@ -299,6 +310,9 @@ app.on('before-quit', () => {
   // Let window 'close' events pass through so teardown completes.
   markQuitting()
   killAllPtys()
+  // Probe worker threads are ours to stop: a terminated-on-quit thread pool
+  // otherwise keeps the process alive past the last window.
+  shutdownRuleValidator()
   globalShortcut.unregisterAll()
 })
 

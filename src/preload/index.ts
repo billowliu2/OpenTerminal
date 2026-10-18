@@ -4,6 +4,7 @@ import type { AppSettings } from '../shared/settings'
 import type { AppApi } from '../shared/api'
 import type { LayoutMeta, PtyCreateOptions, PtyDataEvent, PtyExitEvent, ReleaseNote, SessionSnapshot, UpdateState, ZmodemOfferEvent, ZmodemResponse, ZmodemDoneEvent } from '../shared/ipc'
 import type { LockOperationResult, LockPasswordInput, LockSettingsState } from '../shared/ipc'
+import type { RuleValidationReport, RuleValidationRequest, RuleValidationState } from '../shared/ipc'
 import type {
   HostKeyAction,
   HostKeyPromptEvent,
@@ -129,6 +130,14 @@ const api: AppApi = {
   },
 
   listFonts: () => ipcRenderer.invoke(Ipc.FONTS_LIST),
+
+  validateRules: (request: RuleValidationRequest) => ipcRenderer.invoke(Ipc.RULE_VALIDATE, request),
+  getRuleValidationState: () => ipcRenderer.invoke(Ipc.RULE_VALIDATION_STATE_GET),
+  onRuleValidationState: (cb: (state: RuleValidationState) => void) => {
+    const listener = (_: unknown, state: RuleValidationState): void => cb(state)
+    ipcRenderer.on(Ipc.RULE_VALIDATION_STATE, listener)
+    return () => ipcRenderer.removeListener(Ipc.RULE_VALIDATION_STATE, listener)
+  },
 
   listLayouts: () => ipcRenderer.invoke(Ipc.LAYOUTS_LIST),
   getLayout: (id: string) => ipcRenderer.invoke(Ipc.LAYOUTS_GET, id),

@@ -98,6 +98,45 @@ console.log('an empty flush never reaches the sink')
   b.dispose()
 }
 
+// `pendingChars` is the diagnostic view of the backlog the batcher is holding —
+// the one number a stall report needs to tell "output is stuck here" apart from
+// "xterm is behind". It is a JS string length (UTF-16 code units), deliberately
+// NOT a byte count: the highlight path hands over decoded text, and one CJK
+// ideograph is 1 here but 3 bytes on the wire.
+console.log('pendingChars tracks the buffer as a string length')
+{
+  const { calls, sink } = makeSink()
+  const b = new WriteBatcher(sink, DELAY)
+  ok(b.pendingChars === 0, 'an empty batcher reports 0')
+  b.push('abc')
+  ok(b.pendingChars === 3, 'three ASCII chars count 3')
+  b.push('中文')
+  ok(b.pendingChars === 5, 'two CJK chars add 2 code units, not 6 bytes')
+  ok(b.hasPending() === (b.pendingChars > 0), 'hasPending agrees with pendingChars')
+  b.push('')
+  ok(b.pendingChars === 5, 'an empty push changes nothing')
+  await sleep(DELAY * 4)
+  ok(b.pendingChars === 0, 'pendingChars clears on flush')
+  ok(calls.length === 1, 'and the flush still happened once')
+  b.dispose()
+}
+
+console.log('pendingChars clears on flushNow and dispose')
+{
+  const { calls, sink } = makeSink()
+  const b = new WriteBatcher(sink, DELAY)
+  b.push('tail')
+  b.flushNow()
+  ok(b.pendingChars === 0, 'flushNow empties the count synchronously')
+  await sleep(DELAY * 4)
+  b.push('dropped')
+  ok(b.pendingChars === 7, 'the rebuffered count is visible')
+  b.dispose()
+  ok(b.pendingChars === 0, 'dispose clears the count')
+  await sleep(DELAY * 4)
+  ok(calls.length === 1, 'the disposed batcher never wrote the dropped text')
+}
+
 if (failed > 0) {
   console.error(`\n[write-batcher] ${failed} check(s) FAILED`)
   process.exit(1)

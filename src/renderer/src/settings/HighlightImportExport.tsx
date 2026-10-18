@@ -3,6 +3,7 @@ import { Alert, App, Button, Input, Modal, Popconfirm, Radio, Space } from 'antd
 import { t } from '@shared/i18n'
 import { exportHighlightRules, mergeRules, parseHighlightRules } from '@shared/highlightIO'
 import type { ImportError } from '@shared/highlightIO'
+import type { HighlightRule } from '@shared/settings'
 import { useSettingsStore } from './store'
 
 interface ImportResult {
@@ -10,7 +11,22 @@ interface ImportResult {
   warnings: string[]
   /** rules that made it in; 0 means nothing was imported */
   count: number
+  /** probe verdicts for the imported rules, once the batch came back */
+  probe?: ProbeTally
 }
+
+interface ProbeTally {
+  passed: number
+  pending: number
+  quarantined: number
+  /** at least one batch never came back — its rules are counted as pending */
+  failed: boolean
+}
+
+/** Rules per validation batch. The IPC handler caps batches at the same
+ *  order of magnitude; a bigger import is probed in several rounds so no single
+ *  request holds a worker slot for an unbounded list. */
+const IMPORT_VALIDATE_CHUNK = 50
 
 /**
  * Import / export of the rule set as JSON. The renderer can do all of this on
@@ -79,6 +95,52 @@ export function HighlightImportExport({
     return t('settings.highlight.importEmpty')
   }
 
+  /**
+   * Probe the rules that just came in, in chunks, and report the tally.
+   *
+   * An imported file is not evidence: whatever it carried under `validation` is
+   * ignored on parse, and every rule is measured here against this build's
+   * corpus. The saved rules also go through the background pass, so this call
+   * mostly reports what that pass is doing — the validator dedupes by pattern,
+   * so the two never double the work.
+   */
+  const probeImported = async (rules: HighlightRule[]): Promise<ProbeTally> => {
+    const tally: ProbeTally = { passed: 0, pending: 0, quarantined: 0, failed: false }
+    const api = window.api
+    if (api?.validateRules === undefined) {
+      tally.pending = rules.length
+      return tally
+    }
+    for (let start = 0; start < rules.length; start += IMPORT_VALIDATE_CHUNK) {
+      const chunk = rules.slice(start, start + IMPORT_VALIDATE_CHUNK)
+      try {
+        const report = await api.validateRules({
+          kind: 'highlight',
+          items: chunk.map((rule, index) => ({
+            id: `${start + index}`,
+            pattern: rule.pattern,
+            caseInsensitive: rule.caseInsensitive,
+            lineAnchor: rule.lineAnchor
+          }))
+        })
+        for (const outcome of report.results) {
+          // A preset needs no proof, so it counts as usable straight away.
+          if (outcome.state === 'passed' || outcome.state === 'builtin') tally.passed += 1
+          else if (outcome.state === 'quarantined') tally.quarantined += 1
+          else tally.pending += 1
+        }
+      } catch {
+        // The rules are already saved; the background pass keeps trying, so a
+        // failed batch is reported as "pending" rather than as an import error —
+        // but the failure is flagged, because a silent "pending" count looks
+        // exactly like a probe that simply has not answered yet.
+        tally.pending += chunk.length
+        tally.failed = true
+      }
+    }
+    return tally
+  }
+
   const handleImport = async (): Promise<void> => {
     const parsed = parseHighlightRules(draft)
     if (parsed.error !== undefined) {
@@ -93,6 +155,8 @@ export function HighlightImportExport({
     const current = useSettingsStore.getState().settings.highlightRules
     await setHighlightRules(mergeRules(current, parsed.rules, mode))
     setResult({ warnings: parsed.warnings, count: parsed.rules.length })
+    const probe = await probeImported(parsed.rules)
+    setResult((prev) => (prev === null ? prev : { ...prev, probe }))
   }
 
   return (
@@ -180,7 +244,13 @@ export function HighlightImportExport({
           </Space>
           {result && (
             <Alert
-              type={result.error !== undefined || result.count === 0 ? 'error' : 'success'}
+              type={
+                result.error !== undefined || result.count === 0
+                  ? 'error'
+                  : result.probe !== undefined && (result.probe.failed || result.probe.quarantined > 0)
+                    ? 'warning'
+                    : 'success'
+              }
               showIcon
               message={
                 result.error !== undefined
@@ -190,12 +260,27 @@ export function HighlightImportExport({
                     : t('settings.highlight.imported', { n: result.count })
               }
               description={
-                result.warnings.length > 0
-                  ? t('settings.highlight.importSkipped', {
-                      n: result.warnings.length,
-                      list: result.warnings.join('; ')
-                    })
-                  : undefined
+                result.probe === undefined && result.warnings.length === 0 ? undefined : (
+                  <div>
+                    {result.probe !== undefined && (
+                      <div>
+                        {t('settings.highlight.importValidated', {
+                          passed: result.probe.passed,
+                          pending: result.probe.pending,
+                          quarantined: result.probe.quarantined
+                        })}
+                      </div>
+                    )}
+                    {result.probe?.failed === true && (
+                      <div>{t('settings.highlight.probeFailed')}</div>
+                    )}
+                    {result.warnings.length > 0 &&
+                      t('settings.highlight.importSkipped', {
+                        n: result.warnings.length,
+                        list: result.warnings.join('; ')
+                      })}
+                  </div>
+                )
               }
             />
           )}

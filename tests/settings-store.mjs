@@ -21,6 +21,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { DEFAULT_HIGHLIGHT_RULES } from '../src/shared/settings.ts'
+import { MAX_PATTERN_LEN, runtimeKeyOf } from '../src/shared/ruleValidation.ts'
+import { PROBE_VERSION } from '../src/shared/redosProbes.ts'
 
 const require = createRequire(import.meta.url)
 const userData = mkdtempSync(join(tmpdir(), 'ot-settings-'))
@@ -142,6 +144,131 @@ console.log('[highlight rules]')
     ? readFileSync(join(userData, 'settings-warnings.log'), 'utf8')
     : ''
   ok(log.includes('highlightRules: not an array'), 'the fallback is recorded in settings-warnings.log')
+}
+
+// ---- 2b. the internal validation proof --------------------------------------
+// `validation` is internal metadata written by the rule validator, not user
+// input. The store keeps a well-formed record — the compile gate re-checks it
+// against the rule's pattern, its flags, the current probe version and the
+// running build — and drops a malformed one with a trace, without costing the
+// user the rule itself. A proof that is well-formed but no longer applies (an
+// older corpus, another environment, an edited pattern) is rewritten to
+// `pending` rather than carried forward claiming to be a verdict.
+console.log('[rule validation]')
+{
+  /** The fingerprint the bundled store installed (same inputs, same function). */
+  const runtime = runtimeKeyOf({
+    app: '0.0.0-stub',
+    electron: process.versions.electron ?? '',
+    v8: process.versions.v8 ?? ''
+  })
+  const proof = (over = {}) => ({
+    status: 'passed',
+    pattern: '\\bERROR\\b',
+    flags: 'g',
+    probeVersion: PROBE_VERSION,
+    runtime,
+    ...over
+  })
+
+  const kept = (await roundTrip({ highlightRules: [rule({ validation: proof() })] })).highlightRules
+  ok(kept.length === 1 && kept[0].validation?.status === 'passed', 'a well-formed proof survives the round trip')
+  ok(
+    JSON.stringify(Object.keys(kept[0].validation).sort()) ===
+      JSON.stringify(['flags', 'pattern', 'probeVersion', 'runtime', 'status']),
+    `only the five known fields survive (${Object.keys(kept[0].validation).join(', ')})`
+  )
+
+  const shaped = (await roundTrip({ highlightRules: [rule({ validation: proof({ junk: 1 }) })] })).highlightRules
+  ok(shaped[0].validation?.junk === undefined, 'extra fields are dropped from the proof')
+
+  for (const [label, bad] of [
+    ['a string', 'passed'],
+    ['an unknown status', proof({ status: 'trusted' })],
+    ['a non-string pattern', proof({ pattern: 7 })],
+    ['a non-numeric probe version', proof({ probeVersion: '1' })],
+    ['a missing runtime', proof({ runtime: undefined })],
+    ['an empty runtime', proof({ runtime: '' })],
+    ['a missing status', { pattern: '\\bERROR\\b', flags: 'g', probeVersion: PROBE_VERSION, runtime }]
+  ]) {
+    const out = (await roundTrip({ highlightRules: [rule({ validation: bad })] })).highlightRules
+    ok(out.length === 1, `a ${label} proof does not cost the user the rule`)
+    ok(out[0].validation === undefined, `a ${label} proof is dropped`)
+  }
+
+  // Stale verdicts: an upgrade (new corpus or new build) must not leave a rule
+  // claiming to have passed something it never ran against.
+  const olderCorpus = (await roundTrip({
+    highlightRules: [rule({ validation: proof({ probeVersion: PROBE_VERSION - 1 }) })]
+  })).highlightRules
+  ok(olderCorpus[0].validation?.status === 'pending', 'a proof from an older probe set becomes pending')
+  ok(olderCorpus[0].validation?.probeVersion === PROBE_VERSION, 'the pending record names the current probe set')
+
+  const otherBuild = (await roundTrip({
+    highlightRules: [rule({ validation: proof({ runtime: 'other|other|other' }) })]
+  })).highlightRules
+  ok(otherBuild[0].validation?.status === 'pending', 'a proof from another build becomes pending')
+  ok(otherBuild[0].validation?.runtime === runtime, 'the pending record names the running build')
+
+  const otherFlags = (await roundTrip({
+    highlightRules: [rule({ caseInsensitive: true, validation: proof() })]
+  })).highlightRules
+  ok(otherFlags[0].validation?.status === 'pending', 'a proof for other flags becomes pending')
+  ok(otherFlags[0].validation?.flags === 'gi', 'the pending record carries the flags the rule now compiles with')
+
+  // A quarantined verdict that still applies is evidence, not a gap: it stays.
+  const quarantined = (await roundTrip({
+    highlightRules: [rule({ validation: proof({ status: 'quarantined' }) })]
+  })).highlightRules
+  ok(quarantined[0].validation?.status === 'quarantined', 'a current quarantine is kept as it stands')
+
+  // Same contract for link rules, which go through the sanitizer instead.
+  const linkKept = (await roundTrip({
+    linkRules: [{ id: 'l1', pattern: 'BUG-(\\d+)', template: 'https://x/$1', validation: proof({ pattern: 'BUG-(\\d+)' }) }]
+  })).linkRules
+  ok(linkKept[0].validation?.status === 'passed', 'a well-formed link-rule proof survives the round trip')
+  const linkStale = (await roundTrip({
+    linkRules: [
+      {
+        id: 'l1',
+        pattern: 'BUG-(\\d+)',
+        template: 'https://x/$1',
+        validation: proof({ pattern: 'BUG-(\\d+)', runtime: 'other|other|other' })
+      }
+    ]
+  })).linkRules
+  ok(linkStale[0].validation?.status === 'pending', 'a link-rule proof from another build becomes pending')
+
+  {
+    // The hand-edited case is the one that needs a trace: the record has to be
+    // ON DISK when the store reads it (a save sanitizes on the way out and would
+    // leave nothing to warn about), so write the file directly.
+    writeFileSync(
+      join(userData, 'settings.json'),
+      JSON.stringify({ highlightRules: [rule({ validation: { status: 'trusted' } })] }),
+      'utf8'
+    )
+    const loaded = store.loadSettings().highlightRules
+    ok(
+      loaded.length === 1 && loaded[0].validation === undefined,
+      'a malformed proof in a hand-edited file is dropped on load'
+    )
+    const proofLog = existsSync(join(userData, 'settings-warnings.log'))
+      ? readFileSync(join(userData, 'settings-warnings.log'), 'utf8')
+      : ''
+    ok(proofLog.includes('.validation'), 'the drop is recorded in settings-warnings.log')
+  }
+}
+
+// ---- 2c. the pattern length bound -------------------------------------------
+// The engine refuses a pattern over MAX_PATTERN_LEN anyway; refusing it at load
+// keeps the paste out of the settings file and leaves a trace.
+console.log('[pattern length]')
+{
+  const over = (await roundTrip({ highlightRules: [rule({ pattern: 'a'.repeat(MAX_PATTERN_LEN + 1) })] })).highlightRules
+  ok(over.length === 0, `a pattern over ${MAX_PATTERN_LEN} characters is refused at load`)
+  const atLimit = (await roundTrip({ highlightRules: [rule({ pattern: 'a'.repeat(MAX_PATTERN_LEN) })] })).highlightRules
+  ok(atLimit.length === 1, `a pattern of exactly ${MAX_PATTERN_LEN} characters is kept`)
 }
 
 // ---- 3. value bands ---------------------------------------------------------

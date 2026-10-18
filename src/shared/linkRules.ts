@@ -1,4 +1,14 @@
 import type { LinkRule } from './settings'
+// The explicit `.ts` extensions on the two imports below are deliberate:
+// `tests/link-rules.mjs` loads this file directly through Node's type stripping,
+// and Node's ESM resolver does not try extensions (measured: an extension-less
+// specifier here fails with ERR_MODULE_NOT_FOUND). tsc raises TS5097 for the
+// extension and nothing else, so the directive silences it — the import still
+// resolves and stays fully typed.
+// @ts-expect-error TS5097 — see above
+import { LINK_RULE_FLAGS, MAX_PATTERN_LEN, ruleRunState, sanitizeRuleValidation, validationAllows, type RuleRunState } from './ruleValidation.ts'
+// @ts-expect-error TS5097 — see above
+import { PROBE_VERSION } from './redosProbes.ts'
 
 /**
  * User-defined clickable link rules (WezTerm `hyperlink_rules` in spirit).
@@ -7,17 +17,24 @@ import type { LinkRule } from './settings'
  * match becomes an underlined range, and a Ctrl/Cmd+Click opens the template
  * expanded with the capture groups. This module is the whole engine minus the
  * xterm plumbing — validation, template expansion and the non-overlapping span
- * merge — so it stays a zero-import pure module the Node test can load
- * directly (`tests/link-rules.mjs`), and nothing here can touch a terminal.
+ * merge — so it stays a pure module the Node test can load directly
+ * (`tests/link-rules.mjs`), and nothing here can touch a terminal.
  *
  * Safety: `findRuleLinks` is the only producer of a rule-made target, and it
  * drops anything whose scheme is not http/https. A template is user input, and
  * `file://`, `javascript:` or an `ms-settings:` handler must never reach the
  * shell just because a pattern matched some output.
+ *
+ * The same fail-closed gate the highlight engine applies (`validationAllows`)
+ * runs in `compileLinkRules`: a user pattern executes only with a proof that
+ * matches it exactly. Link rules have NO built-in whitelist — none of them
+ * ships with the app, so there is nothing to exempt.
  */
 
-/** Longest pattern / template we accept; longer entries are dropped. */
-export const LINK_PATTERN_MAX = 500
+/** Longest pattern we accept; longer entries are dropped. One constant with
+ *  the highlight rules and the engine (`MAX_PATTERN_LEN`), so a link pattern
+ *  can never be admitted at a length the engine would refuse. */
+export const LINK_PATTERN_MAX = MAX_PATTERN_LEN
 export const LINK_TEMPLATE_MAX = 500
 /** Note is a table caption, not documentation — same budget as a highlight rule. */
 export const LINK_NOTE_MAX = 60
@@ -111,12 +128,19 @@ export function sanitizeLinkRules(
     }
     seen.add(id)
     const note = typeof candidate.note === 'string' ? candidate.note.trim() : ''
+    // Internal metadata, so only its SHAPE is checked on load; the compile gate
+    // re-checks it against the pattern, the flags and the probe version.
+    const validation = sanitizeRuleValidation(candidate.validation)
+    if (candidate.validation !== undefined && validation === undefined) {
+      warn?.(`linkRules[${index}].validation: malformed — dropped`)
+    }
     rules.push({
       id,
       pattern,
       template,
       // Absent means on: a rule the user just created and did not switch off.
       enabled: candidate.enabled !== false,
+      ...(validation ? { validation } : {}),
       ...(note ? { note: note.slice(0, LINK_NOTE_MAX) } : {})
     })
   })
@@ -209,14 +233,31 @@ export function compileLinkRules(rules: readonly LinkRule[] | undefined): Compil
   for (const rule of rules) {
     if (rule.enabled === false) continue
     if (rule.pattern.trim() === '' || rule.template.trim() === '') continue
+    // Fail-closed admission, exactly like the highlight engine's `compileRules`
+    // (link rules pass no built-in whitelist: none of them ships with the app).
+    // Without a `passed` proof for this precise pattern + flag string + probe
+    // version the rule is inert — an imported set, a hand-edited settings.json,
+    // a proof that expired with a corpus update or a pattern edited after the
+    // fact all land here as "no proof", never as "probably fine".
+    if (!validationAllows(rule.pattern, LINK_RULE_FLAGS, rule.validation, PROBE_VERSION)) continue
     try {
-      out.push({ id: rule.id, regex: new RegExp(rule.pattern, 'g'), template: rule.template })
+      out.push({ id: rule.id, regex: new RegExp(rule.pattern, LINK_RULE_FLAGS), template: rule.template })
     } catch {
       // sanitizeLinkRules already dropped these; a hand-edited settings.json or
       // a rule list built in memory could still carry one.
     }
   }
   return out
+}
+
+/**
+ * How a link rule stands right now — the same derivation the highlight engine
+ * exposes for its own rules, and the label the settings table shows. Link rules
+ * have no built-in whitelist, so the states are `passed` / `pending` /
+ * `quarantined` only.
+ */
+export function linkRuleRunState(rule: LinkRule): RuleRunState {
+  return ruleRunState(rule.pattern, LINK_RULE_FLAGS, rule.validation, PROBE_VERSION)
 }
 
 /**

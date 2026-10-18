@@ -3,6 +3,8 @@
  * DO NOT rename channels or change payload shapes without updating all consumers.
  */
 
+import type { RuleRunState } from './ruleValidation'
+
 export const Ipc = {
   // ---- PTY session lifecycle ----
   // NOTE: since M2 these channels are session-generic: `id` addresses both
@@ -21,6 +23,14 @@ export const Ipc = {
   SETTINGS_SET: 'settings:set',
   /** main -> renderer broadcast after any save */
   SETTINGS_CHANGED: 'settings:changed',
+
+  // ---- rule validation (ReDoS probe gate; the main process owns the Worker) ----
+  /** renderer -> main: probe a batch of draft rules (editor / import dialog) */
+  RULE_VALIDATE: 'rules:validate',
+  /** renderer pulls the validator's aggregate state without waiting for a change */
+  RULE_VALIDATION_STATE_GET: 'rules:validationStateGet',
+  /** main -> renderer broadcast: RuleValidationState */
+  RULE_VALIDATION_STATE: 'rules:validationState',
 
   // ---- fonts ----
   FONTS_LIST: 'fonts:list',
@@ -239,6 +249,75 @@ export interface AppInfo {
   platform: NodeJS.Platform | string
   appVersion: string
   homeDir: string
+  /**
+   * The environment fingerprint the rule-validation gate compares proofs
+   * against (`shared/ruleValidation.ts`). The renderer cannot read the app,
+   * Electron and V8 versions itself, so it is handed the exact string the main
+   * process installed rather than deriving a second one that could differ.
+   */
+  runtimeKey: string
+}
+
+// ---- rule validation (ReDoS probe gate) ----
+/** Which rule family a batch belongs to: it decides the flags probed under. */
+export type RuleValidationKind = 'highlight' | 'link'
+
+/**
+ * One draft rule to probe. `id` is the caller's own handle, echoed back in the
+ * report — the validator knows nothing about rule storage.
+ */
+export interface RuleValidationRequestItem {
+  id: string
+  pattern: string
+  /** highlight rules only: link rules always compile with `g` */
+  caseInsensitive?: boolean
+  lineAnchor?: boolean
+}
+
+export interface RuleValidationRequest {
+  kind: RuleValidationKind
+  items: RuleValidationRequestItem[]
+}
+
+/** One rule's standing after a batch. */
+export interface RuleValidationOutcome {
+  id: string
+  /** `builtin` = a factory preset, exempt from probing; `pending` = no verdict */
+  state: RuleRunState
+  /** slowest probe in ms, when a run actually completed */
+  ms?: number
+}
+
+export interface RuleValidationReport {
+  /** the fingerprint the verdicts belong to; `''` when nothing was installed */
+  runtime: string
+  probeVersion: number
+  /**
+   * false = a worker creation was ATTEMPTED and failed (or the factory is
+   * missing), so every non-builtin rule is pending. Not merely "no worker has
+   * been needed yet": a default install with no custom rules reports `true`.
+   */
+  workerAvailable: boolean
+  /** the request carried more items than one batch accepts; the tail was dropped */
+  truncated: boolean
+  results: RuleValidationOutcome[]
+}
+
+/**
+ * What the validator is doing overall — the settings page shows a warning from
+ * this rather than from a per-rule verdict, because "no worker could be built"
+ * is a state of the whole feature. `workerAvailable` is deliberately not
+ * "has a worker been started": the pool is lazy, and reporting the normal
+ * no-custom-rules install as unavailable would be a false alarm.
+ */
+export interface RuleValidationState {
+  runtime: string
+  probeVersion: number
+  workerAvailable: boolean
+  /** rules waiting for a verdict (no proof, or a proof from another environment) */
+  pending: number
+  /** rules the validator quarantined: kept for editing, never executed */
+  quarantined: number
 }
 
 // ---- updater ----

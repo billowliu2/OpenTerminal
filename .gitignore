@@ -46,6 +46,8 @@ tests/.log-sanitizer.cjs
 tests/.reserved-accelerators.cjs
 tests/.terminal-title.cjs
 tests/.app-log.cjs
+tests/.redos-validator.cjs
+tests/.redos-probe-worker.cjs
 release/
 
 # stray local test artifacts

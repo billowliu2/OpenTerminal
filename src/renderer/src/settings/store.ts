@@ -1,5 +1,8 @@
 import type { AppSettings, LockSettings, SystemSettings, TerminalSettings } from '@shared/settings'
 import { DEFAULT_SETTINGS } from '@shared/settings'
+import type { RuleValidationState } from '@shared/ipc'
+import { PROBE_VERSION } from '@shared/redosProbes'
+import { setRuleRuntimeKey } from '@shared/ruleValidation'
 import type { TerminalTheme } from '@shared/theme'
 import { getThemeById } from '@shared/theme'
 import { useMemo } from 'react'
@@ -10,6 +13,14 @@ export interface SettingsState {
   /** true once initial settings have been loaded from the main process */
   hydrated: boolean
   settings: AppSettings
+  /**
+   * The rule validator's aggregate state (worker health, pending/quarantine
+   * counts). Aggregate on purpose: the settings page warns about the feature as
+   * a whole from here, while each row derives its own label from its proof.
+   * The initial value claims nothing: no pending rules and a working worker, so
+   * a slow first reply cannot flash a warning.
+   */
+  ruleValidation: RuleValidationState
   hydrate: () => Promise<void>
   /** shallow-merge into settings.terminal and persist */
   updateTerminal: (partial: Partial<TerminalSettings>) => Promise<void>
@@ -29,6 +40,8 @@ export interface SettingsState {
 
 /** unsubscriber for the cross-window SETTINGS_CHANGED listener; held module-level so hydrate() is idempotent */
 let unsubscribeStoreListener: (() => void) | null = null
+/** same for the rule validator's state broadcast */
+let unsubscribeValidationListener: (() => void) | null = null
 /** re-entrancy guard so concurrent hydrate() calls don't double-subscribe */
 let hydrating = false
 
@@ -87,6 +100,13 @@ async function persist(
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   hydrated: false,
   settings: DEFAULT_SETTINGS,
+  ruleValidation: {
+    runtime: '',
+    probeVersion: PROBE_VERSION,
+    workerAvailable: true,
+    pending: 0,
+    quarantined: 0
+  },
 
   hydrate: async () => {
     if (get().hydrated) return
@@ -94,13 +114,34 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (hydrating) return
     hydrating = true
     try {
-      const settings = await window.api.getSettings()
+      const [settings, info] = await Promise.all([
+        window.api.getSettings(),
+        // The rule-validation gate compares stored proofs against the running
+        // build; the renderer cannot read the app/Electron/V8 versions itself,
+        // so it is handed the exact fingerprint the main process installed.
+        // A failure here only means every custom rule reads as pending until the
+        // validator's state broadcast supplies the same string.
+        window.api.appInfo().catch(() => null)
+      ])
+      if (info?.runtimeKey) setRuleRuntimeKey(info.runtimeKey)
       set({ settings, hydrated: true })
 
       if (unsubscribeStoreListener === null) {
         unsubscribeStoreListener = window.api.onSettingsChanged((s: AppSettings) =>
           set({ settings: s })
         )
+      }
+      if (unsubscribeValidationListener === null) {
+        unsubscribeValidationListener = window.api.onRuleValidationState((state) =>
+          set(applyValidationState(state))
+        )
+        // The broadcast fires on change, and the validator's startup pass ran
+        // before this window existed — so ask once for the current state instead
+        // of showing a stale "everything is fine" until the next settings save.
+        void window.api
+          .getRuleValidationState()
+          .then((state) => set(applyValidationState(state)))
+          .catch(() => undefined)
       }
     } catch (err) {
       console.error('[settings] hydrate failed', err)
@@ -154,6 +195,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     await persist(get, set, next, prev, 'updateLock')
   }
 }))
+
+/**
+ * The validator's broadcast carries the authoritative fingerprint as well: if
+ * `appInfo()` failed at startup, this is the second chance to learn the
+ * environment the verdicts belong to — without it every proof would keep
+ * failing the gate's runtime comparison.
+ */
+function applyValidationState(state: RuleValidationState): { ruleValidation: RuleValidationState } {
+  if (state.runtime) setRuleRuntimeKey(state.runtime)
+  return { ruleValidation: state }
+}
 
 /**
  * Resolve the currently active TerminalTheme (builtin or custom) from the store.

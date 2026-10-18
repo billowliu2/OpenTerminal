@@ -10,6 +10,7 @@ import {
   Select,
   Switch,
   Table,
+  Tag,
   Tooltip
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
@@ -27,13 +28,23 @@ import {
   LINK_NOTE_MAX,
   LINK_PATTERN_MAX,
   LINK_TEMPLATE_MAX,
-  isSafeLinkTemplate
+  isSafeLinkTemplate,
+  linkRuleRunState
 } from '@shared/linkRules'
+import { PROBE_VERSION } from '@shared/redosProbes'
+import { highlightFlags, proofMatches, type RuleRunState } from '@shared/ruleValidation'
 import { useResolvedTheme, useSettingsStore } from './store'
 import { HighlightImportExport } from './HighlightImportExport'
 import { HighlightProfiles } from './HighlightProfiles'
 import { ruleNote } from './ruleLabel'
-import { MAX_PATTERN_LEN, compileRules, isReDoSProne, previewSpans } from '../terminal/highlightEngine'
+import { useRuleProbe } from './ruleProbe'
+import {
+  MAX_PATTERN_LEN,
+  compileRules,
+  highlightRuleRunState,
+  isReDoSProne,
+  previewSpans
+} from '../terminal/highlightEngine'
 import {
   getHighlightStats,
   resetHighlightStats,
@@ -69,6 +80,30 @@ function categoryLabel(category: HighlightCategory | undefined): string {
   return t(`settings.highlight.category.${category ?? 'none'}`)
 }
 
+/** Tag colour per run state. `pending` is a warning rather than an error: the
+ *  rule is kept and will be re-checked, it just does not run yet. */
+const STATE_COLOR: Record<RuleRunState, string> = {
+  builtin: 'default',
+  passed: 'success',
+  pending: 'warning',
+  quarantined: 'error'
+}
+
+/**
+ * The proof state of one stored rule. Deliberately worded as "passed the
+ * CURRENT probes": the corpus is a fixed set of hostile shapes, so a pass is
+ * evidence about those shapes on this build, never a claim of safety.
+ */
+function RuleStateTag({ state }: { state: RuleRunState }): React.JSX.Element {
+  return (
+    <Tooltip title={t(`settings.highlight.state.${state}Hint`)}>
+      <Tag color={STATE_COLOR[state]} className="hl-state-tag">
+        {t(`settings.highlight.state.${state}`)}
+      </Tag>
+    </Tooltip>
+  )
+}
+
 /** Sort rank for the grouped view: known categories in fixed order, none last. */
 function categoryRank(rule: HighlightRule): number {
   if (rule.category === undefined) return HIGHLIGHT_CATEGORIES.length
@@ -85,10 +120,11 @@ function tryCompile(pattern: string): { ok: boolean; message?: string; slow?: bo
     return { ok: false, message: err instanceof Error ? err.message : t('settings.highlight.invalidRegex') }
   }
   // Compiling is not the same as being safe to run: `(a+)+$` compiles instantly
-  // and then takes ~8s on 30 characters. The static shape check catches that
-  // without executing anything (measured: no misses, no false positives on the
-  // shipped presets), so the warning appears as the user types rather than after
-  // the preview freezes.
+  // and then takes ~8s on 30 characters. This shape check is an ADVISORY for the
+  // editor only — it has measured misses (`[(](a+)+$`, `(?:a|a)+`) and false
+  // positives, so it can never gate execution. The real gate is the probe
+  // verdict (`useRuleProbe`), which the draft has to pass before it is previewed
+  // or saved into a running rule set.
   return { ok: true, slow: isReDoSProne(pattern) }
 }
 
@@ -123,6 +159,7 @@ export function HighlightTab(): React.JSX.Element {
   const groupByCategory = useSettingsStore((s) => s.settings.terminal.highlightGroupByCategory)
   const statsOn = useSettingsStore((s) => s.settings.terminal.highlightStats)
   const themeColorsOn = useSettingsStore((s) => s.settings.terminal.highlightThemeColors)
+  const ruleValidation = useSettingsStore((s) => s.ruleValidation)
   const updateTerminal = useSettingsStore((s) => s.updateTerminal)
   const [editor, setEditor] = useState<EditorState>({ open: false })
   const [ioOpen, setIoOpen] = useState(false)
@@ -226,6 +263,13 @@ export function HighlightTab(): React.JSX.Element {
       render: (_pattern: string, record) => <PatternCell rule={record} />
     },
     {
+      title: t('settings.highlight.validation'),
+      key: 'validation',
+      width: 132,
+      align: 'center',
+      render: (_value, record) => <RuleStateTag state={highlightRuleRunState(record)} />
+    },
+    {
       title: t('settings.highlight.priority'),
       dataIndex: 'priority',
       width: 76,
@@ -305,6 +349,25 @@ export function HighlightTab(): React.JSX.Element {
         closable
         message={t('settings.highlight.alert')}
       />
+      {/* Feature-level state, not a per-rule verdict: without a worker nothing
+          custom can run at all, and the page has to say so rather than leaving
+          the user staring at rows that silently do nothing. */}
+      {!ruleValidation.workerAvailable && (
+        <Alert
+          type="error"
+          showIcon
+          message={t('settings.highlight.validatorUnavailable')}
+          className="hl-probe-alert"
+        />
+      )}
+      {ruleValidation.workerAvailable && ruleValidation.quarantined > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          message={t('settings.highlight.quarantinedWarning', { n: ruleValidation.quarantined })}
+          className="hl-probe-alert"
+        />
+      )}
       <div className="hl-toolbar">
         <div className="hl-toolbar-controls">
           <Tooltip title={t('settings.highlight.modeDesc')}>
@@ -434,6 +497,19 @@ function ClickableLinkRules(): React.JSX.Element {
   const valid =
     pattern.trim() !== '' && compile.ok && template.trim() !== '' && templateOk
 
+  /**
+   * The draft's probe verdict. Link rules have no built-in whitelist, so a
+   * pattern only runs once the main process has measured it — which is why the
+   * dialog shows the state instead of silently saving something inert.
+   */
+  const probe = useRuleProbe({
+    kind: 'link',
+    pattern: pattern.trim(),
+    enabled: editingId !== null && valid
+  })
+  const probeState: RuleRunState =
+    probe.state === 'passed' ? 'passed' : probe.state === 'quarantined' ? 'quarantined' : 'pending'
+
   const patchRule = async (target: LinkRule, partial: Partial<LinkRule>): Promise<void> => {
     // read at call time: the render-scoped array goes stale inside a React batch
     const current = useSettingsStore.getState().settings.linkRules ?? EMPTY_LINK_RULES
@@ -447,6 +523,9 @@ function ClickableLinkRules(): React.JSX.Element {
       const trimmedNote = note.trim()
       const current = useSettingsStore.getState().settings.linkRules ?? EMPTY_LINK_RULES
       if (editing !== undefined) {
+        // The proof travels with the pattern it was obtained for: editing the
+        // pattern drops it (the row goes back to `pending` until the main
+        // process re-proves it), an unchanged one keeps it.
         const next: LinkRule = {
           ...editing,
           pattern: pattern.trim(),
@@ -454,7 +533,8 @@ function ClickableLinkRules(): React.JSX.Element {
           // explicit override: unchecking must clear an `enabled: true` the
           // edited rule may already carry
           enabled,
-          ...(trimmedNote ? { note: trimmedNote } : { note: undefined })
+          ...(trimmedNote ? { note: trimmedNote } : { note: undefined }),
+          ...(editing.pattern === pattern.trim() ? {} : { validation: undefined })
         }
         await setLinkRules(current.map((rule) => (rule.id === next.id ? next : rule)))
       } else {
@@ -523,6 +603,13 @@ function ClickableLinkRules(): React.JSX.Element {
           </span>
         </Tooltip>
       )
+    },
+    {
+      title: t('settings.highlight.validation'),
+      key: 'validation',
+      width: 132,
+      align: 'center',
+      render: (_value, record) => <RuleStateTag state={linkRuleRunState(record)} />
     },
     {
       title: t('settings.highlight.actions'),
@@ -606,6 +693,15 @@ function ClickableLinkRules(): React.JSX.Element {
               )}
               {compile.ok && compile.slow && (
                 <div className="hl-editor-error">{t('settings.highlight.patternSlow')}</div>
+              )}
+              {valid && (
+                <div className="hl-editor-inline">
+                  {probe.state === 'probing' ? (
+                    <Tag className="hl-state-tag">{t('settings.highlight.validating')}</Tag>
+                  ) : (
+                    <RuleStateTag state={probeState} />
+                  )}
+                </div>
               )}
               <span className="hl-editor-hint">{t('settings.highlight.linkPatternHint')}</span>
             </div>
@@ -713,6 +809,53 @@ function HighlightEditor({
   const [showBg, setShowBg] = useState(false)
   const [testText, setTestText] = useState('')
 
+  const compile = tryCompile(draft.pattern)
+  const valid = draft.pattern.trim() !== '' && compile.ok
+  /** What would be saved: the pattern is trimmed on the way into the store. */
+  const savedPattern = draft.pattern.trim()
+  /**
+   * The probe verdict for the draft. The editor never decides on its own
+   * whether a pattern may run: until the main process's worker reports `passed`
+   * for exactly this pattern and these flags, the draft is not previewed.
+   */
+  const probe = useRuleProbe({
+    kind: 'highlight',
+    pattern: savedPattern,
+    caseInsensitive: draft.caseInsensitive,
+    lineAnchor: draft.lineAnchor,
+    enabled: open && valid
+  })
+  /**
+   * The verdict the rule already holds, when it still describes exactly what the
+   * form is showing. Re-opening an unchanged rule must not blank its preview for
+   * the half second the fresh probe takes: the stored proof is still evidence
+   * for this pattern and these flags, and the probe only refreshes it.
+   */
+  const seeded =
+    editing !== undefined &&
+    editing.pattern === savedPattern &&
+    proofMatches(savedPattern, highlightFlags(draft.caseInsensitive, draft.lineAnchor), editing.validation, PROBE_VERSION)
+      ? editing.validation
+      : undefined
+  /**
+   * What the row/tag shows. `builtin` is its own state, not `pending`: the draft
+   * matches a shipped preset, so the engines' whitelist lets it run — labelling
+   * it "waiting for a check" would contradict the preview right below, which
+   * does execute it. `previewProof` stays undefined there on purpose: there is no
+   * measurement to cite, the whitelist exemption is what allows the run.
+   */
+  const probeState: RuleRunState =
+    probe.state === 'probing' || probe.state === 'idle'
+      ? (seeded?.status ?? 'pending')
+      : probe.state === 'passed'
+        ? 'passed'
+        : probe.state === 'builtin'
+          ? 'builtin'
+          : probe.state === 'quarantined'
+            ? 'quarantined'
+            : 'pending'
+  const previewProof = probeState === 'passed' ? (probe.validation ?? seeded) : undefined
+
   /**
    * Preview the draft rule *together with* the other rules: a span that some
    * earlier rule steals (`done`, claimed by the shell-keyword rule) then shows up
@@ -721,20 +864,25 @@ function HighlightEditor({
   const previewRules = useMemo(() => {
     const draftRule: HighlightRule = {
       id: ruleId ?? 'draft',
-      pattern: draft.pattern,
+      pattern: savedPattern,
       enabled: true,
       priority: draft.priority,
       color: { fg: draft.fg, ...(showBg && draft.bg ? { bg: draft.bg } : {}) },
       ...(draft.bands && draft.bands.length > 0 ? { bands: draft.bands } : {}),
       ...(draft.caseInsensitive ? { caseInsensitive: true } : {}),
-      ...(draft.lineAnchor ? { lineAnchor: true } : {})
+      ...(draft.lineAnchor ? { lineAnchor: true } : {}),
+      // A pending or quarantined draft carries no proof, and `compileRules`
+      // fails closed without one — which is precisely "a draft that has not
+      // passed is not executed", applied through the same gate the terminal
+      // uses rather than a second rule invented here.
+      ...(previewProof ? { validation: previewProof } : {})
     }
     const active = [...highlightRules.filter((rule) => rule.id !== ruleId), draftRule]
     // The preview has to show the colours the terminal will use, so the theme
     // mapping is applied here exactly as TerminalView applies it.
     return compileRules(themeColors ? applyThemeColors(active, theme) : active)
   }, [
-    draft.pattern,
+    savedPattern,
     draft.priority,
     draft.fg,
     draft.bg,
@@ -745,7 +893,8 @@ function HighlightEditor({
     highlightRules,
     ruleId,
     themeColors,
-    theme
+    theme,
+    previewProof
   ])
 
   const preview = useMemo(
@@ -780,9 +929,6 @@ function HighlightEditor({
     setShowBg(bg != null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
-
-  const compile = tryCompile(draft.pattern)
-  const valid = draft.pattern.trim() !== '' && compile.ok
 
   const patch = (partial: Partial<RuleDraft>): void => setDraft((prev) => ({ ...prev, ...partial }))
 
@@ -841,6 +987,16 @@ function HighlightEditor({
         const current = useSettingsStore.getState().settings.highlightRules
         await setHighlightRules([...current, rule])
       } else if (editing !== undefined) {
+        // A proof belongs to the pattern and flags it was obtained for. Editing
+        // either of them drops it, so the row shows `pending` immediately
+        // instead of a `passed` that no longer describes the rule (the main
+        // process would normalize it away anyway). An unchanged pattern and
+        // flags keep the existing proof — re-saving a rule must not make it
+        // stop working until it is probed again.
+        const identityKept =
+          editing.pattern === draft.pattern.trim() &&
+          (editing.caseInsensitive === true) === draft.caseInsensitive &&
+          (editing.lineAnchor === true) === draft.lineAnchor
         const rule: HighlightRule = {
           ...editing,
           pattern: draft.pattern.trim(),
@@ -855,7 +1011,8 @@ function HighlightEditor({
           // explicit override (not a conditional spread): unchecking must clear
           // a basic flag the edited rule may already carry
           basic: draft.basic ? true : undefined,
-          note: draft.note?.trim() ? draft.note.trim() : undefined
+          note: draft.note?.trim() ? draft.note.trim() : undefined,
+          ...(identityKept ? {} : { validation: undefined })
         }
         await setHighlightRules(highlightRules.map((r) => (r.id === rule.id ? rule : r)))
       }
@@ -895,6 +1052,18 @@ function HighlightEditor({
             )}
             {compile.ok && compile.slow && (
               <div className="hl-editor-error">{t('settings.highlight.patternSlow')}</div>
+            )}
+            {valid && (
+              <div className="hl-editor-inline">
+                {probe.state === 'probing' ? (
+                  <Tag className="hl-state-tag">{t('settings.highlight.validating')}</Tag>
+                ) : (
+                  <RuleStateTag state={probeState} />
+                )}
+                {probe.state === 'passed' && probe.ms !== undefined && (
+                  <span className="hl-editor-hint">{formatMs(probe.ms)}</span>
+                )}
+              </div>
             )}
             <div className="hl-editor-inline">
               <Switch
@@ -942,6 +1111,9 @@ function HighlightEditor({
                 </span>
               ))}
             </div>
+            {valid && probeState !== 'passed' && probeState !== 'builtin' && (
+              <div className="hl-editor-hint">{t('settings.highlight.pendingPreview')}</div>
+            )}
             <span className="hl-editor-hint">{t('settings.highlight.testHint')}</span>
           </div>
         </div>
@@ -1087,6 +1259,17 @@ function HighlightEditor({
           <span className="hl-editor-label">{t('settings.highlight.enabled')}</span>
           <Switch checked={draft.enabled} onChange={(c) => patch({ enabled: c })} />
         </div>
+
+        {/* Right above the save button, where the decision is made: a
+            quarantined rule can be saved and edited, but it will not run. */}
+        {valid && probeState === 'quarantined' && (
+          <Alert
+            type="warning"
+            showIcon
+            className="hl-probe-alert"
+            message={t('settings.highlight.state.quarantinedHint')}
+          />
+        )}
       </div>
     </Modal>
   )

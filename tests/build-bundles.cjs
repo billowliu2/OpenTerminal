@@ -73,7 +73,14 @@ const BUNDLES = [
   // Preset-rule assertions (word boundaries, case flag) over the same engine.
   { entry: 'tests/hl-rules.mjs', out: 'tests/.hl-rules.cjs' },
   // Diagnostic app log: daily naming, retention sweep, async append queue.
-  { entry: 'src/main/appLog.ts', out: 'tests/.app-log.cjs' }
+  { entry: 'src/main/appLog.ts', out: 'tests/.app-log.cjs' },
+  // Rule-validation service: worker pool, hard budget, dedupe, write-back.
+  // `node:worker_threads` is a Node builtin, so the pool itself bundles.
+  { entry: 'src/main/redosValidator.ts', out: 'tests/.redos-validator.cjs' },
+  // The REAL probe worker as a standalone script the test can spawn in a thread
+  // — the pool's terminate path only means something against the shipped
+  // implementation, not against a stub.
+  { entry: 'src/main/redosProbeWorker.ts', out: 'tests/.redos-probe-worker.cjs' }
 ]
 
 for (const { entry, out, format = 'cjs', external = [], alias = {} } of BUNDLES) {

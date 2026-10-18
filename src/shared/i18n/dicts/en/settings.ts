@@ -295,6 +295,25 @@ const settings: Record<string, string> = {
   'settings.highlight.linkTemplate': 'Link template',
   'settings.highlight.linkTemplateHint': '$0 is the whole match, $1–$9 the capture groups, $$ a literal $; the template must expand to an http:// or https:// link',
   'settings.highlight.linkInvalidTemplate': 'The template must expand to an http:// or https:// link',
+  'settings.highlight.validation': 'Probe check',
+  'settings.highlight.state.builtin': 'Built-in',
+  'settings.highlight.state.passed': 'Passed current probes',
+  'settings.highlight.state.pending': 'Pending check',
+  'settings.highlight.state.quarantined': 'Quarantined',
+  'settings.highlight.state.builtinHint':
+    'Factory preset: shipped with the app and proved by the test suite, so it is not probed individually',
+  'settings.highlight.state.passedHint':
+    'Finished every fixed probe inside the budget on this app / Electron / V8 build. That means "passed the current probes", not "safe for any input"',
+  'settings.highlight.state.pendingHint': 'No probe result for this environment yet: the rule is kept, but it does not run',
+  'settings.highlight.state.quarantinedHint':
+    'Exceeded the probe time budget: the rule is kept for editing, but it does not run',
+  'settings.highlight.validating': 'Checking…',
+  'settings.highlight.probeFailed': 'The check service did not answer; the rule stays pending',
+  'settings.highlight.validatorUnavailable':
+    'Rule checking is unavailable (the worker did not start): custom highlight and link rules are paused, built-in presets are unaffected',
+  'settings.highlight.quarantinedWarning': '{n} rule(s) failed the probes and are quarantined: kept, but never executed',
+  'settings.highlight.pendingPreview': 'This pattern has not passed the check yet, so the preview does not run',
+  'settings.highlight.importValidated': 'Probe check: {passed} passed, {pending} pending, {quarantined} quarantined',
   'settings.highlight.linkPattern': 'Pattern',
   'settings.highlight.linkEnabled': 'Enabled',
   'settings.highlight.actions': 'Actions',

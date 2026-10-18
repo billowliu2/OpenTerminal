@@ -24,6 +24,32 @@ import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
 import { WriteBatcher } from './writeBatcher'
 import { refitDelay } from './fitThrottle'
+import {
+  emitPerfLog,
+  FIT_LOG_INTERVAL_MS,
+  fitTriggerFor,
+  formatFitReport,
+  formatSlowWriteReport,
+  formatWebglReport,
+  getPaneStats,
+  intervalLogDecision,
+  newIntervalGate,
+  noteFit,
+  notePaneRenderer,
+  noteWebgl,
+  noteWriteDone,
+  noteWriteEnqueue,
+  noteWriteStart,
+  registerPane,
+  SLOW_WRITE_ACK_MS,
+  unregisterPane,
+  type FitSample,
+  type FitTrigger,
+  type FitTriggerInput,
+  type IntervalGate,
+  type PaneRendererMode,
+  type WebglEvent
+} from './perfDiagnostics'
 
 /**
  * A fit slower than this is worth recording: reflow cost scales with scrollback
@@ -445,6 +471,19 @@ export function TerminalView({
   const suggestHookRef = useRef<HTMLDivElement | null>(null)
   // M5: absolute position (view-relative) of the floating completion popup.
   const [popupPos, setPopupPos] = useState<{ left: number; top: number; flip: boolean } | null>(null)
+  // Diagnostics (phase B1, observation only). The id is per *bind*, not per
+  // component: a rebind tears the terminal down while the pane lives on, and a
+  // `term.write` callback or fit note still in flight from the old terminal
+  // must land on a dropped entry instead of polluting the new pane's numbers.
+  const paneDiagIdRef = useRef('')
+  // Per-bind fit log gate (one line per FIT_LOG_INTERVAL_MS, with suppressed=N).
+  const fitLogGateRef = useRef<IntervalGate>(newIntervalGate())
+  // Last trigger that asked for a fit; the rAF/trailing run reports it.
+  const fitTriggerRef = useRef<FitTrigger>('mount')
+  // Previous font-group FIELD VALUES (not the object), so the metrics effect can
+  // tell a font change from a scrollback-only change from "the group was rebuilt
+  // but nothing we compare moved" — diagnostics label only, never a fit gate.
+  const prevMetricsRef = useRef<FitTriggerInput | null>(null)
 
   // Compile keyword-highlight rules once per rules change; keep them in a ref so
   // the (stable, single-construction) pty/term subscriptions always read the
@@ -660,34 +699,72 @@ export function TerminalView({
     selIndexRef.current = suggestionIndex
   }, [suggestionIndex])
 
-  const applyRenderers = useCallback((mode: TerminalSettings['rendererMode']) => {
-    const term = termRef.current
-    if (!term) return
-    if (webglRef.current) {
-      webglRef.current.dispose()
-      webglRef.current = null
-    }
-    if (mode === 'dom') {
-      rendererModeRef.current = mode
-      return
-    }
-    try {
-      const webgl = new WebglAddon()
-      webgl.onContextLoss(() => {
-        // WebGL context lost -> fall back to the DOM renderer, keep the buffer.
-        if (!webglRef.current) return
+  /**
+   * Report a WebGL lifecycle event to both the console and the diagnostic log.
+   * Metadata only — no pixels, no terminal content, no buffer text.
+   */
+  const logWebgl = useCallback(
+    (event: WebglEvent, mode: PaneRendererMode, detail?: string): void => {
+      const paneId = paneDiagIdRef.current
+      if (paneId === '') return
+      noteWebgl(paneId, event)
+      if (event === 'context-loss' || event === 'init-failed') notePaneRenderer(paneId, mode)
+      emitPerfLog(formatWebglReport(event, paneId, mode, detail))
+    },
+    []
+  )
+
+  const applyRenderers = useCallback(
+    (mode: TerminalSettings['rendererMode'], trigger?: 'init' | 'switch') => {
+      const term = termRef.current
+      if (!term) return
+      const paneId = paneDiagIdRef.current
+      const switched = trigger === 'switch'
+      if (webglRef.current) {
         webglRef.current.dispose()
         webglRef.current = null
-      })
-      term.loadAddon(webgl)
-      webglRef.current = webgl
-    } catch {
-      webglRef.current = null
-    }
-    rendererModeRef.current = mode
-  }, [])
+        logWebgl('dispose', 'dom', 'mode-change')
+      }
+      if (mode === 'dom') {
+        rendererModeRef.current = mode
+        // No addon loaded: this is xterm's own DOM renderer.
+        if (paneId !== '') notePaneRenderer(paneId, 'dom')
+        return
+      }
+      try {
+        const webgl = new WebglAddon()
+        webgl.onContextLoss(() => {
+          // WebGL context lost -> fall back to the DOM renderer, keep the buffer.
+          if (!webglRef.current) return
+          // Log BEFORE the fallback: this is the event that explains a sudden
+          // render cost change, and the marker must exist even if disposal throws.
+          logWebgl('context-loss', 'dom', 'fell back to dom renderer')
+          webglRef.current.dispose()
+          webglRef.current = null
+        })
+        term.loadAddon(webgl)
+        webglRef.current = webgl
+        if (paneId !== '') notePaneRenderer(paneId, 'webgl')
+        logWebgl('init', 'webgl', `${mode}${switched ? ' after-switch' : ''}`)
+      } catch (err) {
+        webglRef.current = null
+        if (paneId !== '') notePaneRenderer(paneId, 'dom')
+        logWebgl('init-failed', 'dom', err instanceof Error ? err.message : 'unknown error')
+      }
+      rendererModeRef.current = mode
+    },
+    [logWebgl]
+  )
 
-  const scheduleFit = useCallback(() => {
+  /**
+   * Request a fit. `trigger` names the call site and is only used for
+   * diagnostics — the fit itself runs on exactly the same schedule as before
+   * (rAF, refitDelay throttle, trailing timer). A throttled request keeps the
+   * trigger so the trailing fit reports why the resize stream started.
+   */
+  const scheduleFit = useCallback((trigger: FitTrigger = 'unknown') => {
+    fitTriggerRef.current = trigger
+    const ranTrigger = trigger
     window.cancelAnimationFrame(timerRef.current)
     timerRef.current = window.requestAnimationFrame(() => {
       // Throttle reflows while a window drag resizes the pane every frame: one
@@ -702,7 +779,8 @@ export function TerminalView({
         if (!fitTrailingRef.current) {
           fitTrailingRef.current = window.setTimeout(() => {
             fitTrailingRef.current = 0
-            scheduleFit()
+            // The trailing fit belongs to whichever request was throttled.
+            scheduleFit(fitTriggerRef.current)
           }, wait)
         }
         return
@@ -713,8 +791,10 @@ export function TerminalView({
       // Instrument fit: it reflows the entire scrollback, which is the one
       // renderer-side operation whose cost scales with session history. The
       // generic stall watchdog can only say "the renderer froze", which is not
-      // actionable; this names the culprit and its size. Only slow fits log, so
-      // the normal path pays a single performance.now().
+      // actionable; this names the culprit and its size. Phase B1 additionally
+      // records the trigger, the real buffer length and both grid dimensions,
+      // so a stall can be tied to a resize storm or to history growth — and
+      // rate-limits the line per pane, because a drag fits many times a second.
       const fitStart = performance.now()
       try {
         fit.fit()
@@ -722,12 +802,29 @@ export function TerminalView({
         return
       }
       const fitMs = performance.now() - fitStart
-      if (fitMs > FIT_SLOW_LOG_MS) {
-        const t = termRef.current
-        const line = `fit took ${Math.round(fitMs)}ms (${t?.cols ?? '?'}x${t?.rows ?? '?'}, scrollback ${t?.options.scrollback ?? '?'})`
-        console.warn(`[renderer] ${line}`)
-        if (useSettingsStore.getState().settings.system.diagnosticLog !== false) {
-          window.api?.appLog?.(line)
+      const t = termRef.current
+      const bufferLines = t?.buffer.active.length ?? 0
+      const scrollback = t?.options.scrollback ?? 0
+      const paneId = paneDiagIdRef.current
+      const sample: FitSample = {
+        trigger: ranTrigger,
+        startedAt: fitStart,
+        durationMs: fitMs,
+        cols: t?.cols ?? 0,
+        rows: t?.rows ?? 0,
+        bufferLines,
+        scrollback
+      }
+      // Always recorded (the watchdog's snapshot reports the latest fit even
+      // when the line below is rate-limited); only the log line is gated.
+      if (paneId !== '') {
+        noteFit(paneId, sample)
+        if (fitMs > FIT_SLOW_LOG_MS) {
+          const decision = intervalLogDecision(fitLogGateRef.current, fitStart, FIT_LOG_INTERVAL_MS)
+          fitLogGateRef.current = decision.next
+          if (decision.emit) {
+            emitPerfLog(formatFitReport(sample, decision.suppressed, paneId), { now: fitStart })
+          }
         }
       }
       const term = termRef.current
@@ -1133,18 +1230,24 @@ export function TerminalView({
     // from a template apply or panel reuse; recording resumes idle.
     lineBufRef.current = ''
     ptySizeRef.current = null
-    // A rebound session's first fit must not inherit the previous session's
-    // throttle window — the pty spawns at a placeholder size and the shell
-    // may already be drawing.
+    // A rebound session must not inherit the previous session's throttle window
+    // — the pty spawns at a placeholder size and the shell may already be
+    // drawing. The diagnostic pane id is per BIND for the same reason: leaving
+    // writes/acks from the old terminal in the new pane's counters would make
+    // the aggregate numbers meaningless.
     lastFitAtRef.current = 0
+    if (paneDiagIdRef.current !== '') unregisterPane(paneDiagIdRef.current)
+    paneDiagIdRef.current = crypto.randomUUID()
+    fitLogGateRef.current = newIntervalGate()
+    registerPane(paneDiagIdRef.current, { rendererMode: 'unknown' })
     setSuggestions([])
     setSuggestionIndex(0)
     if (recordingRef.current) {
       recordingRef.current = false
       setRecording(false)
     }
-    applyRenderers(rendererMode)
-    scheduleFit()
+    applyRenderers(rendererMode, 'init')
+    scheduleFit('mount')
 
     // xterm event hooks return IDisposable objects, api subscriptions return
     // unsubscribe functions — keep the two shapes apart or cleanup throws.
@@ -1165,9 +1268,48 @@ export function TerminalView({
     // batcher hands output over in one write per ~16ms window (the carry
     // cadence), so a flood costs one parser run per frame instead of one per
     // IPC message.
+    //
+    // Phase B1 measures the two halves separately, without changing either:
+    //   - enqueue: how long the `term.write` call itself took;
+    //   - ack: how long xterm's parser took to consume it (the write callback).
+    // The callback only updates counters (and rate-limited logs): it never
+    // touches the data, never re-flushes and never pauses the pty.
+    const paneDiagId = paneDiagIdRef.current
     const batcher = new WriteBatcher((text) => {
-      if (!deadRef.current) term.write(text)
+      if (deadRef.current) return
+      const chars = text.length
+      noteWriteStart(paneDiagId, chars)
+      const enqueueStart = performance.now()
+      try {
+        term.write(text, () => {
+          // Fires when xterm's parser has consumed the chunk: `ackMs` is the
+          // consume latency, counted from the handover, so it grows when the
+          // parser is behind even though the enqueue itself was instant.
+          const ackMs = performance.now() - enqueueStart
+          noteWriteDone(paneDiagId, chars, ackMs)
+          if (ackMs > SLOW_WRITE_ACK_MS) {
+            const stats = getPaneStats(paneDiagId)
+            if (stats !== undefined) {
+              emitPerfLog(
+                formatSlowWriteReport(
+                  paneDiagId,
+                  ackMs,
+                  stats.writes.inflight,
+                  stats.writes.queuedChars
+                )
+              )
+            }
+          }
+        })
+      } finally {
+        noteWriteEnqueue(paneDiagId, performance.now() - enqueueStart)
+      }
     })
+    // The watchdog reads this to tell "the batcher is still holding output"
+    // apart from "xterm is behind"; cleared on teardown so a rebound pane never
+    // reports the old batcher's backlog.
+    const paneEntry = getPaneStats(paneDiagId)
+    if (paneEntry !== undefined) paneEntry.pendingCharsProbe = () => batcher.pendingChars
     const scheduleCarryFlush = (): void => {
       if (carryTimer !== undefined || !stream.hasPending()) return
       carryTimer = window.setTimeout(() => {
@@ -1380,7 +1522,7 @@ export function TerminalView({
 
     let observer: ResizeObserver | undefined
     if (hostRef.current) {
-      observer = new ResizeObserver(() => scheduleFit())
+      observer = new ResizeObserver(() => scheduleFit('resize'))
       observer.observe(hostRef.current)
       observerRef.current = observer
     }
@@ -1430,8 +1572,16 @@ export function TerminalView({
       // SESSION_STATE answer must not mark the next session dead.
       disposed = true
       deadRef.current = true
-      webglRef.current?.dispose()
-      webglRef.current = null
+      if (webglRef.current) {
+        webglRef.current.dispose()
+        webglRef.current = null
+        logWebgl('dispose', 'dom', 'teardown')
+      }
+      // Drop this bind's diagnostic counters on unmount/rebind: in-flight write
+      // callbacks from the disposed terminal must land on a dropped entry, not
+      // on the counters the next bind will publish.
+      if (paneDiagId !== '') unregisterPane(paneDiagId)
+      paneDiagIdRef.current = ''
       // Drop the stream with the session; a fresh one is created next bind so no
       // carry survives across sessions. A mid-session carry is flushed below
       // (harmless: it is treated as raw text by the resync-aware xterm).
@@ -1467,7 +1617,24 @@ export function TerminalView({
     // Live-appliable in xterm 6: without this the setting only took effect for
     // terminals opened after the change, which reads as "the setting is broken".
     term.options.scrollback = fontOpts.scrollback
-    scheduleFit()
+    // Diagnostics only: label the fit with what actually changed. A scrollback
+    // write and a font-size change reflow very different amounts of history, so
+    // the log line has to say which one it was — and it compares the previous
+    // FIELD VALUES, because this effect also runs for a group member (cursor
+    // blink/style) that changes neither. See `fitTriggerFor`.
+    const snapshot: FitTriggerInput = {
+      fontSize: fontOpts.fontSize,
+      fontFamily: fontOpts.fontFamily,
+      cjkFontFamily: fontOpts.cjkFontFamily ?? '',
+      fontWeight: fontOpts.fontWeight,
+      boldFontWeight: fontOpts.boldFontWeight,
+      letterSpacing: fontOpts.letterSpacing,
+      lineHeight: fontOpts.lineHeight,
+      scrollback: fontOpts.scrollback
+    }
+    const trigger = fitTriggerFor(prevMetricsRef.current, snapshot)
+    prevMetricsRef.current = snapshot
+    scheduleFit(trigger)
   }, [fontOpts, scheduleFit])
 
   useEffect(() => {
@@ -1487,11 +1654,11 @@ export function TerminalView({
     // effect runs on mount too); only an actual switch should re-run it.
     if (next === rendererModeRef.current) return
     if (next === 'dom') {
-      applyRenderers('dom')
+      applyRenderers('dom', 'switch')
     } else if (!webglRef.current) {
-      applyRenderers(next)
+      applyRenderers(next, 'switch')
     }
-    scheduleFit()
+    scheduleFit('renderer-switch')
   }, [rendererMode, applyRenderers, scheduleFit])
 
   // keep onClose fresh for the dead mask

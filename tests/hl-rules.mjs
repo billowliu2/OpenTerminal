@@ -32,6 +32,8 @@ import {
   paletteMatch,
   themeColorFor
 } from '../src/renderer/src/theme/highlightColors.ts'
+import { PROBE_VERSION } from '../src/shared/redosProbes.ts'
+import { highlightFlags, setRuleRuntimeKey } from '../src/shared/ruleValidation.ts'
 
 let failed = 0
 const ok = (cond, msg) => {
@@ -39,7 +41,34 @@ const ok = (cond, msg) => {
   if (!cond) failed++
 }
 
+/**
+ * The environment the proofs in this file belong to. In the app the main
+ * process installs its own fingerprint and the renderer is handed the same
+ * string over IPC; here it is a literal, and installing it is what makes the
+ * hand-written proofs below count for THIS engine.
+ */
+const RUNTIME = 'test-app|test-electron|test-v8'
+setRuleRuntimeKey(RUNTIME)
+
 const rules = compileRules(DEFAULT_HIGHLIGHT_RULES)
+
+/**
+ * `compileRules` with a passed proof stamped on every rule the caller wrote by
+ * hand. The tables in this file are about matching semantics, and an unproven
+ * rule is inert by design — so each hand-written rule gets the proof its own
+ * pattern and flags need. The gate itself (pending / quarantined / expired /
+ * edited pattern, another runtime, and the preset whitelist) is pinned in
+ * `tests/rule-validation.mjs` and in the `[proof gate]` section at the end.
+ */
+const proofFor = (rule) => ({
+  status: 'passed',
+  pattern: rule.pattern,
+  flags: highlightFlags(rule.caseInsensitive, rule.lineAnchor),
+  probeVersion: PROBE_VERSION,
+  runtime: RUNTIME
+})
+const proved = (rule) => ({ ...rule, validation: proofFor(rule) })
+const compile = (list) => compileRules(list.map(proved))
 
 /** truecolor prefix for a hex colour, as the engine emits it */
 const sgr = (hex) => {
@@ -254,11 +283,11 @@ console.log('[danger]')
 // ---- 8. case-insensitive flag is opt-in per rule ----------------------------
 console.log('[case flag]')
 {
-  const plain = compileRules([
+  const plain = compile([
     { id: 'cs', pattern: '\\bERROR\\b', enabled: true, priority: 1, color: { fg: BAD_RED } }
   ])
   ok(!applyHighlights('error', plain).includes(sgr(BAD_RED)), 'a rule without the flag still respects case')
-  const folded = compileRules([
+  const folded = compile([
     { id: 'ci', pattern: '\\bERROR\\b', enabled: true, priority: 1, color: { fg: BAD_RED }, caseInsensitive: true }
   ])
   ok(applyHighlights('error', folded).includes(sgr(BAD_RED)), 'the flag makes a rule case-insensitive')
@@ -417,13 +446,13 @@ console.log('[value bands]')
   )
 
   // a rule without bands keeps one colour whatever the number
-  const flat = compileRules([
+  const flat = compile([
     { id: 'flat', pattern: '\\d+%', enabled: true, priority: 1, color: { fg: BAD_RED } }
   ])
   ok(applyHighlights('77%', flat).includes(sgr(BAD_RED)), 'a rule without bands stays flat')
 
   // with bands: the match's own number decides, and no number falls back
-  const banded = compileRules([
+  const banded = compile([
     {
       id: 'banded',
       pattern: '\\bDONE\\b|\\d+%',
@@ -441,7 +470,7 @@ console.log('[value bands]')
   ok(applyHighlights('95%', banded).includes(sgr(OK_GREEN)), 'a number above the last min → the last band')
 
   // bands stored out of order still resolve lowest-first
-  const unsorted = compileRules([
+  const unsorted = compile([
     {
       id: 'unsorted',
       pattern: '\\d+%',
@@ -595,6 +624,40 @@ console.log('[import / export]')
   ok(appended.length === DEFAULT_HIGHLIGHT_RULES.length + 1, 'append keeps the existing rules')
   ok(new Set(appended.map((r) => r.id)).size === appended.length, 'append never leaves duplicate ids')
   ok(mergeRules([mine], back.rules, 'replace').length === DEFAULT_HIGHLIGHT_RULES.length, 'replace drops the old set')
+
+  // The internal validation proof travels in neither direction. An exported file
+  // is meant to be shared or archived, so it must not carry what reads like a
+  // trust credential; an imported file is untrusted input, so a proof inside it
+  // is ignored and the rule starts unproven (the validator re-proves it).
+  {
+    const proven = DEFAULT_HIGHLIGHT_RULES.map((rule) => ({ ...rule, validation: proofFor(rule) }))
+    const file = exportHighlightRules(proven)
+    ok(!file.includes('"validation"'), 'an export carries no validation field')
+    ok(!file.includes('probeVersion'), 'an export carries no probe version either')
+
+    const reloaded = parseHighlightRules(file)
+    ok(
+      reloaded.rules.length === proven.length && reloaded.rules.every((r) => r.validation === undefined),
+      'an exported set comes back whole and unproven'
+    )
+
+    const smuggled = parseHighlightRules(
+      JSON.stringify({
+        kind: HIGHLIGHT_FILE_KIND,
+        version: HIGHLIGHT_FILE_VERSION,
+        rules: [
+          {
+            pattern: '\\bOK\\b',
+            validation: { status: 'passed', pattern: '\\bOK\\b', flags: 'g', probeVersion: PROBE_VERSION, runtime: RUNTIME }
+          }
+        ]
+      })
+    )
+    ok(
+      smuggled.rules.length === 1 && smuggled.rules[0].validation === undefined,
+      'a validation field inside an imported file is ignored'
+    )
+  }
 }
 
 // ---- 13. editor preview spans ----------------------------------------------
@@ -999,10 +1062,10 @@ console.log('[long lines]')
 console.log('[line anchor]')
 {
   const TEXT = 'a\nERROR\nERROR b\n'
-  const plain = compileRules([
+  const plain = compile([
     { id: 'anch', pattern: '^ERROR$', enabled: true, priority: 1, color: { fg: BAD_RED } }
   ])
-  const perLine = compileRules([
+  const perLine = compile([
     {
       id: 'anch',
       pattern: '^ERROR$',
@@ -1033,7 +1096,7 @@ console.log('[line anchor]')
   )
 
   // Anchoring only moves the boundaries: '$' works the same way.
-  const tail = compileRules([
+  const tail = compile([
     { id: 'tail', pattern: 'ERROR$', enabled: true, priority: 1, color: { fg: BAD_RED }, lineAnchor: true }
   ])
   const tailOut = applyHighlights(TEXT, tail)
@@ -1044,7 +1107,7 @@ console.log('[line anchor]')
   )
 
   // The two flags compose: 'i' and 'm' both apply when both switches are on.
-  const both = compileRules([
+  const both = compile([
     {
       id: 'both',
       pattern: '^error$',
@@ -1067,7 +1130,7 @@ console.log('[match events]')
   // Only spans that actually get painted are reported, and each carries the
   // rule id plus the raw matched text.
   const events = []
-  const one = compileRules([
+  const one = compile([
     { id: 'ok', pattern: '\\bOK\\b', enabled: true, priority: 1, color: { fg: OK_GREEN } }
   ])
   const out = applyHighlights('all OK here', one, undefined, undefined, (id, text) =>
@@ -1087,7 +1150,7 @@ console.log('[match events]')
   // report either — otherwise a consumer would alert about colour that is not
   // on screen. `done` is the documented case: shellkw beats status words.
   const events = []
-  const overlap = compileRules([
+  const overlap = compile([
     { id: 'first', pattern: '\\bdone\\b', enabled: true, priority: 1, color: { fg: OK_GREEN } },
     { id: 'second', pattern: '\\b(done|DONE)\\b', enabled: true, priority: 2, color: { fg: BAD_RED } }
   ])
@@ -1101,7 +1164,7 @@ console.log('[match events]')
   // The per-rule budget is the other silent case: a rule that hits MAX_PER_RULE
   // (300) times in one run reports exactly that many times, not one more.
   let count = 0
-  const many = compileRules([
+  const many = compile([
     { id: 'x', pattern: 'ERROR', enabled: true, priority: 1, color: { fg: BAD_RED } }
   ])
   applyHighlights(Array.from({ length: 301 }, () => 'ERROR').join(' '), many, undefined, undefined, () => {
@@ -1122,7 +1185,7 @@ console.log('[match events]')
   // only completes once the held carry is flushed still reports exactly once.
   const events = []
   const stream = new HighlightStream(
-    compileRules([
+    compile([
       { id: 'ok', pattern: '\\bOK\\b', enabled: true, priority: 1, color: { fg: OK_GREEN } }
     ]),
     (id, text) => events.push([id, text])
@@ -1143,7 +1206,7 @@ console.log('[match events]')
   // Rules without the flag are irrelevant to the engine: it reports every painted
   // span and leaves the notify policy to the consumer.
   const events = []
-  const mixed = compileRules([
+  const mixed = compile([
     { id: 'silent', pattern: '\\bWARN\\b', enabled: true, priority: 1, color: { fg: WARN_YELLOW } }
   ])
   applyHighlights('WARN', mixed, undefined, undefined, (id) => events.push(id))
@@ -1181,7 +1244,7 @@ console.log('[reset spellings and CSI parameters]')
   // canonical ones let the other spellings be APPENDED to the SGR accumulator,
   // so it grew a few bytes per line until it blew the cap and every later span
   // lost its restore. Go/Java log libraries routinely emit ESC[0;32m.
-  const warn = compileRules([{ id: 'w', pattern: 'WARNING', priority: 1, color: { fg: '#ff0000' } }])
+  const warn = compile([{ id: 'w', pattern: 'WARNING', priority: 1, color: { fg: '#ff0000' } }])
   const tailAfter = (input) => {
     const out = applyHighlights(input, warn)
     return out.slice(out.indexOf('WARNING') + 'WARNING'.length)
@@ -1211,18 +1274,19 @@ console.log('[reset spellings and CSI parameters]')
 
 console.log('[ReDoS shapes]')
 {
-  // The hot path runs a user pattern on every output line, so exponential
-  // backtracking must be rejected BEFORE it can run. `(a+)+$` compiles in
-  // microseconds and then takes ~8s on 30 characters — no length or time guard
-  // downstream can fix that. These shapes are caught by a string scan at compile
-  // time, which is why the check has to be exact in both directions.
+  // The editor's advisory heuristic. It flags the shapes that compile in
+  // microseconds and then block for seconds (`(a+)+$` takes ~8s on 30
+  // characters), so the user gets a warning while typing. It is NOT the gate —
+  // it has measured misses and false positives, so a shape test can decide
+  // neither what is safe nor what is hostile. What runs is decided by the proof
+  // (see [proof gate] below).
   const dangerous = ['(a+)+$', '(a+)+', '(.*)*', '(.+)+', '([a-z]+)*', '(a*)*b', '(a|a)*', '(a|a)+', '(?:a+)+']
   for (const p of dangerous) {
-    ok(isReDoSProne(p), `rejects exponential shape ${p}`)
+    ok(isReDoSProne(p), `flags exponential shape ${p}`)
   }
   // ...and it must not touch legitimate patterns. The most important case is the
-  // shipped presets: rejecting one of those would silently disable a built-in
-  // rule for every user. `ipv4` (`(?:\\d{1,3}\\.){3}`) is the tricky one — a
+  // shipped presets: flagging one of those would nag about a built-in rule for
+  // every user. `ipv4` (`(?:\\d{1,3}\\.){3}`) is the tricky one — a
   // BOUNDED outer quantifier cannot backtrack exponentially.
   const safe = [
     '\\b(?:ERROR|FAILED)\\b',
@@ -1233,20 +1297,102 @@ console.log('[ReDoS shapes]')
     '\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b'
   ]
   for (const p of safe) {
-    ok(!isReDoSProne(p), `accepts safe pattern ${p}`)
+    ok(!isReDoSProne(p), `leaves safe pattern ${p} unflagged`)
   }
   const flaggedPresets = DEFAULT_HIGHLIGHT_RULES.filter((r) => isReDoSProne(r.pattern)).map((r) => r.id)
-  ok(flaggedPresets.length === 0, `no shipped preset is rejected (flagged: ${flaggedPresets.join(', ') || 'none'})`)
+  ok(flaggedPresets.length === 0, `no shipped preset is flagged (flagged: ${flaggedPresets.join(', ') || 'none'})`)
+}
 
-  // The heuristic is ADVISORY: it must not gate the hot path. Rejecting on it
-  // would silently disable legitimate rules (measured false positives) while
-  // still admitting hostile ones (measured misses: `[(](a+)+`, `(?:a|a)+`), so
-  // compileRules keeps both and only the editor surfaces the warning.
-  const compiled = compileRules([
-    { id: 'flagged', pattern: '(a+)+$', priority: 1, color: { fg: '#ff0000' } },
-    { id: 'plain', pattern: 'ERROR', priority: 2, color: { fg: '#00ff00' } }
-  ])
-  ok(compiled.length === 2, 'compileRules keeps flagged rules (the check is advisory, not a gate)')
+console.log('[proof gate]')
+{
+  // What admits a stored pattern is the validation proof: a `passed` record
+  // matching the rule's own pattern, its compile flags and the current probe
+  // version (shared/ruleValidation + shared/redosProbes). The full truth table
+  // lives in tests/rule-validation.mjs; these assertions pin the engine's side,
+  // which is where a bypass would actually hurt.
+  const plain = { id: 'plain', pattern: 'ERROR', priority: 2, color: { fg: '#00ff00' } }
+  const flagged = { id: 'flagged', pattern: '(a+)+$', priority: 1, color: { fg: '#ff0000' } }
+
+  ok(compileRules([flagged, plain]).length === 0, 'unproven custom rules never reach the hot path')
+  ok(
+    compile([flagged, plain]).length === 2,
+    'the heuristic is not the gate: a PROVEN rule compiles even when it is flagged'
+  )
+  ok(
+    compileRules(DEFAULT_HIGHLIGHT_RULES).length === DEFAULT_HIGHLIGHT_RULES.length,
+    `every shipped preset compiles without a proof (${compileRules(DEFAULT_HIGHLIGHT_RULES).length}/${DEFAULT_HIGHLIGHT_RULES.length})`
+  )
+
+  // Each way a proof can stop matching its rule is inert, and the rule itself is
+  // kept in settings — a stale or edited rule is skipped, never repaired.
+  ok(compileRules([{ ...plain, validation: proofFor(plain) }]).length === 1, 'a matching proof admits the rule')
+  ok(
+    compileRules([{ ...plain, caseInsensitive: true, validation: proofFor(plain) }]).length === 0,
+    'a proof under other flags does not admit the rule'
+  )
+  ok(
+    compileRules([{ ...plain, pattern: 'WARNING', validation: proofFor(plain) }]).length === 0,
+    'a proof for the pre-edit pattern does not admit the edited rule'
+  )
+  ok(
+    compileRules([
+      {
+        ...plain,
+        validation: { status: 'passed', pattern: 'ERROR', flags: 'g', probeVersion: PROBE_VERSION - 1, runtime: RUNTIME }
+      }
+    ]).length === 0,
+    'a proof from an older probe set does not admit the rule'
+  )
+  ok(
+    compileRules([
+      {
+        ...plain,
+        validation: { status: 'passed', pattern: 'ERROR', flags: 'g', probeVersion: PROBE_VERSION, runtime: 'other|other|other' }
+      }
+    ]).length === 0,
+    'a proof measured in another runtime does not admit the rule'
+  )
+  for (const status of ['pending', 'quarantined']) {
+    ok(
+      compileRules([
+        { ...plain, validation: { status, pattern: 'ERROR', flags: 'g', probeVersion: PROBE_VERSION, runtime: RUNTIME } }
+      ]).length === 0,
+      `a ${status} rule is kept in settings but does not run`
+    )
+  }
+
+  // The gate only removes rules: priorities still decide which rule claims a
+  // span first, so a filtered set keeps its order.
+  {
+    const provenRule = (id, pattern, priority) => ({
+      id,
+      pattern,
+      priority,
+      color: { fg: '#ff0000' },
+      validation: { status: 'passed', pattern, flags: 'g', probeVersion: PROBE_VERSION, runtime: RUNTIME }
+    })
+    const out = compileRules([
+      provenRule('late', 'LATE', 9),
+      { id: 'unproven', pattern: 'SKIP', priority: 1, color: { fg: '#ff0000' } },
+      provenRule('early', 'EARLY', 2)
+    ])
+    ok(
+      out.map((r) => r.id).join(',') === 'early,late',
+      `the gate filters without disturbing priority order (got ${out.map((r) => r.id).join(',')})`
+    )
+  }
+
+  // The editor preview runs on compiled rules, so it cannot bypass the gate:
+  // an unproven rule yields the plain sample, a proven one yields a coloured span.
+  {
+    const unproven = previewSpans('ERROR', compileRules([plain]))
+    ok(unproven.length === 1 && unproven[0].fg === undefined, 'the preview cannot bypass the gate')
+    const provenPreview = previewSpans('ERROR', compile([plain]))
+    ok(
+      provenPreview.some((s) => s.text === 'ERROR' && s.fg === '#00ff00'),
+      'a proven rule previews with its colour'
+    )
+  }
 }
 
 console.log(failed === 0 ? '\n[hl-rules] ALL CHECKS PASSED' : `\n[hl-rules] ${failed} CHECK(S) FAILED`)

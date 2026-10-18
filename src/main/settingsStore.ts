@@ -16,6 +16,7 @@ import {
   lockAutoDelayOf,
   type AppSettings,
   type HighlightRule,
+  type LinkRule,
   type LockSettings,
   type SystemSettings,
   type TerminalSettings
@@ -24,11 +25,28 @@ import { DEFAULT_DARK, type TerminalTheme, type ThemeColors } from '../shared/th
 import { DEFAULT_LANGUAGE, isLanguage, setLanguage } from '../shared/i18n'
 import { sanitizeProfiles } from '../shared/highlightProfiles'
 import { sanitizeLinkRules } from '../shared/linkRules'
+import { PROBE_VERSION } from '../shared/redosProbes'
+import {
+  LINK_RULE_FLAGS,
+  MAX_PATTERN_LEN,
+  highlightFlags,
+  normalizeRuleValidation,
+  sanitizeRuleValidation,
+  type RuleValidation
+} from '../shared/ruleValidation'
 import { broadcast } from './broadcast'
 import { writeJson } from './store'
+import { installRuleRuntime } from './ruleRuntime'
 import { applyGlobalShortcut } from './globalShortcuts'
 import { applyWindowChrome } from './windowChrome'
 import { setAppLogEnabled } from './appLog'
+
+// The fingerprint every stored proof is normalized against (see
+// `normalizeRuleValidation`) has to be installed before the first load — and
+// loadSettings runs from many entry points (IPC, tray, lock controller). Doing
+// it here makes that an import guarantee rather than a startup ordering rule no
+// compiler checks.
+installRuleRuntime()
 
 const settingsPath = (): string => join(app.getPath('userData'), 'settings.json')
 
@@ -52,7 +70,9 @@ const DEFAULT_RULE_COLOR = '#e3b341'
 /** Repair one persisted rule instead of dropping it. Shape problems with an
  *  obvious fix (priority as "5", enabled as 1/0, a missing fg colour) are
  *  corrected; only entries that cannot be a rule at all are skipped. Unknown
- *  extra fields are preserved so newer/older schemas survive a round trip. */
+ *  extra fields are preserved so newer/older schemas survive a round trip —
+ *  with one exception: `validation` is internal metadata, so it is rebuilt
+ *  from its known fields (`sanitizeRuleValidation`) rather than copied. */
 function coerceRule(value: unknown, index: number, warnings: Warnings): HighlightRule | null {
   if (value === null || typeof value !== 'object') {
     warnings.push(`highlightRules[${index}]: not an object — skipped`)
@@ -61,6 +81,12 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
   const rule = value as Record<string, unknown>
   if (typeof rule.id !== 'string' || typeof rule.pattern !== 'string') {
     warnings.push(`highlightRules[${index}]: missing id/pattern — skipped`)
+    return null
+  }
+  // The engine drops anything over this bound anyway; refusing it here makes
+  // the paste leave a trace instead of vanishing at compile time.
+  if (rule.pattern.length > MAX_PATTERN_LEN) {
+    warnings.push(`highlightRules[${index}]: pattern too long — skipped`)
     return null
   }
 
@@ -133,8 +159,31 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
     }
   }
 
+  // The proof is internal metadata, so only its SHAPE is checked here: a
+  // hand-edited settings.json (or a record written by an older schema) can
+  // carry anything under `validation`, and a malformed record must not be
+  // carried into the next save. Whether a well-formed record still matches the
+  // rule's pattern, its flags, the current probe version and the current
+  // runtime is decided right here rather than left to the gate: a proof from
+  // another app build or another corpus is rewritten to `pending`, so neither
+  // the file nor the renderer ever carries a `passed` verdict that no longer
+  // applies. The renderer would fail closed on it anyway — this keeps the
+  // stored data honest about it too.
+  const { validation: rawValidation, ...rest } = rule
+  const sanitized = sanitizeRuleValidation(rawValidation)
+  if (rawValidation !== undefined && sanitized === undefined) {
+    warnings.push(`highlightRules[${index}].validation: malformed — dropped`)
+  }
+  const validation = normalizeRuleValidation(
+    sanitized,
+    rule.pattern,
+    highlightFlags(rule.caseInsensitive === true, rule.lineAnchor === true),
+    PROBE_VERSION
+  )
+
   return {
-    ...rule,
+    ...rest,
+    ...(validation ? { validation } : {}),
     id: rule.id,
     pattern: rule.pattern,
     enabled,
@@ -422,6 +471,7 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
 
   const themes = sanitizeThemes(customThemes, errors)
   const rules = sanitizeRules(highlightRules, errors)
+  const linkRuleList = normalizeLinkProofs(sanitizeLinkRules(linkRules, (message) => errors.push(message)))
 
   return {
     settings: {
@@ -433,12 +483,25 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         new Set(rules.map((rule) => rule.id)),
         (message) => errors.push(message)
       ),
-      linkRules: sanitizeLinkRules(linkRules, (message) => errors.push(message)),
+      linkRules: linkRuleList,
       system: system as SystemSettings,
       lock
     },
     errors
   }
+}
+
+/**
+ * Same runtime/corpus normalization the highlight rules get in `coerceRule`:
+ * a link rule's proof is only evidence for the pattern, flags, corpus and
+ * engine it was measured in, so anything else becomes an explicit `pending`
+ * record instead of a stale `passed` one.
+ */
+function normalizeLinkProofs(rules: LinkRule[]): LinkRule[] {
+  return rules.map((rule) => {
+    const validation = normalizeRuleValidation(rule.validation, rule.pattern, LINK_RULE_FLAGS, PROBE_VERSION)
+    return validation === rule.validation ? rule : { ...rule, validation }
+  })
 }
 
 // ---- real system side effects ------------------------------------------------
@@ -465,6 +528,25 @@ let updateScheduleApplier: ((system: SystemSettings) => void) | null = null
 export function setUpdateScheduleApplier(fn: (system: SystemSettings) => void): void {
   updateScheduleApplier = fn
   fn(loadSettings().system)
+}
+
+/**
+ * The rule validator, injected rather than imported: `redosValidator.ts`
+ * imports this module (it writes verdicts back through `mutateSettings`), so
+ * importing it back would be a cycle — the applier would run against a
+ * half-initialised validator. `index.ts` wires it once, together with the
+ * worker factory the validator needs.
+ *
+ * Called with the freshly merged settings on every mutation (and once at wiring
+ * time, which is what probes the rules already on disk at startup). It never
+ * blocks this path: it publishes the aggregate state and starts an async pass,
+ * and the verdicts come back through `mutateSettings` like any other write.
+ */
+let ruleValidationApplier: ((settings: AppSettings) => void) | null = null
+
+export function setRuleValidationApplier(fn: (settings: AppSettings) => void): void {
+  ruleValidationApplier = fn
+  fn(loadSettings())
 }
 
 /** Apply OS-level effects of the system settings (login item, sleep blocker). */
@@ -656,6 +738,12 @@ export function mutateSettings(mutate: (settings: AppSettings) => AppSettings): 
     // writeJson gives the same atomic write as every other store, including
     // short EPERM/EBUSY retries when Windows holds the destination open.
     writeJson(settingsPath(), merged)
+
+    // Rules whose proof no longer applies are re-probed in the background, and
+    // the verdicts return through this same path. Runs before the broadcast so
+    // the renderer's warning about the validator's state is already current when
+    // it reacts to the new settings.
+    ruleValidationApplier?.(merged)
 
     broadcast(Ipc.SETTINGS_CHANGED, merged)
     return merged

@@ -1,5 +1,6 @@
 import type { TerminalTheme } from './theme'
 import type { Language } from './i18n'
+import type { RuleValidation } from './ruleValidation'
 
 /** Coarse grouping for the settings table's grouped view. */
 export type HighlightCategory = 'safety' | 'status' | 'file' | 'net' | 'text' | 'metric'
@@ -59,6 +60,14 @@ export interface HighlightRule {
   note?: string
   /** part of the factory preset set (restored by 恢复默认) */
   builtin?: boolean
+  /**
+   * Proof the pattern ran within budget on the probe corpus
+   * (shared/redosProbes.ts). Internal metadata: only the app's own validator
+   * ever writes one, load paths keep nothing but its shape
+   * (`sanitizeRuleValidation`), and the engine re-checks pattern + flags +
+   * probe version at compile time before the rule may run.
+   */
+  validation?: RuleValidation
 }
 
 export interface TerminalSettings {
@@ -321,6 +330,13 @@ export interface LinkRule {
   /** absent means enabled */
   enabled?: boolean
   note?: string
+  /**
+   * Proof the pattern ran within budget on the probe corpus — same contract as
+   * HighlightRule.validation: kept only as a shape by the load path, re-checked
+   * by `compileLinkRules` (flags must be exactly 'g'). Link rules have no
+   * built-in whitelist, so an unproven rule never runs.
+   */
+  validation?: RuleValidation
 }
 
 export interface AppSettings {

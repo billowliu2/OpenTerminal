@@ -105,7 +105,7 @@ const invoke = (channel, frame, ...args) => {
   return listener({ senderFrame: frame, sender: { id: 1 } }, ...args)
 }
 
-withDevUrl(DEV_URL, () => {
+await withDevUrl(DEV_URL, () => {
   ok(typeof handlers.get(Ipc.APP_INFO) === 'function', 'APP_INFO reached the registration path')
   ok(handlers.get(Ipc.APP_INFO) !== undefined, 'the stub recorded a handler (registrations are not dropped)')
 
@@ -139,12 +139,24 @@ withDevUrl(DEV_URL, () => {
 
   // A hostile frame gets the same refusal on every other invoke channel, and the
   // handler is never reached: CWD_OPEN would have thrown/misbehaved, PTY_CREATE
-  // would have spawned a shell.
-  for (const channel of [Ipc.CWD_OPEN, Ipc.PTY_CREATE, Ipc.CONNECTIONS_LIST, Ipc.SETTINGS_GET, Ipc.LOCK_STATE_GET]) {
+  // would have spawned a shell, RULE_VALIDATE would have started a probe worker.
+  for (const channel of [
+    Ipc.CWD_OPEN,
+    Ipc.PTY_CREATE,
+    Ipc.CONNECTIONS_LIST,
+    Ipc.SETTINGS_GET,
+    Ipc.LOCK_STATE_GET,
+    Ipc.RULE_VALIDATE,
+    Ipc.RULE_VALIDATION_STATE_GET
+  ]) {
     if (!handlers.has(channel)) continue
     const m = refused(channel)
     ok(typeof m === 'string' && m.includes('untrusted frame'), `refused on ${channel}`)
   }
+
+  // The rule-validation batch answers a trusted frame without touching settings:
+  // drafts are probed, never stored. Its own section below awaits the handler,
+  // so it cannot live inside this synchronous block (see the note there).
 
   const missingFrame = (() => {
     try {
@@ -216,6 +228,42 @@ withDevUrl(DEV_URL, () => {
   // The duplicated refusals must not multiply: one layer, one message.
   ok((m.match(/untrusted frame/g) ?? []).length === 1, 'the refusal message is not nested (exactly one guard layer)')
 })
+
+// ---- 4. the rule-validation channel answers a trusted frame -----------------
+// Awaiting the handler needs an async scope, and `withDevUrl` restores the env
+// var as soon as its callback returns — which for an async callback is the
+// moment it hits its first `await`, i.e. before the awaited work resumes. So
+// the variable is set by hand around this block instead.
+console.log('the rule-validation channel')
+{
+  const previous = process.env.ELECTRON_RENDERER_URL
+  process.env.ELECTRON_RENDERER_URL = DEV_URL
+  try {
+    const report = await invoke(Ipc.RULE_VALIDATE, trustedFrame, {
+      kind: 'highlight',
+      items: [{ id: 'draft', pattern: '\\bERROR\\b' }]
+    })
+    ok(
+      report && Array.isArray(report.results) && report.results.length === 1,
+      'a trusted frame gets a report back from RULE_VALIDATE'
+    )
+    // No worker factory is installed in this bundle (the `?nodeWorker` wiring
+    // lives in index.ts), so every rule stays pending — the fail-closed answer,
+    // not an error.
+    ok(report.results[0].state === 'pending', `no worker wired here → pending (got ${report.results[0].state})`)
+    ok(report.workerAvailable === false, 'the report says the validator is unavailable')
+    ok(typeof report.runtime === 'string', 'the report names the runtime fingerprint it belongs to')
+
+    const state = invoke(Ipc.RULE_VALIDATION_STATE_GET, trustedFrame)
+    ok(
+      state && typeof state.pending === 'number' && typeof state.quarantined === 'number',
+      `the aggregate state answers with counts (${JSON.stringify(state)})`
+    )
+  } finally {
+    if (previous === undefined) delete process.env.ELECTRON_RENDERER_URL
+    else process.env.ELECTRON_RENDERER_URL = previous
+  }
+}
 
 rmSync(userData, { recursive: true, force: true })
 

@@ -13,6 +13,8 @@ import { getLayout, listLayouts, saveLayout, deleteLayout } from './layouts'
 import { startPolling, stopPolling } from './sysinfo'
 import { registerSettingsIpc } from './settingsStore'
 import { registerLockIpc } from './lockController'
+import { registerRuleValidationIpc } from './redosValidator'
+import { currentRuntimeKey } from './ruleRuntime'
 import { registerSessionStateIpc } from './sessionState'
 import { normalizeReportedCwd, resolveCwd } from './cwd'
 import { ConnectionsStore, defaultConnectionsPath } from './connectionsStore'
@@ -148,7 +150,15 @@ export function registerIpc(): void {
 
   ipcMain.handle(
     Ipc.APP_INFO,
-    (): AppInfo => ({ platform: process.platform, appVersion: app.getVersion(), homeDir: homedir() })
+    (): AppInfo => ({
+      platform: process.platform,
+      appVersion: app.getVersion(),
+      homeDir: homedir(),
+      // The rule-validation gate compares proofs against one fingerprint; the
+      // renderer cannot read the app/Electron/V8 versions itself, so it is
+      // handed the exact string the main process installed.
+      runtimeKey: currentRuntimeKey()
+    })
   )
   // Renderer watchdog reports land in the same diagnostic log as main's own.
   ipcMain.on(Ipc.APP_LOG, (_event, line: string) => {
@@ -254,6 +264,8 @@ export function registerIpc(): void {
   registerSessionStateIpc()
   // ---- lock screen (main owns the state; the renderer only draws the overlay) ----
   registerLockIpc()
+  // ---- rule validation (the ReDoS probe gate: main owns the Worker) ----
+  registerRuleValidationIpc()
 
   // Resolve a cd-style argument against the current cwd (platform-aware; only
   // the main process has node's `path`).

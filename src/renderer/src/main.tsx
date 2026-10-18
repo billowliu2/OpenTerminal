@@ -3,12 +3,21 @@ import { useEffect, type ReactNode } from 'react'
 import { App as AntdApp, ConfigProvider, theme as antdTheme } from 'antd'
 import type { AppApi } from '@shared/api'
 import type { LockSettingsState } from '@shared/ipc'
+import { PROBE_VERSION } from '@shared/redosProbes'
 import { DEFAULT_SETTINGS, FONT_LIMITS } from '@shared/settings'
 import { getThemeById } from '@shared/theme'
 import App from './App'
 import { ErrorBoundary } from './ErrorBoundary'
 import ZmodemOffers from './workspace/ZmodemOffers'
 import { useSettingsStore } from './settings/store'
+import {
+  classifyWatchdogLag,
+  emitPerfLog,
+  formatWatchdogReport,
+  LongTaskRing,
+  setPerfLogSink,
+  snapshotPanes
+} from './terminal/perfDiagnostics'
 import { mix } from './theme/chrome'
 import { isLightTheme } from './theme/semantic'
 import './global.css'
@@ -18,27 +27,90 @@ import './global.css'
 // and the same line goes through APP_LOG into the on-disk diagnostic log, so a
 // packaged build's "卡死又恢复" report also tells us which process stalled and
 // for how long.
+//
+// The old version had one flaw: a late 2s tick was called a stall no matter what
+// caused it. Timer throttling (hidden page, OS suspension, system sleep) and a
+// real main-thread long task produce the same "the timer fired late" symptom,
+// so the log could not be read as evidence of anything. The first phase of the
+// stall timeline (docs/PLAN-2026-10-17-font-highlight.md, 独立方案 B §B2) adds a
+// feature-detected `longtask` observer: a late tick only counts as a renderer
+// long task when an observed long task actually overlaps that window, and
+// everything else is reported as scheduler delay with the unexplained
+// remainder spelled out.
+// Observation only — nothing here changes how anything runs.
 {
+  const WATCHDOG_INTERVAL_MS = 2000
+
+  const logEnabled = (): boolean =>
+    useSettingsStore.getState().settings.system.diagnosticLog !== false
+
+  // One sink for every PERF producer (watchdog, fit lines, WebGL lifecycle,
+  // slow xterm writes). Severe watchdog reports pass the budget as urgent; the
+  // rest share a 5 lines/minute cap so a busy terminal cannot flood the file.
+  setPerfLogSink((line, ctx) => {
+    if (!logEnabled()) return
+    if (ctx.urgent) console.error(`[renderer] ${line}`)
+    else console.warn(`[renderer] ${line}`)
+    window.api?.appLog?.(line)
+  })
+
+  // Recent long tasks (startTime/duration in performance.now() space). A ring,
+  // not a log: 50 entries is roughly the last several seconds of blocking.
+  const longTasks = new LongTaskRing()
+  try {
+    if (typeof PerformanceObserver !== 'undefined') {
+      const observer = new PerformanceObserver((list) => {
+        try {
+          for (const entry of list.getEntries()) {
+            longTasks.push({ startTime: entry.startTime, duration: entry.duration })
+          }
+        } catch {
+          /* a diagnostics callback must never throw into the observer */
+        }
+      })
+      observer.observe({ entryTypes: ['longtask'] })
+    }
+  } catch {
+    // No longtask support (plain-browser stub, older Chromium): the watchdog
+    // still runs and reports every late tick as scheduler delay/unclassified —
+    // which is exactly what it can prove without the observer.
+  }
+
   let lastTick = performance.now()
+  // Reset rather than log after the page comes back: a hidden page is throttled
+  // to roughly one timer a minute, and waking up from sleep leaves an hourly
+  // "lag" that says nothing about the renderer. `focus` covers OS-level
+  // suspension where the visibility flag never changed.
+  const resetTick = (): void => {
+    lastTick = performance.now()
+  }
+  document.addEventListener('visibilitychange', resetTick)
+  window.addEventListener('pageshow', resetTick)
+  window.addEventListener('focus', resetTick)
+
   setInterval(() => {
     const now = performance.now()
-    const lag = now - lastTick - 2000
-    // Chromium throttles timers in a hidden page down to roughly one per
-    // minute (intensive throttling), which this watchdog would otherwise
-    // report as a ~58s "stall" on every tick while the window sits in the
-    // tray. A hidden window also has nothing user-visible to freeze, so the
-    // report is skipped until the page is visible again.
-    if (lag > 3000 && !document.hidden) {
-      const line = `main thread stalled ~${Math.round(lag)}ms`
-      console.error(`[renderer] ${line}`)
-      // The settings gate is enforced again in main; checking here just saves
-      // the IPC round-trip for a stalled-process report nobody wants stored.
-      if (useSettingsStore.getState().settings.system.diagnosticLog !== false) {
-        window.api?.appLog?.(line)
-      }
-    }
+    const elapsed = now - lastTick
+    const lag = elapsed - WATCHDOG_INTERVAL_MS
     lastTick = now
-  }, 2000)
+    // A hidden window has nothing user-visible to freeze; reporting it would
+    // only ever describe the throttler.
+    if (document.hidden) return
+    const verdict = classifyWatchdogLag({
+      lagMs: lag,
+      windowStart: now - elapsed,
+      windowEnd: now,
+      longTasks: longTasks.all()
+    })
+    if (verdict === null) return
+    const line = formatWatchdogReport(verdict, snapshotPanes(now), {
+      now,
+      wallNow: Date.now(),
+      recentLongTasks: longTasks.all()
+    })
+    // Urgent: the one line that must never be dropped by the PERF budget.
+    emitPerfLog(line, { urgent: true, now })
+  }, WATCHDOG_INTERVAL_MS)
 }
 
 // Dev convenience: allow opening the renderer in a plain browser (vite page)
@@ -57,7 +129,10 @@ if (typeof window !== 'undefined' && !window.api) {
     ...over
   })
   const api: AppApi = {
-    appInfo: async () => ({ platform: 'browser', appVersion: 'dev', homeDir: '' }),
+    // A plain browser has no main process, so there is no validator and no
+    // runtime fingerprint: every custom rule reads as pending, which is exactly
+    // what the real app does when its worker cannot start.
+    appInfo: async () => ({ platform: 'browser', appVersion: 'dev', homeDir: '', runtimeKey: '' }),
     appLog: noop,
     createPty: async () => ({ id: stubId(), shell: 'stub', cwd: '' }),
     openSession: async () => ({ id: stubId() }),
@@ -127,6 +202,24 @@ if (typeof window !== 'undefined' && !window.api) {
     saveSettings: async (s) => ({ ...DEFAULT_SETTINGS, ...s }),
     onSettingsChanged: () => noop,
     listFonts: async () => [],
+    // No worker exists in a plain browser page, so the stub reports the feature
+    // as unavailable and every draft as pending rather than pretending a probe
+    // ran. The settings page then shows its real "validator unavailable" state.
+    validateRules: async ({ items }) => ({
+      runtime: '',
+      probeVersion: PROBE_VERSION,
+      workerAvailable: false,
+      truncated: false,
+      results: items.map((item) => ({ id: item.id, state: 'pending' as const }))
+    }),
+    getRuleValidationState: async () => ({
+      runtime: '',
+      probeVersion: PROBE_VERSION,
+      workerAvailable: false,
+      pending: 0,
+      quarantined: 0
+    }),
+    onRuleValidationState: () => noop,
     listLayouts: async () => [],
     getLayout: async () => null,
     saveLayout: async () => undefined,

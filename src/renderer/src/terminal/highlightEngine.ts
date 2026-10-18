@@ -1,4 +1,24 @@
-import type { HighlightRule } from '@shared/settings'
+import { DEFAULT_HIGHLIGHT_RULES, type HighlightRule } from '@shared/settings'
+import {
+  MAX_PATTERN_LEN,
+  highlightFlags,
+  makeBuiltinWhitelist,
+  ruleRunState,
+  validationAllows,
+  type RuleRunState
+} from '@shared/ruleValidation'
+import { PROBE_VERSION } from '@shared/redosProbes'
+
+// HighlightTab reads the bound from this module — keep the re-export.
+export { MAX_PATTERN_LEN }
+
+/**
+ * The factory preset set, keyed by pattern + flags. These run without a
+ * per-rule validation proof: they ship inside the app and the test suite
+ * proves them, so re-proofing every load would only re-check what we already
+ * control.
+ */
+const BUILTIN_WHITELIST = makeBuiltinWhitelist(DEFAULT_HIGHLIGHT_RULES)
 
 /**
  * Keyword highlight engine.
@@ -101,11 +121,9 @@ const MAX_CHUNK = 512 * 1024
  */
 const MAX_LINE_LEN = 4 * 1024
 
-/**
- * Longest user pattern accepted. Bounds the damage a stored rule can do and
- * keeps the editor's live preview from choking on a paste.
- */
-export const MAX_PATTERN_LEN = 500
+// Longest user pattern accepted: `MAX_PATTERN_LEN` from shared/ruleValidation
+// (re-exported above). Bounds the damage a stored rule can do and keeps the
+// editor's live preview from choking on a paste.
 
 /**
  * Advisory ReDoS heuristic for the rule EDITOR: flags patterns whose shape
@@ -113,8 +131,11 @@ export const MAX_PATTERN_LEN = 500
  *
  * Scope is deliberately limited to a warning. Measured misses — `[(](a+)+`
  * (4s on 30 chars) and `(?:a|a)+` (7.5s) / `((a|a))+` (16s) both slip through —
- * mean it must NOT gate the hot path: rejecting on a heuristic would silently
- * disable legitimate rules while still letting hostile ones past. It is useful
+ * mean the hot path cannot gate on this shape test: rejecting on a heuristic
+ * would silently disable legitimate rules while still letting hostile ones
+ * past. The real gate is the validation proof (`validationAllows`): a rule
+ * runs only with a `passed` record matching its pattern, flags and probe
+ * version, or as a factory built-in on the whitelist. The heuristic stays
  * where a false negative costs nothing and a hit saves the user from typing a
  * pattern that would freeze the settings page.
  *
@@ -277,7 +298,18 @@ export function tokenize(input: string): Token[] {
 
 /** Flags a rule compiles with: global, plus `i` / `m` when the rule opts in. */
 function flagsFor(rule: HighlightRule): string {
-  return `g${rule.caseInsensitive === true ? 'i' : ''}${rule.lineAnchor === true ? 'm' : ''}`
+  return highlightFlags(rule.caseInsensitive, rule.lineAnchor)
+}
+
+/**
+ * How a highlight rule stands right now, derived from its stored proof rather
+ * than read off it: `builtin` (factory preset, exempt), `passed` (proof matches
+ * this pattern, flags, corpus and build), `quarantined` (measured over budget)
+ * or `pending` (no current verdict). The settings table labels rows with this,
+ * so the label cannot disagree with what `compileRules` will actually do.
+ */
+export function highlightRuleRunState(rule: HighlightRule): RuleRunState {
+  return ruleRunState(rule.pattern, flagsFor(rule), rule.validation, PROBE_VERSION, BUILTIN_WHITELIST)
 }
 
 /** Compile only enabled + safely-compilable rules, sorted by priority asc. */
@@ -290,12 +322,13 @@ export function compileRules(rules: HighlightRule[]): CompiledRule[] {
     // Bounded like the other per-rule guards: a huge pattern only costs compile
     // time, but it also means someone pasted a blob into the editor.
     if (pattern.length > MAX_PATTERN_LEN) continue
-    // NOTE: the rule is deliberately NOT rejected for a ReDoS-prone shape here.
-    // `isReDoSProne` is an advisory heuristic used by the editor only — it has
-    // measured misses (`[(](a+)+`, `(?:a|a)+`) and false positives, so using it
-    // as a gate would silently disable legitimate rules while still letting
-    // some hostile ones through. The real bounds on this path remain
-    // MAX_LINE_LEN (no line over 4KB reaches a user regex) and MAX_PER_RULE.
+    // Fail-closed admission: a rule runs with a `passed` proof matching its
+    // pattern, flags and probe version exactly, or as a factory built-in the
+    // whitelist exempts. This is NOT the `isReDoSProne` heuristic (that stays
+    // an editor advisory — measured misses would make a shape-based gate
+    // wrong in both directions). The line-length and per-rule match caps
+    // (MAX_LINE_LEN / MAX_PER_RULE) remain as depth, not as the front door.
+    if (!validationAllows(pattern, flagsFor(rule), rule.validation, PROBE_VERSION, BUILTIN_WHITELIST)) continue
     let regex: RegExp
     try {
       // 'g' always; 'i' when the rule asks for case-insensitive matching; 'm'

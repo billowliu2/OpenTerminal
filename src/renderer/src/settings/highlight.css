@@ -314,6 +314,21 @@
   flex-wrap: wrap;
 }
 
+/* Probe-state badge. The tag itself is antd's; this only keeps it compact
+   enough for a table cell and stops the label wrapping. */
+.hl-state-tag {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+/* Feature-level warning rows (validator unavailable / quarantined rules) and
+   the editor's quarantine note above the save button. */
+.hl-probe-alert {
+  margin: 4px 0;
+}
+
 .hl-color-field {
   display: flex;
   align-items: center;

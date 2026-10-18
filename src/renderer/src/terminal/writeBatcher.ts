@@ -29,6 +29,17 @@ export class WriteBatcher {
     return this.buf.length > 0
   }
 
+  /**
+   * Characters still buffered for the next flush — a JS string length (UTF-16
+   * code units), NOT a byte count: the highlight path hands over decoded text,
+   * and one CJK ideograph is 1 here but 3 bytes on the wire. Diagnostics read
+   * this to tell "the batcher is holding output" apart from "xterm is behind";
+   * callers must not treat it as a transport metric.
+   */
+  get pendingChars(): number {
+    return this.buf.length
+  }
+
   /** Append `text`; the first push in a window arms the single flush timer. */
   push(text: string): void {
     if (!text) return

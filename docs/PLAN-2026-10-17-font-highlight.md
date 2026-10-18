@@ -167,7 +167,8 @@
 
 ### 待办（P1，本轮未做）
 
-- **ReDoS 根治**：预览编译/执行挪进 Web Worker + 超时；可选引入 `re2`。现有长度上限只是止血
+- **ReDoS 防护**：按下方「独立方案 A」实施主进程 Worker 异步校验；不采用 `re2`，不把 Worker 放进同步热路径
+- **长期 renderer stall**：按下方「独立方案 B」先补齐时间线诊断，再按证据优化；fit 目前只是候选，不是既定根因
 - `fontWeight`/`boldFontWeight` 越界被 xterm 静默改写（手改 json 才会遇到，纯体验问题）
 - `resizePty` 的 `cols`/`rows` 完全信任渲染层（低危，靠自家 fit 逻辑兜底）
 - 链接规则的导入/导出、profile 联动
@@ -203,9 +204,130 @@
 ### 否决的三个替代方案
 1. **运行时熔断**（循环里查时钟）：**原理上无效**。实测单次 `exec` 阻塞 **28426ms**，时钟检查根本执行不到
 2. **re2**：不支持 lookbehind，`perm`/`okstate`/`http` 三条预设依赖它
-3. **Worker + 超时**：**可靠**（6/6 危险全抓、主线程 806ms 内 tick 51 次未阻塞），但往返 0.11ms/块 vs 直接 0.035ms。**只适合规则异步校验，不适合热路径**
+3. **Worker 进入同步热路径**：往返 0.11ms/块 vs 直接 0.035ms，且 `WriteBatcher` 依赖同步染色结果；Worker 只用于规则异步校验
 
 ### 当前状态与遗留
 `isReDoSProne` 保留为**编辑器提示**（漏判不比改动前差，误判只是多一个警告而非禁用规则）。热路径边界仍是 `MAX_LINE_LEN`（>4KB 行不进用户正则）+ `MAX_PER_RULE`。
 
-**未完成**：真正解法是 Worker 异步校验 + 规则存盘前把关。工作量中等，需单独排期。
+---
+
+## 独立方案 A：ReDoS 异步校验与执行闸门（已实施，待真实场景验收）
+
+由 explore 子代理调查、主代理复核构建与终止前提后定稿。本节取代此前「可选 re2」「Worker 放进预览热路径」等粗略想法。
+
+**执行状态**：A1–A6 已实施——共享探针/裁决模块、主进程 Worker 硬超时、设置回写、IPC、编辑器与导入 UI、四语状态与测试链均已落地；独立 review 后修复了默认安装误报服务不可用、测试未接入、Worker 产物无 smoke 等问题。剩余验收见 A6，且「通过当前探针 ≠ 对任意输入安全」的边界不变。
+
+### A1. 目标与非目标
+
+**目标**：自定义高亮规则、链接规则在进入 renderer 同步执行前，先经主进程 Worker 做版本化动态探测；超时规则被隔离，待校验规则不执行，Worker 卡死时主进程可硬终止。覆盖编辑器、实时预览、导入、存量配置和手改 `settings.json`。
+
+**非目标**：固定探针不可能数学完备地识别所有病态正则，不得把「通过探针」宣传为「绝对安全」。若验收要求任意正则都绝不能在 renderer 内长时间阻塞，只能另立「线性时间/可限时正则引擎」或异步渲染架构方案；本方案不作此承诺。首版也不加入热路径计时和事后熔断，避免额外开销与复杂度。
+
+### A2. 已独立验证的技术前提
+
+- 临时最小工程实跑当前 `electron-vite 5.0.0 / Vite 7.3.6`：`import createWorker from './probeWorker?nodeWorker'` 可构建，产物为 `out/main/probeWorker-<hash>.js`，不是必须放进 `chunks/`。
+- 构建后的 Worker 已用 Node 实跑；对执行 `((a|a))+$` 灾难回溯的 Worker，主控侧约 **313ms** 完成 `terminate()`，期间主线程持续 tick。超时计时必须放在主控侧，不能依赖 Worker 自己在正则里检查时钟。
+- 当前 Electron 44 的最小 asar 应用已实跑，Worker 能从 asar 内加载并返回结果。**不需要为本方案修改 `asarUnpack`**；仍需构建/打包 smoke 防未来回归。
+- renderer Web Worker 不作为首选：还需承担 `file://`、sandbox、CSP 与持久化裁决回写主进程等额外问题，而主进程路线已经验证。
+
+### A3. 架构与规则信任边界
+
+新增主进程按需校验服务：`settings 变更/编辑器或导入请求 → ruleValidationController → worker pool → 校验结果写回设置 → 现有 settings 广播 → renderer 重新编译`。`settingsStore` 通过注入钩子调用控制器，避免与 validator 循环依赖；同步 `loadSettings()` 内不得启动或等待 Worker。
+
+规则执行状态：
+
+- `builtin`：pattern + flags 与出厂预设精确匹配，走共享白名单，不启动 Worker。
+- `passed`：Worker 在当前 `probeVersion` 与 V8 大版本下通过探针；UI 文案只能是「已通过当前探针」。
+- `pending`：新规则、存量规则、pattern/flags 改变、裁决过期、Worker 暂不可用或校验尚未完成。
+- `quarantined`：仅当某条规则实际超过硬预算、被主控终止；保留规则供用户编辑，但不执行。
+
+**执行闸门是 fail-closed：`pending` 与 `quarantined` 都不进入 `compileRules` / `compileLinkRules`，也不进入编辑器预览。** 不采用「pending 限 512 字符继续跑」——指数回溯在 512 字符上仍可能冻结，这不是安全降级。Worker 不可用时只禁用自定义规则的执行，设置数据保留、内置规则不受影响、设置页给出明确警告；不提供「仍然强制运行」旁路。
+
+裁决作为内部元数据随规则持久化，执行时同时核对 pattern、flags、probeVersion、runtime，而不是只信状态字段。导入/导出不得把内部裁决当作用户信任凭据；导入一律重新校验。主进程在首次广播前同步把过期裁决降级为 `pending`，避免应用更新后短暂执行旧裁决。`highlightProfiles` 只引用规则 id，不单独校验。
+
+### A4. Worker、探针与预算
+
+- `src/main/redosValidator.ts`：懒创建 Worker 池、in-flight 去重、队列、主控硬超时、崩溃重试一次、结果写回；默认安装不启动 Worker。
+- `src/main/redosProbeWorker.ts`：只执行合成探针并返回耗时，不负责自我超时。
+- `src/shared/redosProbes.ts`：零依赖、版本化的固定对抗语料；覆盖重复字符、失败终止符、交替输入、已知字面前缀和重叠字符类。**不再手写一套正则语法扫描器**来假装完整理解 pattern。
+- `src/shared/ruleValidation.ts`：状态类型、flags/key 计算、出厂白名单与执行闸门，main/renderer/测试共用。
+- 探针均为合成输入，长度不超过现有 4KB 行边界，不读取、不记录终端内容；每规则最多约 24 条。
+- 单规则主控硬预算 **500ms**；超时即 `terminate()` 并重建该 Worker。池并发上限 **2**，空闲回收；同 pattern+flags 合并任务。批量导入显示异步进度，不用总预算把未测规则误判成危险。
+- `isReDoSProne` 只保留为输入时提示，与执行裁决无关；同时修正编辑器里「无漏判」的过期注释。
+
+### A5. UI、文件与兼容策略
+
+- 编辑器按 300–500ms 去抖发起异步校验；pending 草稿不执行预览，保存按钮显示校验状态。每个草稿带递增序号，丢弃慢返回的旧请求，防止旧裁决覆盖新 pattern。超时规则可保存为隔离状态供修改，但不能执行。
+- 导入后批量校验并报告「通过/待校验/隔离」数量；链接规则与高亮规则走同一服务。四语 i18n 增加状态与失败说明。
+- 主进程 `coerceRule` 补上 `MAX_PATTERN_LEN=500`，避免手改配置在校验前先塞入超长 pattern；`sanitizeLinkRules` 已有相同上限。
+- 主要改动：`highlightEngine.ts`、`linkRules.ts`、`settings.ts`、`settingsStore.ts`、`HighlightTab.tsx`、`HighlightImportExport.tsx`、IPC/preload/API 类型、四语字典、`tests/build-bundles.cjs`、`package.json` 测试链与 `AGENTS.md`。
+- 不改 `electron-builder.yml`。新增构建产物 smoke，检查 main 包引用的 Worker 文件确实存在且可加载；发布前再用真实安装包做一次 asar smoke。
+
+### A6. 测试、性能预算与实施顺序
+
+测试必须包括：已知危险规则（含静态检测漏判的 4 条）全部能在硬预算内隔离；22 条预设与典型合法规则零误隔离；`[(](a+)+$` 等需要字面前缀的回归样本；pending/passed/quarantined/过期裁决的编译闸门；预览与链接 provider 不绕过；Worker 崩溃、缺失、超时、去重、队列和主线程持续响应；手改配置与旧版本迁移。
+
+性能预算：纯预设路径不启动 Worker、不增加每 chunk 计时；执行裁决只在设置变化/编译时检查。单次编辑异步校验目标 ≤600ms，不阻塞 renderer；校验失败不得拖住设置页。批量校验不得无上限占用 CPU/内存。
+
+实施顺序：①纯探针与裁决模块及测试 → ②主进程 Worker 服务和真实 terminate 测试 → ③编译/预览/链接统一闸门 → ④编辑器、导入、存量迁移与四语 UI → ⑤构建/asar smoke、全量回归与文档。每步可回退，但不把「只上一半闸门」的中间状态发布给用户。
+
+最终验收：`npm test`、`npm run build`、`node scripts/verify-deps.cjs` 全过；构建产物 Worker smoke 通过；真实场景验证所有已知危险回归样本都不会冻结设置页或终端，合法预设与现有功能无回归。
+
+---
+
+## 独立方案 B：长期 renderer stall 时间线诊断与按需优化（第一阶段已实施，第二阶段待数据）
+
+由 explore 子代理调查日志与代码、主代理复核后定稿。**当前无法把 stall 归因到 fit；第一阶段只增强观测，不改 reflow、不做背压、不关功能。**
+
+**执行状态**：B2 第一阶段已实施——longtask/scheduler 分类、pane 指标聚合、fit trigger 与限频、xterm write callback 计时、WebGL 生命周期日志和表驱动测试均已落地；B3 复现矩阵与 B4 按证据优化尚未执行，不能在拿到时间线数据前宣称根因或性能收益。
+
+### B1. 当前能与不能下的结论
+
+- 历史日志以 renderer stall 为主，但现有看门狗只靠 2s `setInterval`：它混合了真实长任务、计时器调度延迟、可见性/系统休眠等状态，日志条数不能直接当成 288 次已证实长任务。
+- fit 已有 >200ms 埋点，但无限频、无触发来源、缺少与 stall/write 的共同时间线；「没有 fit 日志」也不能反向排除 fit。
+- `WriteBatcher` 只缓冲进入 `term.write` 前的字符串；当前没有 xterm `write` callback 消费指标，所以看不到 xterm 内部积压。第一阶段不得声称已有 PTY 背压。
+- 高亮单块耗时低不等于下游成本低，SGR 注入膨胀、scrollback reflow、多 pane、WebGL 仍是对照变量，而不是已证实根因。
+
+### B2. 第一阶段：低成本统一时间线（只加观测）
+
+1. **修正看门狗分类**：`main.tsx` 增加 feature-detect 的 `PerformanceObserver('longtask')`，保留最近约 50 条 startTime/duration 的 ring buffer；`visibilitychange`、`pageshow`、恢复可见时重置 tick。watchdog lag 与长任务时间重叠才记 `renderer long task`，否则记 `scheduler delay/unclassified`，并写清区间起止，不再统称 stall。
+2. **每 pane 轻量指标注册表**：新增纯诊断模块，TerminalView mount/unmount 注册，watchdog 只读聚合快照；不走 React setState，避免诊断本身触发重渲染。
+3. **fit 埋点补全并限频**：记录 trigger（resize/font/scrollback/mount/renderer-switch）、开始时刻、耗时、cols/rows、实际 buffer 行数；每 pane **30s 最多一条**，下一条带 `suppressed=N`。全局 PERF 日志每分钟最多 5 条，watchdog 的严重长任务报告不被该上限吞掉。
+4. **写入链路分两段计时**：WriteBatcher 暴露 `pendingChars`（JS 字符串长度，不冒充字节）；每次 flush 记录 `term.write` 入队耗时，并用 `term.write(text, callback)` 记录 xterm 消费完成延迟、未完成 write 数与排队字符数。callback 只做计数和限频日志，**第一阶段不改变写入顺序或暂停 PTY**。
+5. **WebGL 生命周期**：记录 renderer 初始化/切换、`onContextLoss`、dispose/重建结果；不记录图像或终端内容。
+6. **stall 快照**：严重事件携带 pane 数、renderer 模式、最近一次 fit 元数据、Batcher/xterm 队列指标和最近 longtask；所有时间戳由 renderer 在恢复后补写，明确日志落盘时间不等于故障开始时间。
+
+### B3. 对照复现矩阵
+
+在 dev 独立用户目录下固定同一会话、同一输出样本，每个场景至少 3 次，每次只改一个变量：
+
+| 组 | 对照 | 主要判定 |
+|---|---|---|
+| 窗口/布局 | 最大化/还原 20 次；单 pane vs 用户常用多 pane | longtask 是否与 fit 起止重叠，耗时是否随 pane/buffer 增长 |
+| 输出负载 | 同一高输出 TUI 或固定 Node 输出样本，30–60s | 队列是否单调增长，write 消费延迟是否与长任务重叠 |
+| scrollback | 500 / 5000 / 50000 | fit/reflow 是否随历史行数线性增长；仅为对照，不把缩小值当修复 |
+| renderer | WebGL / DOM | 是否伴随 context loss 或仅单 renderer 出现 |
+| 高亮 | all / basic / off | 字节膨胀、write 消费与 longtask 是否随档位变化；off 仅作诊断 |
+| 字体与 CJK | 字号/行高变化、unicode11/rescale 开关 | 是否只在设置变更或图集重建时出现单次尖峰 |
+
+同时保留「输入 Kimi 到首屏可交互」的真实场景，前后各测至少 5 次，比较中位数和最慢值，不能用一次感觉下结论。
+
+### B4. 第二阶段：只对证实根因优化
+
+| 证据 | 才允许进入的优化 | 功能与性能约束 |
+|---|---|---|
+| longtask 与 fit 明确重叠，且随 scrollback/pane 放大 | 去重/去抖非紧急 fit，合并字体滑块连续变化，队列积压时推迟非紧急 reflow | 必须保留最终 fit 和正确 PTY 尺寸；不重写 xterm reflow |
+| xterm 队列持续增长、消费完成延迟与长任务重叠 | 设计端到端高低水位背压，renderer 与主进程/PTY/SSH 协同 | 不丢输出；多 pane 引用同 session 时不能互相误暂停；先补测试再实施 |
+| 高亮档位显著改变消费耗时 | 优化 SGR 恢复与输出膨胀 | 保持逐字节兼容，跑 TUI 密集基准，不用关闭高亮冒充修复 |
+| 日志出现 WebGL context loss | 重建或自动回退 DOM | 保留会话与 scrollback，不静默丢渲染器 |
+| 只有 scheduler delay、无 longtask | 查可见性、系统休眠、OS/GPU/外部调度与看门狗误报 | 不改 fit/reflow |
+
+「隐藏 pane 暂停解析并重放」属于高复杂度备选，只有在多 pane 被数据证实为主因后才单独评审；它涉及会话状态、重放和切回延迟，不进入首波优化。
+
+### B5. 文件、测试与验收
+
+第一阶段涉及 `src/renderer/src/main.tsx`、`TerminalView.tsx`、`writeBatcher.ts`，新增轻量诊断纯模块；扩展 `tests/write-batcher.mjs`、`tests/refit-throttle.mjs`，为限频、watchdog 分类和指标聚合新增表驱动纯函数测试。无需新依赖。
+
+第一阶段验收：一次用户复现后，日志能区分「fit/reflow、xterm 消费积压、WebGL、其他 longtask、非长任务调度延迟」；正常路径无 React 额外渲染，PERF 落盘 ≤5 行/分钟，所有内容仅为元数据。`npm test` 与 `npm run build` 全过。
+
+第二阶段验收：在相同压力场景下消除 >3s 的真实 longtask，队列不无限增长，输入到首屏可交互相对当前 HEAD 有统计上明确的改善；高亮、链接、scrollback、WebGL、会话重放与输出完整性均不得靠降级牺牲。优化未获数据支持前不实施。

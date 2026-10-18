@@ -12,6 +12,7 @@ import type {
 import type { AppSettings } from './settings'
 import type { ReleaseNote, UpdateState } from './ipc'
 import type { LockOperationResult, LockPasswordInput, LockSettingsState } from './ipc'
+import type { RuleValidationReport, RuleValidationRequest, RuleValidationState } from './ipc'
 import type {
   HostKeyAction,
   HostKeyPromptEvent,
@@ -124,6 +125,17 @@ export interface AppApi {
 
   // ---- fonts ----
   listFonts(): Promise<string[]>
+
+  // ---- rule validation (ReDoS probe gate; the main process owns the Worker) ----
+  /**
+   * Probe a batch of draft rules (editor / import dialog). Verdicts come back
+   * per item and are NOT persisted: a proof becomes durable only when the rule
+   * itself is saved, which runs the background pass over stored rules.
+   */
+  validateRules(request: RuleValidationRequest): Promise<RuleValidationReport>
+  /** read the validator's aggregate state (pending/quarantine counts, worker health) */
+  getRuleValidationState(): Promise<RuleValidationState>
+  onRuleValidationState(cb: (state: RuleValidationState) => void): () => void
 
   // ---- layout templates ----
   listLayouts(): Promise<LayoutMeta[]>

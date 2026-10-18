@@ -9,7 +9,8 @@ import { isHighlightCategory, type HighlightRule } from './settings'
  * importing nonsense. Validation here stays deliberately light: past that
  * envelope it only rejects what cannot be a rule at all (no `rules` array, an
  * unusable regex). Everything else is repaired by the settings store on save,
- * which already owns that job.
+ * which already owns that job. The internal `validation` proof travels in
+ * neither direction: stripped on export, reset on import.
  */
 
 export const HIGHLIGHT_FILE_KIND = 'openterminal.highlight-rules'
@@ -37,13 +38,17 @@ export interface ParsedHighlightFile {
   error?: ImportError
 }
 
-/** Serialize a rule set into the shareable envelope. */
+/** Serialize a rule set into the shareable envelope.
+ *
+ *  Proofs are stripped: `validation` is internal metadata about this install's
+ *  probe run, and a file meant to be shared or archived must not carry what
+ *  reads like a trust credential. The reader re-proves every rule anyway. */
 export function exportHighlightRules(rules: HighlightRule[]): string {
   const file: HighlightFile = {
     kind: HIGHLIGHT_FILE_KIND,
     version: HIGHLIGHT_FILE_VERSION,
     exportedAt: new Date().toISOString(),
-    rules
+    rules: rules.map(({ validation: _proof, ...rule }) => rule)
   }
   return JSON.stringify(file, null, 2)
 }
@@ -93,7 +98,11 @@ export function parseHighlightRules(text: string): ParsedHighlightFile {
   return { rules, warnings }
 }
 
-/** Keep the fields we understand; the store repairs the rest on save. */
+/** Keep the fields we understand; the store repairs the rest on save.
+ *
+ *  `validation` is deliberately NOT among them: a proof is only meaningful for
+ *  the pattern it was obtained for, in the install that obtained it, so an
+ *  imported rule always starts unproven and is re-checked by the validator. */
 function coerceImported(value: unknown, index: number, warnings: string[]): HighlightRule | null {
   if (value === null || typeof value !== 'object') {
     warnings.push(`#${index + 1}: not an object`)

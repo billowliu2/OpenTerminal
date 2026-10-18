@@ -22,8 +22,12 @@
  *     ranges, including a pattern that can match the empty string;
  *   - `mergeLinkSpans` keeps the user rule and drops the colliding built-in.
  *
- * Direct .ts import (no esbuild bundle): the module has no imports and no
- * runtime-only TS syntax, and Node >= 22.18 strips types itself.
+ * The rules written here are all legitimate, so `proved()` stamps each one with
+ * the proof the compile gate now requires (a rule without one is inert by
+ * design — the gate itself is pinned in tests/rule-validation.mjs, not here).
+ *
+ * Direct .ts import (no esbuild bundle): the module has no extension-less
+ * imports and no runtime-only TS syntax, and Node >= 22.18 strips types itself.
  * Run: node tests/link-rules.mjs   (must exit 0)
  */
 import {
@@ -40,12 +44,29 @@ import {
   sanitizeLinkRules,
   isSafeLinkTemplate
 } from '../src/shared/linkRules.ts'
+import { PROBE_VERSION } from '../src/shared/redosProbes.ts'
+import { LINK_RULE_FLAGS, setRuleRuntimeKey } from '../src/shared/ruleValidation.ts'
 
 let failed = 0
 const ok = (cond, msg) => {
   console.log(`  ${cond ? 'ok' : 'FAIL'}: ${msg}`)
   if (!cond) failed += 1
 }
+
+/**
+ * The environment the proofs below belong to. The main process installs its own
+ * fingerprint and the renderer is handed the same string over IPC; here it is a
+ * literal, and installing it is what makes a proof count for THIS engine.
+ */
+const RUNTIME = 'test-app|test-electron|test-v8'
+setRuleRuntimeKey(RUNTIME)
+
+/** Stamp the proof the gate demands for this exact pattern + flag string. */
+const proved = (rule) => ({
+  ...rule,
+  validation: { status: 'passed', pattern: rule.pattern, flags: LINK_RULE_FLAGS, probeVersion: PROBE_VERSION, runtime: RUNTIME }
+})
+const compile = (rules) => compileLinkRules(rules.map(proved))
 
 const raw = (over) => ({ id: 'r1', pattern: '\\b(\\d+)\\b', template: 'https://x/$1', ...over })
 
@@ -205,19 +226,25 @@ console.log('[compileLinkRules]')
 {
   ok(compileLinkRules(undefined).length === 0, 'an absent rule list compiles to nothing')
   ok(compileLinkRules([]).length === 0, 'an empty rule list compiles to nothing')
-  const compiled = compileLinkRules([
+  const compiled = compile([
     { id: 'a', pattern: 'x', template: 'https://x/a' },
     { id: 'b', pattern: 'y', template: 'https://x/b', enabled: false },
     { id: 'c', pattern: 'z', template: 'https://x/c', enabled: true }
   ])
   ok(compiled.length === 2, 'disabled rules are not compiled')
   ok(compiled[0].regex.flags.includes('g'), 'the compiled regex is global')
+
+  // The compile gate is fail-closed: a rule with no proof (or one that does not
+  // match its pattern) never reaches the terminal. `tests/rule-validation.mjs`
+  // owns the full truth table; this is the caller-side reminder that `proved()`
+  // is load-bearing for every table above.
+  ok(compileLinkRules([{ id: 'a', pattern: 'x', template: 'https://x/a' }]).length === 0, 'an unproven rule is inert')
+  ok(compiled.every((r) => r.regex.flags === LINK_RULE_FLAGS), `every compiled rule uses '${LINK_RULE_FLAGS}'`)
 }
 
 // ---- findRuleLinks ----------------------------------------------------------
 console.log('[findRuleLinks]')
-const find = (text, rules) =>
-  findRuleLinks(text, compileLinkRules(rules)).map((s) => [s.start, s.end, s.url])
+const find = (text, rules) => findRuleLinks(text, compile(rules)).map((s) => [s.start, s.end, s.url])
 
 const ruleSet = [{ id: 't', pattern: 'BUG-(\\d+)', template: 'https://tracker/bug/$1' }]
 
