@@ -118,14 +118,14 @@
             内置 SFTP 文件管理与广播输入。安装即用，支持自动更新。
           </p>
           <div class="hero-actions">
-            <a class="btn btn-primary" id="dl-exe" href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.28/OpenTerminal-1.0.28-setup.exe" data-i18n="hero.download">
+            <a class="btn btn-primary" id="dl-exe" href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.30/OpenTerminal-1.0.30-setup.exe" data-i18n="hero.download">
               下载 Windows 安装包
             </a>
             <a class="btn btn-ghost" href="https://github.com/billowliu2/OpenTerminal" target="_blank" rel="noopener" data-i18n="hero.source">
               查看源码
             </a>
           </div>
-          <p class="hero-note"><span data-i18n="hero.notePre">当前版本</span> <span class="mono">v1.0.28</span> <span data-i18n="hero.notePost">· NSIS exe 安装包，支持应用内自动更新。</span></p>
+          <p class="hero-note"><span data-i18n="hero.notePre">当前版本</span> <span class="mono">v1.0.30</span> <span data-i18n="hero.notePost">· NSIS exe 安装包，支持应用内自动更新。</span></p>
         </div>
         <figure class="hero-shot">
           <img src="assets/shot-terminal.jpg" alt="OpenTerminal 主界面：三路分屏并行运行 Kimi Code、Claude Code 与 Codex" width="1739" height="870" data-i18n-attr="alt:hero.shot.alt" />
@@ -133,7 +133,7 @@
         </figure>
       </div>
       <div class="container spec-strip">
-        <span><span data-i18n="spec.version">当前版本</span> <strong class="mono">v1.0.28</strong></span>
+        <span><span data-i18n="spec.version">当前版本</span> <strong class="mono">v1.0.30</strong></span>
         <span data-i18n="spec.os">Windows 10 / 11 · x64</span>
         <span data-i18n="spec.license">MIT 开源协议</span>
         <span data-i18n="spec.update">exe 支持应用内自动更新</span>
@@ -341,11 +341,11 @@
           </thead>
           <tbody>
             <tr>
-              <td class="mono">OpenTerminal-1.0.28-setup.exe</td>
+              <td class="mono">OpenTerminal-1.0.30-setup.exe</td>
               <td data-i18n="dl.table.exe">NSIS 安装包，支持应用内自动更新（推荐）</td>
               <td class="mono">109 MB</td>
               <td>
-                <a href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.28/OpenTerminal-1.0.28-setup.exe" data-i18n="dl.table.download">下载</a>
+                <a href="https://github.com/billowliu2/OpenTerminal/releases/download/v1.0.30/OpenTerminal-1.0.30-setup.exe" data-i18n="dl.table.download">下载</a>
               </td>
             </tr>
             <tr>
@@ -376,6 +376,24 @@
         <h2 data-i18n="cl.title">近期更新</h2>
         <div class="changelog-list">
           <article>
+            <h3><span class="mono">1.0.30</span><span class="rel-date">2026-10-18</span></h3>
+            <ul>
+              <li data-i18n="changelog.1.0.30.li.1">中文显示更准：终端启用 Unicode 11 宽度表，中文、全角符号与表格线对齐正确；设置新增「中文字体」回退槽位</li>
+              <li data-i18n="changelog.1.0.30.li.2">新增自定义可点击链接规则：正则捕获组可展开为 http/https 链接，Ctrl+点击打开；高亮规则新增「按行匹配」开关</li>
+              <li data-i18n="changelog.1.0.30.li.3">修复彩色 TUI 输出在高亮区段后掉色、ls -l 权限位高亮在多行下失效、含空格或括号的字体名静默失效；非法配置导致窗格崩溃会在启动时自动修复</li>
+              <li data-i18n="changelog.1.0.30.li.4">自定义正则加入 ReDoS 防护：执行前在主进程 Worker 校验，单条 500ms 硬超时，超时规则自动隔离；内置预设免校验</li>
+              <li data-i18n="changelog.1.0.30.li.5">诊断日志区分「真实长任务」与调度延迟，并新增 reflow、写入积压、WebGL 生命周期记录，卡顿定位更准</li>
+            </ul>
+          </article>
+          <article>
+            <h3><span class="mono">1.0.29</span><span class="rel-date">2026-10-17</span></h3>
+            <ul>
+              <li data-i18n="changelog.1.0.29.li.1">浅色主题可读性重做：三套内置浅色主题的终端 16 色与前景文字全部达到 WCAG AA（≥ 4.5:1），并开启最低对比度兜底</li>
+              <li data-i18n="changelog.1.0.29.li.2">GitHub Light 纯白背景改为柔和的 #f6f8fa，长时间使用不刺眼</li>
+              <li data-i18n="changelog.1.0.29.li.3">侧栏、标签栏、SFTP / 监控 / 设置等面板配色统一跟随主题，浅色下不再有看不清的文字</li>
+            </ul>
+          </article>
+          <article>
             <h3><span class="mono">1.0.28</span><span class="rel-date">2026-10-16</span></h3>
             <ul>
               <li data-i18n="changelog.1.0.28.li.1">修复应用内更新会下载两次的问题：禁用注定失败的差量下载，每次更新恰好一次整包下载，进度条只走一遍</li>
@@ -395,24 +413,6 @@
               <li data-i18n="changelog.1.0.26.li.1">修复拖动缩放窗口或终端高频输出时界面冻结数秒（网格重排节流 + 输出批量写入）</li>
               <li data-i18n="changelog.1.0.26.li.2">新增落盘诊断日志：默认开启，按天一个文件保留 7 天，设置 → 系统可关闭</li>
               <li data-i18n="changelog.1.0.26.li.3">反馈卡顿问题时附上当天的日志文件即可精确定位</li>
-            </ul>
-          </article>
-          <article>
-            <h3><span class="mono">1.0.25</span><span class="rel-date">2026-10-10</span></h3>
-            <ul>
-              <li data-i18n="changelog.1.0.25.li.1">定时检查更新（从不 / 4 / 12 / 24 小时，默认 4）</li>
-              <li data-i18n="changelog.1.0.25.li.2">自动下载更新开关（后台静默下载，安装时机仍由用户决定，绝不自动退出）</li>
-              <li data-i18n="changelog.1.0.25.li.3">下载完成 / 发现新版本时窗口最小化到托盘则弹提示</li>
-              <li data-i18n="changelog.1.0.25.li.4">同版本不重复提示或重复下载</li>
-            </ul>
-          </article>
-          <article>
-            <h3><span class="mono">1.0.24</span><span class="rel-date">2026-10-09</span></h3>
-            <ul>
-              <li data-i18n="changelog.1.0.24.li.1">修复应用旧版布局模板会误杀全部 SSH 会话</li>
-              <li data-i18n="changelog.1.0.24.li.2">配置文件损坏时先备份再重置（不再静默销毁命令库 / 书签 / 设置）</li>
-              <li data-i18n="changelog.1.0.24.li.3">会话日志退出不再丢尾部</li>
-              <li data-i18n="changelog.1.0.24.li.4">SFTP 删除不再误报失败；ZMODEM 接收大文件内存可控；新增 3 组渲染层测试</li>
             </ul>
           </article>
         </div>

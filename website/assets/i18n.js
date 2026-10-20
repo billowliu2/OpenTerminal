@@ -155,6 +155,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '近期更新',
 
+    'changelog.1.0.30.li.1': '中文显示更准：终端启用 Unicode 11 宽度表，中文、全角符号与表格线对齐正确；设置新增「中文字体」回退槽位',
+    'changelog.1.0.30.li.2': '新增自定义可点击链接规则：正则捕获组可展开为 http/https 链接，Ctrl+点击打开；高亮规则新增「按行匹配」开关',
+    'changelog.1.0.30.li.3': '修复彩色 TUI 输出在高亮区段后掉色、ls -l 权限位高亮在多行下失效、含空格或括号的字体名静默失效；非法配置导致窗格崩溃会在启动时自动修复',
+    'changelog.1.0.30.li.4': '自定义正则加入 ReDoS 防护：执行前在主进程 Worker 校验，单条 500ms 硬超时，超时规则自动隔离；内置预设免校验',
+    'changelog.1.0.30.li.5': '诊断日志区分「真实长任务」与调度延迟，并新增 reflow、写入积压、WebGL 生命周期记录，卡顿定位更准',
+
+    'changelog.1.0.29.li.1': '浅色主题可读性重做：三套内置浅色主题的终端 16 色与前景文字全部达到 WCAG AA（≥ 4.5:1），并开启最低对比度兜底',
+    'changelog.1.0.29.li.2': 'GitHub Light 纯白背景改为柔和的 #f6f8fa，长时间使用不刺眼',
+    'changelog.1.0.29.li.3': '侧栏、标签栏、SFTP / 监控 / 设置等面板配色统一跟随主题，浅色下不再有看不清的文字',
+
     'changelog.1.0.28.li.1': '修复应用内更新会下载两次的问题：禁用注定失败的差量下载，每次更新恰好一次整包下载，进度条只走一遍',
 
     'changelog.1.0.27.li.1': '新增关闭标签二次确认：终端 / SSH 两个独立开关（默认关闭），设置 → 渲染与行为',
@@ -164,16 +174,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.26.li.1': '修复拖动缩放窗口或终端高频输出时界面冻结数秒（网格重排节流 + 输出批量写入）',
     'changelog.1.0.26.li.2': '新增落盘诊断日志：默认开启，按天一个文件保留 7 天，设置 → 系统可关闭',
     'changelog.1.0.26.li.3': '反馈卡顿问题时附上当天的日志文件即可精确定位',
-
-    'changelog.1.0.25.li.1': '定时检查更新（从不 / 4 / 12 / 24 小时，默认 4）',
-    'changelog.1.0.25.li.2': '自动下载更新开关（后台静默下载，安装时机仍由用户决定，绝不自动退出）',
-    'changelog.1.0.25.li.3': '下载完成 / 发现新版本时窗口最小化到托盘则弹提示',
-    'changelog.1.0.25.li.4': '同版本不重复提示或重复下载',
-
-    'changelog.1.0.24.li.1': '修复应用旧版布局模板会误杀全部 SSH 会话',
-    'changelog.1.0.24.li.2': '配置文件损坏时先备份再重置（不再静默销毁命令库 / 书签 / 设置）',
-    'changelog.1.0.24.li.3': '会话日志退出不再丢尾部',
-    'changelog.1.0.24.li.4': 'SFTP 删除不再误报失败；ZMODEM 接收大文件内存可控；新增 3 组渲染层测试',
 
     'cl.morePre': '完整日志见仓库',
     'cl.morePost': '。',
@@ -329,6 +329,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '近期更新',
 
+    'changelog.1.0.30.li.1': '中文顯示更準：終端機啟用 Unicode 11 寬度表，中文、全形符號與表格線對齊正確；設定新增「中文字型」回退欄位',
+    'changelog.1.0.30.li.2': '新增自訂可點擊連結規則：正規表達式捕獲組可展開為 http/https 連結，Ctrl+點擊開啟；高亮規則新增「逐行比對」開關',
+    'changelog.1.0.30.li.3': '修復彩色 TUI 輸出在高亮區段後掉色、ls -l 權限位高亮在多行下失效、含空格或括號的字型名稱默默失效；非法設定導致窗格崩潰會在啟動時自動修復',
+    'changelog.1.0.30.li.4': '自訂正規表達式加入 ReDoS 防護：執行前先在主程序 Worker 校驗，單條規則 500ms 硬性逾時，逾時規則自動隔離；內建預設免校驗',
+    'changelog.1.0.30.li.5': '診斷日誌區分「真實長任務」與排程延遲，並新增 reflow、寫入積壓、WebGL 生命週期記錄，卡頓定位更準',
+
+    'changelog.1.0.29.li.1': '淺色主題可讀性重做：三套內建淺色主題的終端機 16 色與前景文字全部達到 WCAG AA（≥ 4.5:1），並開啟最低對比度補底',
+    'changelog.1.0.29.li.2': 'GitHub Light 純白背景改為柔和的 #f6f8fa，長時間使用不刺眼',
+    'changelog.1.0.29.li.3': '側邊欄、分頁列、SFTP / 監控 / 設定等面板配色統一跟隨主題，淺色下不再有看不清的文字',
+
     'changelog.1.0.28.li.1': '修復應用內更新會下載兩次的問題：停用注定失敗的差量下載，每次更新恰好一次整包下載，進度條只走一遍',
 
     'changelog.1.0.27.li.1': '新增關閉分頁二次確認：終端機 / SSH 兩個獨立開關（預設關閉），設定 → 渲染與行為',
@@ -338,16 +348,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.26.li.1': '修復拖動縮放視窗或終端機高頻輸出時介面凍結數秒（網格重排節流 + 輸出批量寫入）',
     'changelog.1.0.26.li.2': '新增落盤診斷日誌：預設開啟，按天一個檔案保留 7 天，設定 → 系統可關閉',
     'changelog.1.0.26.li.3': '回報卡頓問題時附上當天的日誌檔案即可精確定位',
-
-    'changelog.1.0.25.li.1': '定時檢查更新（從不 / 4 / 12 / 24 小時，預設 4）',
-    'changelog.1.0.25.li.2': '自動下載更新開關（背景靜默下載，安裝時機仍由使用者決定，絕不自動結束）',
-    'changelog.1.0.25.li.3': '下載完成 / 發現新版本時，視窗若最小化到系統匣會彈出提示',
-    'changelog.1.0.25.li.4': '同一版本不重複提示、不重複下載',
-
-    'changelog.1.0.24.li.1': '修復套用舊版版面配置範本會誤殺全部 SSH 工作階段的問題',
-    'changelog.1.0.24.li.2': '設定檔損毀時先備份再重置（不再靜默銷毀指令庫 / 書籤 / 設定）',
-    'changelog.1.0.24.li.3': '工作階段日誌結束時不再遺失尾段',
-    'changelog.1.0.24.li.4': 'SFTP 刪除不再誤報失敗；ZMODEM 接收大檔案的記憶體用量可控；新增 3 組渲染層測試',
 
     'cl.morePre': '完整日誌請見倉庫',
     'cl.morePost': '。',
@@ -503,6 +503,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': 'Recent updates',
 
+    'changelog.1.0.30.li.1': 'Better CJK rendering: the terminal now uses the Unicode 11 width table so Chinese, full-width punctuation and box-drawing characters align correctly; a CJK font fallback slot was added to Settings',
+    'changelog.1.0.30.li.2': 'Added custom clickable link rules: a regex capture group can expand into an http/https link, opened with Ctrl+click; highlight rules gained a line-anchored matching switch',
+    'changelog.1.0.30.li.3': 'Fixed coloured TUI output losing its colour after a highlighted span, ls -l permission bits not highlighting across wrapped lines, and font names with spaces or parentheses silently failing; panes no longer crash on invalid settings, which are repaired at startup',
+    'changelog.1.0.30.li.4': 'Custom regexes now go through ReDoS protection: validated in a main-process Worker before running, with a hard 500 ms timeout that quarantines a slow rule; built-in presets skip validation',
+    'changelog.1.0.30.li.5': 'Diagnostic logs now separate real long tasks from scheduling delays and record reflow, write backlog and WebGL lifecycle, making freezes easier to pin down',
+
+    'changelog.1.0.29.li.1': 'Light themes redone for readability: all 16 ANSI colours plus foreground text in the three built-in light themes now meet WCAG AA (≥ 4.5:1), with a minimum-contrast floor enabled',
+    'changelog.1.0.29.li.2': 'GitHub Light\'s pure-white background is now the softer #f6f8fa, easier on the eyes over long sessions',
+    'changelog.1.0.29.li.3': 'Sidebar, tab bar, SFTP, monitor and settings panels all derive their colours from the active theme, so nothing becomes unreadable in light mode',
+
     'changelog.1.0.28.li.1': 'Fixed in-app updates downloading twice: differential download (which could never succeed) is disabled, so every update is exactly one full download with a single progress pass',
 
     'changelog.1.0.27.li.1': 'Added close-confirmation for tabs: separate switches for terminal and SSH tabs (off by default), under Settings → Rendering & Behavior',
@@ -512,16 +522,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.26.li.1': 'Fixed the UI freezing for seconds while resizing the window or under high-frequency terminal output (reflow throttling + batched writes)',
     'changelog.1.0.26.li.2': 'Added on-disk diagnostic logs: on by default, one file per day kept for 7 days, can be disabled in Settings → System',
     'changelog.1.0.26.li.3': 'Attach the day\'s log file when reporting freezes for precise diagnosis',
-
-    'changelog.1.0.25.li.1': 'Scheduled update checks (never / 4 / 12 / 24 hours, default 4)',
-    'changelog.1.0.25.li.2': 'Auto-download toggle: silent background download, install timing still up to you, never quits on its own',
-    'changelog.1.0.25.li.3': 'Tray notification when a new version is found or a download finishes while the window is minimized',
-    'changelog.1.0.25.li.4': 'No repeated prompts or repeated downloads for the same version',
-
-    'changelog.1.0.24.li.1': 'Fixed: applying an older layout template could kill every SSH session',
-    'changelog.1.0.24.li.2': 'Corrupted config files are now backed up before resetting — no more silent loss of the command library, bookmarks or settings',
-    'changelog.1.0.24.li.3': 'Session logs no longer lose their tail when the app exits',
-    'changelog.1.0.24.li.4': 'SFTP delete no longer reports false failures; ZMODEM downloads of large files keep memory bounded; 3 new renderer test suites',
 
     'cl.morePre': 'Full changelog in',
     'cl.morePost': '.',
@@ -677,6 +677,16 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '最近の更新',
 
+    'changelog.1.0.30.li.1': '中国語表示の精度を改善：ターミナルが Unicode 11 の文字幅テーブルを使うようになり、中国語・全角記号・罫線の位置が揃います。設定に「中国語フォント」のフォールバック欄を追加',
+    'changelog.1.0.30.li.2': 'カスタムのクリック可能リンク規則を追加：正規表現のキャプチャグループを http/https リンクに展開し、Ctrl+クリックで開けます。ハイライト規則に「行単位で照合」スイッチを追加',
+    'changelog.1.0.30.li.3': '色付き TUI 出力がハイライト区間の後で色を失う問題、ls -l のパーミッション表示が折り返し時にハイライトされない問題、空白や括弧を含むフォント名が黙って無効になる問題を修正。不正な設定でペインが落ちる問題は起動時に自動修復',
+    'changelog.1.0.30.li.4': 'カスタム正規表現に ReDoS 対策を追加：実行前にメインプロセスの Worker で検証し、1 件あたり 500ms のハードタイムアウトで遅い規則を自動的に隔離。組み込みプリセットは検証対象外',
+    'changelog.1.0.30.li.5': '診断ログが「実際の長いタスク」とスケジューリング遅延を区別し、リフロー・書き込み滞留・WebGL のライフサイクルも記録するようになり、固まりの原因を特定しやすくなりました',
+
+    'changelog.1.0.29.li.1': 'ライトテーマの可読性を作り直し：組み込みのライトテーマ 3 種すべてで、ターミナルの 16 色と前景色が WCAG AA（4.5:1 以上）を満たし、最低コントラストの下限も有効化',
+    'changelog.1.0.29.li.2': 'GitHub Light の純白背景を、長時間でも目に優しい #f6f8fa に変更',
+    'changelog.1.0.29.li.3': 'サイドバー、タブバー、SFTP / モニター / 設定などのパネル配色がテーマに追従するようになり、ライトテーマでも読めない文字がなくなりました',
+
     'changelog.1.0.28.li.1': 'アプリ内アップデートが 2 回ダウンロードされる問題を修正：成功しない差分ダウンロードを無効化し、毎回ちょうど 1 回のフルダウンロードに',
 
     'changelog.1.0.27.li.1': 'タブを閉じる前の確認機能を追加：ターミナル / SSH それぞれ個別のスイッチ（既定はオフ）、設定 → 描画と動作',
@@ -686,16 +696,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.26.li.1': 'ウィンドウのリサイズや高頻度ターミナル出力時に UI が数秒固まる問題を修正（リフローのスロットリング + 書き込みバッチ化）',
     'changelog.1.0.26.li.2': '診断ログを追加：既定で有効、日ごとに 1 ファイルを 7 日間保持、設定 → システムで無効化可能',
     'changelog.1.0.26.li.3': '固まりの報告時に当日のログファイルを添付すれば正確に特定できます',
-
-    'changelog.1.0.25.li.1': '定期的な更新チェック（しない / 4 / 12 / 24 時間、既定は 4 時間）',
-    'changelog.1.0.25.li.2': '自動ダウンロードのオン／オフ（バックグラウンドで静かにダウンロード。インストールのタイミングは従来どおりユーザーが決定し、自動で終了することはありません）',
-    'changelog.1.0.25.li.3': '新バージョンの検出時やダウンロード完了時に、ウィンドウがトレイに最小化されていれば通知を表示',
-    'changelog.1.0.25.li.4': '同じバージョンで通知やダウンロードを繰り返しません',
-
-    'changelog.1.0.24.li.1': '古いレイアウトテンプレートを適用すると SSH セッションがすべて切断される問題を修正',
-    'changelog.1.0.24.li.2': '設定ファイルが壊れている場合は先にバックアップしてから初期化（コマンドライブラリ、ブックマーク、設定が黙って失われることはなくなりました）',
-    'changelog.1.0.24.li.3': '終了時にセッションログの末尾が欠けなくなりました',
-    'changelog.1.0.24.li.4': 'SFTP の削除が誤って失敗扱いにならなくなりました。ZMODEM の大容量受信もメモリ使用量を抑制。レンダラー層のテストを 3 組追加',
 
     'cl.morePre': '完全な変更履歴は',
     'cl.morePost': ' をご覧ください。',
