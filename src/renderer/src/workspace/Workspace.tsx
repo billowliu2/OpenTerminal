@@ -41,6 +41,7 @@ import { useSettingsStore } from '@renderer/settings/store'
 import type { SessionSnapshot, SessionPanelState } from '@shared/ipc'
 import type { WorkspaceMode } from './workspaceMode'
 import { useWorkspaceModeStore } from './workspaceModeStore'
+import { decideModeClick } from './modeRailGesture'
 import './workspace.css'
 
 export interface WorkspaceProps {
@@ -1529,7 +1530,7 @@ const IconRail = memo(function IconRail({
       <RailButton title={t('workspace.newTerminal')} icon={<PlusOutlined />} onClick={onNewTerminal} />
       <LayoutFlyout menu={layoutMenu} />
       <div className="workspace-rail-divider" />
-      <ModeRailButtons />
+      <ModeRailButtons onToggleSidebar={onToggleSidebar} />
       <div className="workspace-rail-spacer" />
       {connecting && (
         <Tooltip title={t('workspace.rail.connecting')} placement="right">
@@ -1541,23 +1542,37 @@ const IconRail = memo(function IconRail({
   )
 })
 
-/** M6.1: terminal / SSH workspace entries in the icon rail. */
-function ModeRailButtons(): React.JSX.Element {
+/** M6.1: terminal / SSH workspace entries in the icon rail. 双击当前工作区按钮 = 收展侧栏。 */
+function ModeRailButtons({ onToggleSidebar }: { onToggleSidebar: () => void }): React.JSX.Element {
   const mode = useWorkspaceModeStore((s) => s.mode)
   const setMode = useWorkspaceModeStore((s) => s.setMode)
+  /** 手势开始前的模式。detail===2 到达时 store 已被第一击更新，判定「双击的是不是当前工作区」只能用这里存的值。 */
+  const preGestureModeRef = useRef<WorkspaceMode | null>(null)
+
+  const handleModeClick = (buttonMode: WorkspaceMode) => (e: React.MouseEvent<HTMLButtonElement>): void => {
+    const action = decideModeClick(e.detail, preGestureModeRef.current, buttonMode)
+    if (action === 'toggle-sidebar') {
+      onToggleSidebar()
+      return
+    }
+    if (action === 'noop') return
+    preGestureModeRef.current = useWorkspaceModeStore.getState().mode
+    setMode(buttonMode)
+  }
+
   return (
     <>
       <RailButton
         title={t('workspace.rail.terminalWorkspace')}
         icon={<CodeOutlined />}
         active={mode === 'terminal'}
-        onClick={() => setMode('terminal')}
+        onClick={handleModeClick('terminal')}
       />
       <RailButton
         title={t('workspace.rail.sshWorkspace')}
         icon={<CloudServerOutlined />}
         active={mode === 'ssh'}
-        onClick={() => setMode('ssh')}
+        onClick={handleModeClick('ssh')}
       />
     </>
   )
@@ -1644,7 +1659,7 @@ function RailButton({
 }: {
   title: string
   icon: ReactNode
-  onClick?: () => void
+  onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void
   active?: boolean
   hideTooltip?: boolean
 }): React.JSX.Element {
