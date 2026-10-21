@@ -1,182 +1,143 @@
 # OpenTerminal 开发备忘
 
-Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。
+Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。本文只留硬规则与踩坑结论；完整背景见 `docs/`（ROADMAP / STATE / PLAN-*），历史细节看 git log。
 
 ## 常用命令
 
-- 开发：`npm run dev`（主进程改动不热重建，需重启）
-- dev 实例使用独立用户数据目录 `%APPDATA%\OpenTerminal-dev` 与独立单实例锁（`src/main/index.ts` 顶部 `!app.isPackaged` 分支），窗口标题带 `(dev)`：**可与已安装的正式版同时运行，互不干扰**，也不会把测试设置/会话写进真实配置
-- 类型检查：`npm run typecheck`（tsconfig.node.json + tsconfig.web.json；只看渲染层可单跑 `npx tsc --noEmit -p tsconfig.web.json`）
-- 测试：`npm test`（**npm 生命周期先自动跑 `pretest` 做类型检查**，再 `node tests/build-bundles.cjs` 重建 esbuild bundle，然后依次跑可离线运行的 36 个测试：ssh-loopback、commands-store、connections-store、settings-store、local-path-grants、lock-store、lock-controller、lock-shortcuts、reserved-accelerators、terminal-title、ipc-guard、updater-fallback、log-sanitizer、app-log、sftp-timeout、hl-split-smoke、hl-rules、redos-probes、rule-validation、redos-validator、perf-diagnostics、zmodem-e2e、ssh-session-e2e、sysinfo-e2e、terminal-cwd、terminal-links、broadcast-store、write-batcher、refit-throttle、semantic-theme、theme-contrast、css-theme-vars、ot-var-names、font-stack、link-rules、mode-rail-gesture；真实服务器测试需 JD_* 凭据，不在此列）。其中渲染层纯函数测试（semantic-theme、theme-contrast、ot-var-names、font-stack、write-batcher、refit-throttle、perf-diagnostics、redos-probes、rule-validation、broadcast-store、terminal-cwd、terminal-links、terminal-title、hl-split-smoke、hl-rules、link-rules、mode-rail-gesture 等）用 Node 22.18+ 的原生 TS 类型剥离**直接 import `.ts` 源文件**（不经 esbuild bundle），Node 20/22.17 以下会 `ERR_UNKNOWN_FILE_EXTENSION`
-- 依赖分类规则：**只有 `src/main/`/`src/preload/` 实际 import 的包才能进 `dependencies`**（node-pty/ssh2/zmodem.js/font-list/electron-updater）；纯渲染层依赖一律 devDependencies（Vite 全量打包进 out/renderer，`externalizeDepsPlugin` 不作用渲染层）——这条让 asar 从 98MB 瘦到 8.1MB，加新依赖时别放错边
-- 下载量统计：`node scripts/download-stats.cjs`（Gitea + GitHub release 资产的 download_count 汇总；GitHub 优先直连、失败自动回退 `HTTPS_PROXY`/本地 7897；更新通道无计数接口不计入）
-- 打包：`npm run dist`（**生命周期先自动跑 `predist` → `npm test`，即类型检查 + 36 个离线测试全部通过后才 build/package**，typecheck 全程只跑一次；`electron-vite build` 之后、electron-builder 之前会跑 `node tests/worker-artifact.mjs`——真实加载 `out/main/redosProbeWorker-*.js` 并回包，防止 `?nodeWorker` 产物静默丢失；predist 末尾的 `npm install --package-lock-only` 会把 `package-lock.json` 根版本号对齐 `package.json`，**发布提交必须带上 package-lock.json**），产物在 `release/`（exe + latest.yml + blockmap）
-  - GitHub Actions：`.github/workflows/ci.yml` 在 windows-latest + Node 22 上跑 `npm ci` / `npm test`（含 pretest typecheck）/ `npm run build`，只做验证，不打包安装器、不发布
-  - 国内网络需镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
-- 依赖一致性闸门：`predist` 开头跑 `node scripts/verify-deps.cjs`（逐条比对 `node_modules` 与 `package-lock.json` 的版本，跨平台 optional 依赖缺失跳过；不一致就 exit 1）——`npm install --package-lock-only` **只重算 lockfile、不碰 node_modules**（本版 npm 还会把 `node_modules/.package-lock.json` 一并重写成理想树，制造「已经装好了」的假象），所以**改动依赖版本后必须真实 `npm install` 或 `npm ci` 再构建**，别指望 lockfile 对齐就等于树里换了包；v1.0.21 的中文输入法回归正是这个坑（`@xterm/xterm` 锁 6.1.0-beta.304，树里还是 6.0.0，打进去的是旧代码）
-- **换机/重装环境后第一次打包前必须先跑 `npm ci`**（verify-deps 会兜底拦截，但别浪费一次构建）；在任何机器上都先 `node scripts/verify-deps.cjs` 确认再 `npm run dist`
-- electron-builder `rename win-unpacked.tmp` 撞 EPERM = 安全软件实时扫描新解压文件短暂持锁（实测约 4s，进程退出后数秒即可手动重命名）。应对：`NODE_OPTIONS="--require $(pwd -W)/scripts/rename-retry-shim.cjs" npm run dist`（注入重试垫片，stderr 会打印每次重试）；根治是把仓库目录加进安全软件信任区
+- 开发：`npm run dev`（主进程改动不热重建，需重启）。dev 实例用独立 `%APPDATA%\OpenTerminal-dev` + 独立单实例锁，可与正式版并存，测试数据不进真实配置
+- 类型检查：`npm run typecheck`；渲染层单独：`npx tsc --noEmit -p tsconfig.web.json`
+- 测试：`npm test`（pretest 先 typecheck → `tests/build-bundles.cjs` 重建 → 36 个离线测试，清单见 `package.json` 的 `test` 脚本）。渲染层纯函数测试用 Node 22.18+ 原生类型剥离直连 `.ts` 源文件，Node 20/22.17 以下报 `ERR_UNKNOWN_FILE_EXTENSION`；真实服务器测试需 `JD_*` 凭据，不在列
+- 依赖分类：**只有 `src/main/`/`src/preload/` 实际 import 的包才能进 `dependencies`**；纯渲染层依赖一律 devDependencies（Vite 全量打包进 out/renderer，`externalizeDepsPlugin` 不作用渲染层）
+- 打包：`npm run dist`（predist = verify-deps → npm test → build；build 后跑 `tests/worker-artifact.mjs` 防 `?nodeWorker` 产物静默丢失；末尾 `npm install --package-lock-only` 对齐 lockfile 根版本，**发布提交必须带 package-lock.json**）。CI（`.github/workflows/ci.yml`，windows-latest + Node 22）只验证不打包不发布
+- 国内镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
+- **改依赖版本后必须真实 `npm install`/`npm ci`**：lockfile 对齐 ≠ 树里换了包（`scripts/verify-deps.cjs` 会拦；v1.0.21 的 @xterm 回归正是此坑）。换机/重装后第一次打包前先 `npm ci`
+- EPERM rename `win-unpacked.tmp` = 安全软件扫描持锁：`NODE_OPTIONS="--require $(pwd -W)/scripts/rename-retry-shim.cjs" npm run dist`；根治是把仓库目录加进安全软件信任区
+- 下载量统计：`node scripts/download-stats.cjs`
 
 ## 仓库与远程
 
-- `origin` = Gitea `https://git.codingplan.site/admin/OpenTerminal.git`（主仓库 + 更新通道）
-- `github` = `https://github.com/billowliu2/OpenTerminal.git`（镜像 + 备用更新源）
-- ⚠️ Gitea 的 upload-pack 有故障，`git fetch origin` 会报 `bad pack header`；查询远端状态用 API 或 `git ls-remote`。推送正常。
-- 2026-09：远端 main 旧历史（M3–M8，至 v0.8.0 d3a628f）被 force-push 覆盖为当前历史，旧提交仍由 tag v0.6.0 / v0.7.0 / v0.8.0 保留。
+- `origin` = Gitea（主仓库 + 更新通道）；`github` = GitHub 镜像 + 备用更新源（具体 URL 看 `git remote -v`）
+- ⚠️ Gitea upload-pack 故障，`git fetch origin` 报 `bad pack header`；查远端用 API 或 `git ls-remote`，推送正常
+- 2026-09 远端旧历史（M3–M8，至 v0.8.0）被 force-push 覆盖，旧提交由 tag v0.6.0/v0.7.0/v0.8.0 保留
 
 ## 凭据
 
-- `.env`（已 gitignore）：`GIT_TOKEN`（Gitea）、`GH_TOKEN`（GitHub）等。git 推送通过 credential helper 使用该令牌。
+`.env`（已 gitignore）：`GIT_TOKEN`（Gitea）、`GH_TOKEN`（GitHub）；git 推送经 credential helper 用该令牌。
 
 ## 发布新版本
 
-1. `package.json` 版本号 +1，写 `RELEASE_NOTES.md`（仓库根，已 gitignore；可选 `.zh-TW/.en/.ja` 译文，缺译文回退简体）
-2. `node scripts/sync-changelog.cjs` 把发布说明并入 `CHANGELOG*.md` —— **必须在 `npm run dist` 之前**：更新日志以 `?raw` 打进安装包（「关于」页离线读），`release.cjs` 也校验 `CHANGELOG.md` 已含该版本号
+1. `package.json` 版本 +1，写 `RELEASE_NOTES.md`（可选 .zh-TW/.en/.ja 译文，缺译回退简体；`RELEASE_NOTES*.md` 已 gitignore，不随仓库提交）
+2. `node scripts/sync-changelog.cjs` 并入 `CHANGELOG*.md` —— **必须在 dist 之前**（更新日志以 `?raw` 打进安装包，release.cjs 也校验）
 3. `npm run dist` 构建
-4. `node scripts/release.cjs <版本号>`，例如 `node scripts/release.cjs 1.0.14`（**不带 skip 参数**，Gitea 与 GitHub 一起发）
-   - Gitea：release（exe 资产）→ Gitea 更新通道（`api/packages/admin/generic/openterminal-update/stable`：exe.blockmap → exe → release-notes.md → **latest.yml 最后**）
-   - GitHub：release 资产再次随版本同步发布（exe + exe.blockmap + latest.yml），electron-updater 标准 GitHub provider 直接吃 release 资产
-   - 通道不再先删旧版：新版本文件全部传完、latest.yml 生效后才清掉上一版 exe/blockmap，中途失败不会把通道打空；同一版本可重复运行（release 复用、已传资产跳过）
-   - 上传前先比通道版本：`assertNoDowngrade()` 读通道 latest.yml，若线上版本**高于**待发布版本就直接拒绝——三条本地护栏只比本地产物，旧分支发旧版本号会一路通过，覆盖 latest.yml 之后 `pruneChannel` 会把线上新版本的 exe/blockmap 删掉。该探测**fail-closed**：网络错误 / 非 404 失败 / 解析不出 version 一律抛错中止发布，只有通道真空（404）才放行；`pruneChannel` 前那次探测是 best-effort（失败只跳过清理并打日志）
-   - 只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub）
-   - 跳过部分目标：`--skip-github` 只跳 GitHub release；`--skip-gitea-release` **只跳 Gitea release、更新通道照常上传**；`--skip-gitea` 两者都跳（会打印醒目警告——国内用户将收不到该版本，只想跳 release 请用 `--skip-gitea-release`）
-   - 国内通道全程直连，**不需要设代理**；GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub 请求）
-5. 验证更新通道：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
-6. `git tag v<版本号>` 并推送两个远程（代码/tag 与 release 资产的镜像保持同步）。注意顺序坑：release.cjs 创建 release 时若远端尚无该 tag,Gitea/GitHub 会在**默认分支 HEAD** 自动建一个指向错误 commit 的 tag，第 6 步推送会被拒——要么先建 tag 推上去再跑 release.cjs，要么事后 `git push -f <远端> v<版本号>` 强制修正到 release commit(v1.0.22 即踩过）
+4. `node scripts/release.cjs <版本号>`（默认 Gitea + GitHub 一起发；同版本可重复跑，已传资产跳过）
+   - 更新通道上传顺序：exe.blockmap → exe → release-notes.md → **latest.yml 最后**；新版全部传完才清上一版，中途失败不会打空通道
+   - `--channel-only` 只补通道；`--skip-github` 跳 GitHub；`--skip-gitea-release` 只跳 release、通道照常；`--skip-gitea` 两者都跳（国内用户收不到，慎用）。**`--channel-only --skip-gitea` 组合直接 exit 1**
+   - 防降级 `assertNoDowngrade()` **fail-closed**：通道版本更高 / 网络错误 / 解析失败一律中止发布，只有通道真空（404）才放行；pruneChannel 前那次探测是 best-effort（失败只跳过清理并打日志）
+   - GitHub 走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只对 GitHub 请求用它）；Gitea 通道直连不需要代理
+5. 验证：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
+6. `git tag v<版本号>` 并推两个远程。**tag 必须先推再跑 release.cjs**：否则 Gitea/GitHub 会在默认分支 HEAD 自动建错位 tag，事后要 `git push -f` 修正（v1.0.22 踩过）
 
 ## 诊断日志
 
-- 正式版落盘的诊断日志在 `<userData>/logs/app-YYYY-MM-DD.log`（**本地日期**命名，`src/main/appLog.ts`）：**保留 7 天**（今天 + 前 7 天，更早即删），启动时清扫一次 + 每 24h unref 定时器再扫（长开机的进程跨午夜也会清）；只动 `app-*.log` 命名匹配的文件，目录里的外来文件不碰。会话录制日志（LOG_START）是用户文件，永远不走这里
-- **开关**：`settings.system.diagnosticLog`（默认开，设置页「系统」区）。闸门在 `appLog()` 里（`setAppLogEnabled` 由 `applySystemSettings` 每次设置变更时跟随，index.ts 启动时先按 settings 设好再写启动行）；渲染层看门狗发送前也自查一遍省 IPC。关闭 = 什么都不记，但保留期清扫照常（它只删不写）
-- 写入方：主进程启动行 / `unhandledRejection` / `uncaughtException` / 事件循环 stall 看门狗（`index.ts`）；渲染层 stall 看门狗与 PERF 观测经 `APP_LOG` IPC 中继（`main.tsx` → preload → `ipc.ts`）。`appLog()` 走异步串行队列、失败静默——**日志永远不能搞挂应用本身**；单行上限 2000 字符、内嵌换行压平、source 列定宽对齐
-- **渲染层 PERF 时间线（只观测，不改变执行行为）**：`src/renderer/src/terminal/perfDiagnostics.ts` + `main.tsx` 的 longtask observer 把迟到的 2s tick 分成 `renderer long task`（窗口内有真实 PerformanceObserver longtask 重叠）与 `scheduler delay/unclassified`（计时器节流/休眠/OS 调度等，不能当渲染层卡死证据）；同一条报告带 pane/renderer、最近 fit、xterm write 队列与 batcher 积压。**日志落盘时间是恢复时刻，行内 `window`/`est` 才是估算故障区间**。`PERF fit`（trigger/耗时/cols×rows/bufferLines，每 pane 30s 限频）、`PERF write xterm ack`（xterm 消费完成延迟）与 `PERF renderer webgl-*` 共享每分钟 5 行预算；严重看门狗报告 urgent，不受预算吞掉。所有字段都是元数据，绝不含终端内容；`term.write` callback 只计数，不改变写入顺序，也**不是** PTY 背压
-- 排障口径：卡死报告先让用户发当天的 app log——`[main] event loop stalled` = 主进程阻塞；`main thread lag … renderer long task` = 渲染层真实长任务；`scheduler delay/unclassified` = 看门狗只能证明计时器迟到，不能归因卡死；再用同时间线的 `PERF fit` / `PERF write` / `PERF renderer` 判断是 reflow、xterm 消费积压还是 WebGL 生命周期
-- 测试：`node tests/app-log.mjs`（经 `tests/.app-log.cjs` bundle；命名/保留窗口表驱动 + 真实临时目录的清扫、追加与开关门控）、`node tests/perf-diagnostics.mjs`（longtask 分类、pane 指标聚合、fit/write 限频与 trigger 分类表驱动）
+- 落盘 `<userData>/logs/app-YYYY-MM-DD.log`（本地日期），保留 7 天（今天 + 前 7 天；启动清扫一次 + 每 24h unref 定时器再扫，长开机跨午夜也会清），只动 `app-*.log` 命名匹配的文件；会话录制日志是用户文件，永远不走这里
+- 开关 `settings.system.diagnosticLog`（默认开）；关闭 = 什么都不记，但保留期清扫照常（只删不写）
+- `appLog()` 走异步串行队列、失败静默、单行 2000 字符 —— **日志永远不能搞挂应用本身**
+- 排障口径：`[main] event loop stalled` = 主进程阻塞；`renderer long task` = 渲染层真实长任务；`scheduler delay/unclassified` 只证明计时器迟到，**不是**卡死证据；再对照 `PERF fit` / `PERF write` / `PERF renderer` 判断 reflow、xterm 积压还是 WebGL 生命周期。所有字段是元数据，绝不含终端内容
+- PERF 时间线只观测不改变执行行为；日志落盘时间是恢复时刻，行内 `window`/`est` 才是故障区间；`PERF fit` 超 `FIT_SLOW_LOG_MS=200` 才记且每 pane 30s 限频（带 suppressed=N），fit/write/webgl 共享每分钟 5 行预算，严重看门狗报告 urgent 不受预算吞掉
 
 ## 更新机制
 
-- 检查更新：**GitHub 优先**（走系统代理；前置 20 秒连通性探测 `probeGithub`——探测失败/超时直接兜底 Gitea，不给 electron-updater 挂起的机会），失败回退国内 Gitea 通用包通道（强制直连，不走系统代理）。 electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 里按源切换
-- **三条检查来源**（`runCheck(source)`，共用一条路径，`UpdateState.scheduled` 标记来源）：启动后 5s 一次（`autoCheckUpdate`）、周期定时（`settings.system.updateCheckIntervalHours`，白名单 `{0,4,12,24}` 默认 4，`0`=从不；4/12/24 建 `setInterval(runCheck('scheduled'))`）、用户手动。**所有 timer 必须 `.unref()`**，否则会阻止进程退出。已有在途检查时返回同一 promise（`checkInFlight`），避免 electron-updater 的去重把来源标记记到错的调用方头上
-- **调度器是注入的**：`applyUpdateSchedule(system)` 由 `index.ts` 经 `settingsStore.setUpdateScheduleApplier` 注入——`updater.ts` 已 import `settingsStore`，反向 import 成环。applier 幂等（先清旧 interval 再建）且每次 `mutateSettings` 都会重跑；启动检查用模块级 `startupArmed` 保证**每进程只武装一次**，否则改一次设置就多排一次启动检查
-- **自动下载**（`settings.system.autoDownloadUpdate`，默认关）：`update-available` 时若开关开且无在途下载 → `handleDownload('auto')`（`UpdateState.auto` 标记）。`autoUpdater.autoDownload` **保持 false**——单一事实源在 settings，不交给 electron-updater。失败落 `status:'error'` 且**不重试**，等下一个周期
-- **安装永远交给用户**：绝不因下载完成自动退出；`autoInstallOnAppQuit = true` 只覆盖「用户自己退出时装上」
-- **差量下载已禁用**（`autoUpdater.disableDifferentialDownload = true`，configureAutoUpdater 里）：electron-updater 每次 `downloadUpdate()` 先试差量（拉新旧 blockmap + 多段 Range）失败再回退全量——用户看到进度条跑两遍、最坏近乎双倍流量（v1.0.x 用户报的「下载两次」）。而本项目三个前提让它注定失败：GitHub release 资产落 Azure Blob，多段 Range 返回 `501 Unsupported client range`（已实测）；国内 Gitea 通道被 `pruneChannel` 删得只剩最新版 exe/blockmap，老客户端取老 blockmap 得 404；NSIS 是 LZMA 固实压缩，版本间小改动让后续压缩数据整体漂移，差量区间≈整个文件。所以直接全量是唯一正确行为
-- **同版本抑制**（`actedRelease` 单槽记录，`actedFor(version)` 版本不同即整体替换）：`announced`（发现气泡）、`fetchHandled`（已发起下载）、`downloaded`（包已落盘）、`downloadedAnnounced`（已下载气泡）——否则长开机的应用每 4 小时重复弹气泡/重复走一遍 `downloadUpdate`。`runCheck('manual')` **无条件清空**记录（手动是明确意图，必须如实反映）；`update-not-available`/`error` **不清空**；下载失败回滚该次 `fetchHandled`
-- `downloaded` 与 `fetchHandled` **必须分开**：前者只在 `update-downloaded` 置位，用它判断「已完成」；拿 `fetchHandled` 判断会把下载中的版本误跳过。`update-available` 里若该版本 `downloaded` 为真，要 `setState` 一个等价的 `downloaded` 状态（**不能**直接 return 不写——`performCheck` 已把状态置成 `checking`，早退会让「关于」页永远转圈），这样按钮不会从「重启安装」退回「下载」
-- **通知**：`tray.ts` 的 `notifyUpdate(title, content)` 弹 Windows 托盘气泡；非 win32 / tray 为空 / **有可见窗口**（用户在看「关于」页）都不弹。自动下载开启时不弹「发现新版本」（有意义的是「已下载」那条），手动下载完成也不弹
-- 更新日志：Gitea 仓库是私有的（匿名 API 404），改为从更新通道的 `release-notes.md` 读取（直连 session `openterminal-update-direct`），再回退 Gitea/GitHub releases API
-- 自动更新只走 NSIS exe；自 v1.0.22 起不再构建 MSI 安装包（electron-updater 本就不支持 MSI 自动更新）
-- 每次 checkForUpdates 都被 **30s 整体超时**包住（`withTimeout`）：electron-updater 自带的 60s 只是 socket 空闲超时，慢滴流响应能一直占住它。超时按普通失败走 GitHub→Gitea 回退，但**被放弃的检查取消不掉**，而 electron-updater 对并发检查去重（返回同一个 in-flight promise），所以兜底那次共用被放弃的 promise——它同样被超时兜住，最终落到错误态，不会永远停在「检查中」
-- 更新日志 / releases API 的 fetch 都带 `AbortSignal.timeout(15s)`（`directFetch` 与 `fetchChangelog` 里的 `net.fetch`）：卡住的通道必须让位给下一个来源，不能把「关于」页吊住
+- 检查顺序：**GitHub 优先**（前置 20s 连通探测 `probeGithub`，失败直接兜底不给挂起机会）→ Gitea 通道（强制直连）。electron-updater 用独立 session（partition `electron-updater`），代理模式在 `useFeed` 按源切换
+- 每次 checkForUpdates 包 **30s 整体超时**；changelog / releases API fetch 带 `AbortSignal.timeout(15s)`
+- 三种来源（启动 5s / 周期定时 / 手动）共用一条路径；周期 `settings.system.updateCheckIntervalHours` 白名单 `{0,4,12,24}` 默认 4，0 = 从不；**所有 timer 必须 `.unref()`**；已有在途检查返回同一 promise（`checkInFlight`）
+- 调度器由 `index.ts` 注入（`settingsStore.setUpdateScheduleApplier`）避免 import 环；applier 幂等，**interval 未变不重建定时器**；启动检查 `startupArmed` 每进程只武装一次
+- `autoUpdater.autoDownload` 恒 false，单一事实源在 settings（`autoDownloadUpdate` 默认关）；下载失败落 error 不重试；**绝不自动退出安装**，`autoInstallOnAppQuit` 只覆盖用户自己退出
+- 差量下载已禁用（`disableDifferentialDownload`）：GitHub 资产多段 Range 返回 501、通道被 prune 只剩最新 blockmap、NSIS LZMA 固相漂移 —— 注定失败且流量近乎翻倍
+- `actedRelease` 单槽去重（announced/fetchHandled/downloaded/downloadedAnnounced）；`downloaded` 与 `fetchHandled` 必须分开判「已完成」；手动检查无条件清空记录；`update-not-available`/`error` **不清空**；下载失败回滚该次 `fetchHandled`；`update-available` 时该版本已 `downloaded` 必须先 `setState` 等价 downloaded 状态再早退（裸 return 会让「关于」页永远转圈）
+- 通知走托盘气泡：非 win32 / 无 tray / **有可见窗口**都不弹；自动下载时不弹「发现新版本」，手动下载完成也不弹
+- 只走 NSIS exe（1.0.22 起无 MSI）；更新日志从通道 `release-notes.md` 读（直连 session），回退 releases API
 
 ## 主题机制
 
-- 终端主题由 xterm 主题派生 UI 配色：`src/renderer/src/theme/chrome.ts` 的 `applyChromeTheme` 写入 `--chrome-bg/-bg-deep/-border/-hover` CSS 变量，antd token 在 `main.tsx` ThemedConfigProvider 派生
-- **语义变量层（2026-10 主题改造）**：`src/renderer/src/theme/semantic.ts`（**零 import 纯模块**——`tests/semantic-theme.mjs` 经 Node 原生类型剥离直连它，加 import 前先想清楚）导出 `isLightTheme`/`mix`/`luminance`/`contrast`/`darkenToRatio`/`SEMANTIC` 锚点 + `OtVarName`/`SemanticVars` 类型；`chrome.ts` 的 `applyChromeTheme` 随主题派生 `--ot-*` 变量并写 `color-scheme: dark|light`（原生滚动条/表单跟随）。**深色分支锁 SEMANTIC 锚点原值（零回归），浅色分支 `darkenToRatio` 按 WCAG 派生**（正文/-fg ≥4.5:1，语义基色 ≥3:1）。CSS 一律 `var(--ot-*, 锚点兜底)`，新代码禁止裸颜色字面量——`node tests/css-theme-vars.mjs` fail-closed 扫描（剥注释/color-mix/var 兜底走受控清单 FALLBACK_OK，跳过含 `${` 的模板串行，白名单按「文件+精确值」登记在测试内）；**canvas 绘制吃不到 CSS 变量**（`ctx.strokeStyle` 不解析 var()），图表类组件用 `useResolvedTheme()` + `semanticVars()` 取实色（MonitorPanel 的做法）。**单一命名体系（v1.0.29 修复）**：`semanticVars()` 的键**就是最终 CSS 自定义属性名**（`'--ot-text-muted'`），返回类型 `SemanticVars = Record<OtVarName | 'color-scheme', string>` 是字面量键联合——**曾经是 camelCase 键 + `cssVarName()`/`semanticCssVars()` 转换桥，自定义属性名大小写敏感，转换一被绕过就静默回落到 `:root` 深色兜底值（浅色主题下 `--ot-text-muted` 等 9 个多词变量全部没生效过一轮）**；现在中间层已删除，键名拼错在读取处直接是 TS 类型错误，`node tests/ot-var-names.mjs` 另外断言每个键匹配 `/^--ot-[a-z0-9-]+$/`（camelCase 混回来即 FAIL）并把「CSS 引用名 = JS 写入名 = global.css `:root` 声明名」三个集合锁在一起——**值测试（semantic-theme/theme-contrast）看不出这类问题**，改语义层时别只跑它们。加变量时 `OtVarName` 联合与 `semanticVars()` 两个分支三处一起改
-- **浅色主题可读性**：内置浅色主题 ANSI 调色板已重做，16 色+fg 全部 ≥4.5:1（`node tests/theme-contrast.mjs` 守门，改浅色主题必须过它；改色用 `darkenToRatio` 统一加深算法，不许手挑色）；`minimumContrastRatio` 按「背景图 4.5｜浅色无图 4.5｜深色无图 1」矩阵（构造+热更两处都要改），`drawBoldTextInBrightColors` 浅色关闭；WebGL 渲染器同样执行 MCR（addon-webgl 自带 `_getMinimumContrastColor` 对比度路径，已核实）；antd 算法随 `isLightTheme` 切 `defaultAlgorithm`/`darkAlgorithm`（**antd 没有 lightAlgorithm，浅色就是默认算法**）；github-light 底色已柔化 `#f6f8fa`
-- 标签强调色：`settings.tabAccentColor`（默认 `#3fb950`），经 `--tab-accent` CSS 变量生效；`--tab-accent-fg` 是强调底上的文字色（明暗自适应，选中态按钮文字也用它）
-- 背景图（`settings.terminal.backgroundImage`）：图片层 `.term-bg-image` 在 xterm 画布之下（`terminal.css`），xterm 背景设 `#00000000` 透明。**图片模式下的三条铁律**：① `.terminal-view.has-bg-image .terminal-view-dock` 强制深色底衬 `#0d1117`，不能用 `--chrome-bg`——浅色主题下它是白色，调低透明度会把图洗白而不是压暗；② `minimumContrastRatio` 从 1 提到 4.5（WCAG AA，与 VS Code 终端默认值一致；TerminalView 构造与设置热更两处都要改；注意正确拼写是 `minimumContrastRatio`，`minContrastRatio` 会被静默忽略），xterm 的对比度计算把透明背景当黑色亮度，会把浅色主题的深色前景自动提亮到可读。无图时保持 1 不动主题配色。③ 压暗层（`settings.terminal.backgroundImageDim`，0–90，**默认 0**）：`.term-bg-dim` 纯黑 scrim 在 DOM 序上位于 `.term-bg-image` 之后、xterm（z-index:1）之下（同在 z-index:0 层，靠 DOM 序压图），与透明度的区别是透明度把图与深色底衬混合、压暗在图之上叠黑（保饱和但整体变暗）；**dim=0 时 TerminalView 不渲染该层，零成本**
+- 终端主题派生 UI 配色：`theme/chrome.ts` 的 `applyChromeTheme` 写 `--chrome-*` 并派生 `--ot-*` 语义变量 + `color-scheme`
+- `theme/semantic.ts` 是**零 import 纯模块**（测试经 Node 原生类型剥离直连，加 import 前先想清楚）；深色分支锁 SEMANTIC 锚点原值，浅色分支 `darkenToRatio` 按 WCAG 派生（正文 ≥4.5:1，语义基色 ≥3:1）
+- **单一命名体系**：`semanticVars()` 的键**就是**最终 CSS 自定义属性名（如 `'--ot-text-muted'`）；加变量时 `OtVarName` 联合与 `semanticVars()` 两个分支三处一起改。键名拼错在读取处是 TS 编译错；`tests/ot-var-names.mjs` 锁「CSS 引用名 = JS 写入名 = global.css 声明名」
+- CSS 一律 `var(--ot-*, 锚点兜底)`，**禁止裸颜色字面量**（`tests/css-theme-vars.mjs` fail-closed 扫描）；**canvas 绘制吃不到 var()**，图表类用 `useResolvedTheme()` + `semanticVars()` 取实色
+- 浅色主题：内置 ANSI 调色板 16 色 + fg 全部 ≥4.5:1（`tests/theme-contrast.mjs` 守门；改色用 `darkenToRatio` 统一算法，不许手挑）；`minimumContrastRatio` 矩阵 = 背景图 4.5｜浅色无图 4.5｜深色无图 1（构造 + 热更两处都改；正确拼写是 `minimumContrastRatio`）；浅色关 `drawBoldTextInBrightColors`；antd 浅色用 `defaultAlgorithm`（没有 lightAlgorithm）
+- 背景图三铁律：① `.terminal-view.has-bg-image .terminal-view-dock` 底衬强制 `#0d1117`，不能用 `--chrome-bg`（浅色下会把图洗白）；② MCR 提到 4.5（xterm 把透明背景当黑色亮度，会自动提亮深色前景）；③ 压暗层 `settings.terminal.backgroundImageDim`（0–90，默认 0）纯黑 scrim 靠 DOM 序压图（z-index 同层、位于图后 xterm 前），dim=0 不渲染零成本
+- 标签强调色：`settings.tabAccentColor`（默认 `#3fb950`）经 `--tab-accent` 生效；`--tab-accent-fg` 明暗自适应
 
 ## 终端字体
 
-- **引号包裹在消费点做，settings 存原样**：`src/renderer/src/terminal/fontStack.ts` 的 `quoteFontStack`（零 import 纯模块，`tests/font-stack.mjs` 直连）把字体栈逐段判定——裸标识符合法且非 CSS 关键字则裸写，其余（含空格/括号/`+`/非 ASCII/数字开头）双引号包裹，幂等。**只在传给 xterm（构造+热更）与预览 inline style 时调用**，settings.json 里保持用户原文。枚举端 `font-list` 的 `disableQuoting: true` 不动
-- **CJK 回退槽位**：`settings.terminal.cjkFontFamily`（默认 `''`=不追加）。TerminalView 的 `appendCjk` 先拼栈再 `quoteFontStack`（追加在引号包裹**之前**，一次切分）。fontOpts 的 useShallow 选择器含该字段，改中文字体即时热更
-- **`@xterm/addon-unicode11@0.10.0-beta.301` 精确锁定**（devDependencies）：peer 恰好接受 `6.1.0-beta.304`，**升 xterm 必须同步重配 addon 版本**（beta.302+ 的 peer 已不接受 304）。`term.loadAddon` 后 `unicode.activeVersion = '11'`；addon 随 `term.dispose()` 连带清理（AddonManager 已注册），不用单独存 ref
-- `rescaleOverlappingGlyphs: true`（**仅 WebGL 渲染器有效**，DOM 渲染器按浏览器布局不受影响）——把超出 cell 步进的字形压回格内，box-drawing/CJK 宽字符不再压到邻格
-- 字体下拉等宽徽标：SettingsTabs 用离屏 canvas `measureText` 逐字符采样（`i1l.,:;|Wm0@`，容差 0.01，测失败判非等宽）——误判只会漏徽标不会错标；等宽排前面、「默认」永远第一；`filterOption` 只匹配 `searchText ?? value`，徽标文本不进搜索
+- 引号包裹在消费点做：`fontStack.ts` 的 `quoteFontStack`（幂等）只在传给 xterm（构造 + 热更）与预览 inline style 时调用，settings 存用户原文；CJK 回退槽位 `settings.terminal.cjkFontFamily` 在 `appendCjk` 里**先拼栈再 quote**（一次切分）；枚举端 `font-list` 的 `disableQuoting: true` 不动
+- `@xterm/addon-unicode11@0.10.0-beta.301` **精确锁定**（peer 恰好接受 6.1.0-beta.304）；**升 xterm 必须同步重配 addon 版本**。加载后 `unicode.activeVersion = '11'`，addon 随 term.dispose 连带清理
+- `rescaleOverlappingGlyphs: true` 仅 WebGL 渲染器有效（把超宽字形压回格内）
+- 字体下拉等宽徽标：离屏 canvas `measureText` 逐字符采样，误判只会漏徽标不会错标
 
 ## 终端尺寸同步
 
-- `TerminalView.scheduleFit`：fit 后**去抖 100ms** 再把 cols/rows 发给 PTY，并跳过与上次相同的尺寸。每次 ResizeObserver 都戳 PTY 会让全屏 TUI（Claude Code 等）在最大化/还原的中间尺寸上反复重绘，留下重复帧
-- **fit 本身有 150ms 节流**（`src/renderer/src/terminal/fitThrottle.ts` 的 `refitDelay`，纯函数，`tests/refit-throttle.mjs` 表驱动）：一次 fit 会全量 reflow 整个 scrollback（默认 5000 行，CJK 密集时几十 ms），拖动窗口每帧一次会占满主线程、饿死 xterm 写入队列，UI 在拖动结束后冻结数秒排积压。拖动期间 fit 最多每 150ms 一次，trailing 定时器在事件流停止后补一次终态 fit；`lastFitAtRef = 0` 表示「还没 fit 过」，**首次 fit 绝不等待**（PTY 以占位尺寸启动、shell 可能已在画），重绑时会重置
-- 拖动窗口期间 xterm 网格按 150ms 节流更新，PTY 尺寸在停止后 100ms 生效
-- **PTY 输出经 `WriteBatcher` 批量进 xterm**（`src/renderer/src/terminal/writeBatcher.ts`，`tests/write-batcher.mjs`）：高频 TUI 每个 node-pty 读块一条 IPC，每条都 `term.write` 会让 xterm 解析调度器每秒重启数百次、永远追不上生产者。批量化后每 ~16ms 窗口合并成一次 write（与 carry flush 同节奏），顺序不变。两个别忘了的接线点：① `markDead` 先 `batcher.flushNow()` 再置 dead 标志——PTY_EXIT 在数据之后、flush 定时器之前到达，dead 后写入会被丢弃；② effect cleanup 里 `batcher.dispose()`（重绑的 pane 靠 session replay 补回，不丢可见内容）
+- `scheduleFit`：fit 后 **100ms 去抖**再发 PTY，跳过相同尺寸（防全屏 TUI 中间尺寸反复重绘）；fit 本身 **150ms 节流**（`fitThrottle.ts`，拖动窗口防主线程占满）；**首次 fit 绝不等待**（PTY 以占位尺寸启动，shell 可能已在画），重绑时重置
+- PTY 输出经 `WriteBatcher` 批量进 xterm（~16ms 窗口合并，顺序不变）。两个接线点别漏：`markDead` 先 `flushNow()` 再置 dead 标志（PTY_EXIT 在数据之后、flush 定时器之前到达）；effect cleanup 里 `batcher.dispose()`
 
-## 性能与安全边界（M11 第二轮）
+## 性能与安全边界
 
-- `TerminalView` 用 **5 组 `useShallow` 字段级订阅**（fontOpts/themeOpts/bgOpts/highlightOpts/toolbar + rendererMode），**不要再回到整对象订阅**——主进程 `mutateSettings` 回推整个 settings 对象，任何写入都会变身份，整对象订阅会让所有 pane 重写 options + refit。`useResolvedTheme` 也是 shallow + memo 后的稳定引用
-- `TerminalView` **已无 imperative handle**（`TerminalHandle`/forwardRef 全删，无人传 ref）；要加「外部聚焦/清屏」需重新引入
-- `FilePanel` 虚拟化：自实现 windowing（>200 条目启用）。**行高与字号单一数据源在 `FilePanel.tsx`**：`BASE_ROW_HEIGHT = 26` × 缩放状态 `scale`（0.8–1.8，`localStorage` 的 `openterminal.sftpFontScale`）算出 `rowHeight`，经面板根元素 inline style 写成 CSS 变量 `--sftp-row-h` / `--sftp-fs` / `--sftp-fs-meta` / `--sftp-scale`；`windowStart(scrollTop, rowHeight)` 与 slice 计算都用这个动态值。**`sftp.css` 只消费变量、不得再写死行高或字号**（写死会让虚拟列表算术与真实行高脱节）。表头 `.sftp-head` 与 `.sftp-row` 共用同一套 grid 模板（列宽 `calc(Npx * var(--sftp-scale))`）才能对齐；行高写着 `box-sizing: border-box` 是有意的——本仓库没有全局 box-sizing reset，去掉会让 offset 算错。**别的坑**：antd 的 `Dropdown` 会把 `ant-dropdown-trigger` 类**克隆到子元素本身**（不是外面套一层），所以绝不能再写 `.sftp-list .ant-dropdown-trigger { display: block }` 这类后代选择器——特异性高于 `.sftp-row`，会把 `display: grid` 悄悄顶掉（旧代码正是如此）；行与滚动容器各挂一个 contextMenu Dropdown，容器的 `onContextMenuCapture`（capture 早于 antd 的冒泡 trigger）记录「是否点在行内」，`onOpenChange` 据此拒绝打开，避免两个菜单叠加
-- 每个 dockview pane 内有 `PanelErrorBoundary`（`ErrorBoundary.tsx`）：pane 崩溃只卸载自己，根部边界仍兜底
-- **本地路径准入**（`src/main/localPathGrants.ts`）：SFTP 上传/下载与 zmodem 收发的本地路径必须来自系统对话框授权（pickFiles/pickDirectory 是唯一授权源，进程级内存注册表、不落盘），realpath+stat 双重校验、Windows 大小写折叠、解析后的路径才是要打开的路径。新增「渲染层构造本地路径传给主进程」的调用点时**必须过这道门**，别绕
-- `keyPath`（SSH 私钥）：realpath → stat → 普通文件且 ≤1MB 才读（防设备文件永久阻塞 UI 线程/符号链接逃逸）
-- `src/shared/reservedAccelerators.ts`：设置页录制器与主进程 `applyGlobalShortcut` **共用同一张保留键表**（Ctrl+L、Ctrl+=/-/0/PgUp/PgDn），两处分表曾漂移出洞，加新全局快捷键时两边自动一致
-- SFTP 操作有 per-op 超时（`sftp.ts` 的 `bounded()`：元数据 30s / 传输块 60s / open 10s），超时按 transport 错误驱逐半死通道并重试一次；`setSftpTimeouts`/`setUpdateTimeouts` 是**测试缝**，生产无调用者，别接设置项
-- **PTY_EXIT 是一次性广播、不做重放**：绑定晚于退出的窗格靠 `SESSION_STATE` 查询通道（`sessionState()` + 退出码登记表 `sessionExits`，上限 512 条 FIFO）补偿，`TerminalView` 订阅完成后查一次。同理，SSH **飞行中连接**（`connectSsh` 未返回）登记在 `pendingOpens`（带 owner 与 `onClient` 最早引用），`killPtysByOwner`/`killAllPtys` 靠它中止握手，否则 renderer 崩溃后会留下无主孤儿会话
-- **zmodem 接收路径的背压靠 `pauseSource`/`resumeSource` 钩子**（`pty.ts` 注入，暂停喂入 sentry 的 ssh 流）：fs WriteStream 缓冲无上限，慢盘 + 快对端会 OOM；`touchActivity` 只在写入被接受或 drain 恢复时计数，否则 stall 看门狗会把「堆在缓冲里」当进展。删除路径的 ENOENT 一律视为已删成功（`withSftp` 会整函数重跑，非幂等操作必须自己容忍「目标已消失」）
-- `webPreferences` 显式写死 `contextIsolation: true / nodeIntegration: false / webSecurity: true`（`index.ts` 唯一窗口创建点），防默认值被将来改动
-- 终端标签自动标题（「终端 N」）是**存储的显示文本**（进布局模板/会话快照/广播注册），`src/shared/terminalTitle.ts` 负责两个方向：反解用**全部 4 语言**的 pattern（任何语言生成的都能认出编号），渲染用当前语言；语言切换/快照恢复/模板应用时 `retitleAutoTitles` 原地重渲染（SSH 面板标题是用户起的连接名，永不动）。需要指定语言渲染时用 i18n 的 `tFor(lang, key, vars)`
+- `TerminalView` 用 **5 组 `useShallow` 字段级订阅**（fontOpts/themeOpts/bgOpts/highlightOpts/toolbar + rendererMode），**不要回到整对象订阅**（主进程任何设置写入都会让所有 pane 重写 options + refit）；`useResolvedTheme` 同理 shallow + memo
+- `TerminalView` 已无 imperative handle；要「外部聚焦/清屏」需重新引入
+- `FilePanel` 虚拟化：行高/字号单一数据源在 `FilePanel.tsx`（`BASE_ROW_HEIGHT=26` × scale 0.8–1.8，`localStorage: openterminal.sftpFontScale`，写成 CSS 变量 `--sftp-row-h`/`--sftp-fs`/`--sftp-fs-meta`/`--sftp-scale`），`sftp.css` 只消费变量、不得写死行高字号；`box-sizing: border-box` 是有意的；**antd Dropdown 会把 `ant-dropdown-trigger` 类克隆到子元素本身，禁止写 `.xxx .ant-dropdown-trigger` 后代选择器**（特异性会顶掉 `display: grid`）；行与滚动容器各挂一个 contextMenu Dropdown，容器的 `onContextMenuCapture` 记录「是否点在行内」、`onOpenChange` 据此拒绝打开，防两个菜单叠加
+- 每个 dockview pane 内有 `PanelErrorBoundary`，pane 崩溃只卸载自己
+- **本地路径准入**（`localPathGrants.ts`）：SFTP/ZMODEM 的本地路径必须来自系统对话框授权（进程级内存注册表 + realpath/stat 双重校验）；新增「渲染层构造本地路径传主进程」的调用点必须过这道门，别绕
+- `keyPath`（SSH 私钥）：realpath → stat → 普通文件且 ≤1MB 才读；`src/shared/reservedAccelerators.ts` 是设置录制器与主进程 `applyGlobalShortcut` **共用**的保留键表，加新全局快捷键两边自动一致
+- SFTP 操作有 per-op 超时（`bounded()`：元数据 30s / 传输块 60s / open 10s），超时驱逐半死通道并重试一次；`setSftpTimeouts`/`setUpdateTimeouts` 是测试缝，生产无调用者，别接设置项
+- **PTY_EXIT 一次性广播不重放**：晚绑定的窗格靠 `sessionState()` + `sessionExits`（FIFO 上限 512）补偿；SSH 飞行中连接登记 `pendingOpens`，`killPtysByOwner`/`killAllPtys` 靠它中止握手
+- zmodem 接收路径背压靠 `pauseSource`/`resumeSource` 钩子（fs WriteStream 缓冲无上限）；`touchActivity` 只在写入被接受或 drain 恢复时计数，否则 stall 看门狗会把「堆在缓冲里」当进展；删除路径 ENOENT 一律视为已删成功（重跑必须容忍「目标已消失」）
+- `webPreferences` 显式写死 `contextIsolation: true / nodeIntegration: false / webSecurity: true`
+- 标签自动标题是**存储的显示文本**：`shared/terminalTitle.ts` 用全部 4 语言 pattern 反解（任何语言生成的都认出），渲染用当前语言；SSH 面板标题是用户起的连接名，永不动
 
 ## 锁屏
 
-- 只使用**主窗口内的不透明遮罩**（`src/renderer/src/lock/LockScreen.tsx` + `lock.css` 的 `.lock-screen`，z-index 4000），**不创建第二个 Electron 窗口**。锁定时 `App.tsx` 把 `.app-root` 设为 `inert` 并**保持挂载**——卸载会杀掉遮罩后面的本地/SSH 会话与传输列表；antd portal（Modal/Dropdown/Tooltip）挂在 `document.body` 上、不在 `#root` 内，锁定时**要把 body 下 `#root` 以外的子节点也设为 `inert`**，否则键盘 Tab 仍能走进遮罩后面的浮层。**这个一次性快照不够**：锁定之后才挂上的 portal 不在其中（典型场景是 SSH 连接发出后闲置自动锁屏，主机密钥弹窗此刻才弹出，antd 的 autoFocus 还会抢走密码框焦点），所以锁定期间 `App.tsx` 用 `MutationObserver` 盯着 `document.body` 的 childList，给新加的非 `#root` 子节点补 `inert`，解锁时断开 observer 并按记录恢复；observer 只在锁定时存在，平时零开销，且**锁屏遮罩自身在 `#root` 内，永远不参与 inert**
-- 密码 verifier 在 `<userData>/lock.json`（`src/main/lockStore.ts` 的 `LockStore`）：scrypt(N=16384,r=8,p=1) + 每次写入重新生成的 16 字节 salt + `timingSafeEqual`，**不存明文**；缺 `version: 1`、salt/hash 尺寸不符一律当「未配置」（宁失效也不崩启动路径），但 `version` 不认识会**每进程 warn 一次**——将来改格式不许静默失锁
-- 锁状态由主进程独占（`src/main/lockController.ts`）：`LockSettingsState` 只有 configured/enabled/autoLockMinutes/lockAtStartup/locked/cooldownMs，**salt/hash/密码永不出主进程**，渲染层从不自行判定锁定
-- 锁标志落盘在 `<userData>/lock-state.json`（`LockStateStore`），**locked/failures/cooldownUntil 每次变化立即写**，所以托盘退出、任务管理器强杀、崩溃后重启仍然是锁的——`lockAtStartup` 只是额外一层。没有 verifier 时启动会删掉该文件；从磁盘恢复的 `cooldownUntil` 夹紧到 `now+30s`，防系统时间回拨导致永久锁死
-- 冷却阶梯 1s→2s→5s→10s→30s，失败计数与冷却同样落盘；`setPassword`/`clearPassword`/`unlock` 走内部串行队列（`serialize`），否则并发调用会同时通过闸门绕过冷却
-- 闲置锁屏：`powerMonitor.getSystemIdleTime()`，15s 轮询；读不到（无会话/工作站已锁）一律当「不闲置」。`settings.lock.autoLockMinutes` 是白名单 `{0,1,5,15,30,60}`（`src/shared/settings.ts` 的 `LOCK_AUTO_DELAYS`），0 = 从不
-- **清除密码会一并把 `settings.lock.enabled`/`lockAtStartup` 置 false**（`LockControllerOptions.clearLockPreferences`，默认走 `mutateSettings`）：设置页文案承诺「清除后锁屏会一并关闭」，留着会让用户下次设密码时被静默重新武装
-- 锁屏期间主进程在 `win.webContents.on('before-input-event')` 里吞掉 F5/Ctrl+R、Ctrl+±0（含 Shift 拼写）、Ctrl+Shift+I/J/C：遮罩是 DOM 层，拦不住浏览器进程处理的 Electron 默认菜单加速键，而重载会触发 `beforeunload` 把遮罩后面的会话全杀掉。**键盘判定抽在纯函数模块 `src/main/lockShortcuts.ts`（`isLockBlockedShortcut`/`isPanicLockChord`，无 Electron 依赖，表驱动测试 `tests/lock-shortcuts.mjs`）**——v1.0.17 的回归就是死在闭包里没法测。键盘之外还有鼠标路径：默认菜单按 Alt 就能唤出，菜单项点击不走 before-input-event，所以**锁定期间 `src/main/lockMenu.ts` 把整个应用菜单置 null（解锁时按 Electron 默认模板重建）**；菜单摘除挂在 `LockController` 的默认 publish 上，启动恢复锁定不经过 publish，由 `index.ts` 在 `initLockController()` 后按 `isLocked()` 直接补一次。渲染层的 `document.documentElement.dataset.locked` 守卫（字体快捷键、`Ctrl+PgUp/PgDn`）**只允许 `return` 跳过自身逻辑，绝不能 `preventDefault`**——keydown 的默认动作就是「往聚焦输入框插字符」，窗口级 preventDefault 会把锁屏密码框的全部输入杀掉（v1.0.17 就是这么坏的，v1.0.18 修复）
-- **Ctrl+L = 立即锁屏**（同一 `before-input-event` 里捕获，终端里也生效——这正是它的意义）：仅在锁定真的生效时才 `preventDefault`，未设置密码的应用保留 Ctrl+L 给 shell 的清屏；已锁定时不再拦截。长按的自动重复要跳过（`input.isAutoRepeat`），否则未配置密码时每次重复都同步读 lock.json + settings.json。**Ctrl+L 是保留键**：全局唤起快捷键的录制器（`SettingsTabs.tsx` 的 `RESERVED_EXACT_ACCELERATORS`）拒绝它——globalShortcut 在 OS 层拦截，绑上去会让锁屏快捷键静默失效。窗口藏进托盘后 Ctrl+L 无效（before-input-event 只对聚焦窗口触发），这是刻意的取舍：全局注册会从所有应用手里抢走这个组合键。**主进程侧也拒绝注册它**：`applyGlobalShortcut`（globalShortcuts.ts）对 `Control+L` / `Ctrl+L` / `CommandOrControl+L`（大小写、修饰键别名都不敏感）直接跳过并 warn——录制器只拦得住它上线之后录入的值，老版本存下的 `Control+L` 仍会走到注册这一步
-- 启动时**不要**用 `locked: true` 作渲染层初值再直接画锁屏：`App.tsx` 用 `null` 表示「主进程还没答复」，此时只画 `.lock-screen-boot` 纯色层，否则每次启动都会给没设密码的用户闪一帧锁屏。`getLockState()` 失败时要落到「locked 且未配置」的状态，让输入框可达（主进程对无 verifier 的解锁请求直接放行）
-- 相关测试：`node tests/lock-store.mjs`（verifier + 状态存储）、`node tests/lock-controller.mjs`（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）、`node tests/lock-shortcuts.mjs`（键盘分类器表驱动用例）
+- 只用主窗口内不透明遮罩（`.lock-screen`，z-index 4000），**不建第二个窗口**；锁定时 `.app-root` 设 inert 并**保持挂载**（卸载会杀会话）；antd portal 挂 body 不在 `#root` 内，锁定时 body 下 `#root` 以外子节点也要 inert，且用 `MutationObserver` 盯新挂 portal 补 inert（observer 只在锁定时存在，解锁恢复）
+- 密码 verifier 在 `<userData>/lock.json`（`lockStore.ts`）：scrypt(N=16384,r=8,p=1) + 每次写入重新生成盐 + `timingSafeEqual`，不存明文；格式不对当「未配置」，`version` 不认识每进程 warn 一次
+- 锁状态由主进程独占（`lockController.ts`），salt/hash/密码永不出主进程；`lock-state.json` 每次变化立即写（强杀/崩溃重启仍锁）；恢复的 cooldownUntil 夹紧 now+30s 防时间回拨；冷却阶梯 1s→2s→5s→10s→30s；`setPassword`/`clearPassword`/`unlock` 走串行队列
+- 闲置锁屏：`powerMonitor.getSystemIdleTime()` 15s 轮询，读不到当「不闲置」；`autoLockMinutes` 白名单 `{0,1,5,15,30,60}`，0 = 从不
+- 清除密码会一并关 `settings.lock.enabled`/`lockAtStartup`（设置页文案承诺，别留着静默重新武装）
+- 锁定期间：`before-input-event` 吞 F5/Ctrl+R、Ctrl+±0、Ctrl+Shift+I/J/C（判定抽在纯模块 `lockShortcuts.ts`，无 Electron 依赖可测）；**应用菜单整块置 null**（菜单项点击不走 before-input-event；启动恢复锁定由 index.ts 直接补一次）；渲染层 `dataset.locked` 守卫**只许 return 跳过自身逻辑，绝不 preventDefault**（窗口级 preventDefault 会把密码框输入杀掉，v1.0.17 回归）
+- **Ctrl+L = 立即锁屏**：仅锁定真生效时才 preventDefault，未设密码保留给 shell 清屏；长按 auto-repeat 跳过；已锁定不再拦截；窗口藏托盘后无效（刻意取舍：全局注册会抢所有应用的键）；Ctrl+L 是保留键，录制器与主进程 `applyGlobalShortcut` **两侧都拒绝注册**
+- 启动初值用 `null` + `.lock-screen-boot` 纯色层（防给无密码用户闪一帧锁屏）；`getLockState()` 失败落到「locked 且未配置」（主进程对无 verifier 的解锁直接放行）
+- 测试：`node tests/lock-store.mjs` / `lock-controller.mjs` / `lock-shortcuts.mjs`
 
 ## 布局模板（工作区）
 
-- 应用模板（`Workspace.handleApplyTemplate`）读的是**外来 JSON**。`fromJSON` 一旦中途失败（别的版本写的模板、面板组件已不存在），dockview 会**先把目标 dockview 清空再抛错**（`failed to deserialize layout. Reverting changes`）。清空是逐面板走 `onDidRemovePanel` 的，所以**旧会话在抛错之前就已经被 `killSession` 杀掉了**——恢复出来的面板接不回它们，必须换新会话
-- 失败路径：应用前 `toJSON()` 快照两个 dockview → 抛错时只对**这次真的调用过 `fromJSON` 的** dockview 回灌快照（回灌本身会清空该 dockview；把快照灌进没被碰过的那个会连带杀掉它活着的会话）→ 对恢复出来的面板跑 `rebindRestoredPanels` → 再把「没有任何面板引用的 `previousSessions`」kill 掉 → `message.error`。`JSON.parse` 失败同样要提示，不能静默 return
-- 会话计数不靠累加器：`releaseSession` 直接扫 `api.panels` 判断还有没有面板在显示该会话——累加器与「`updateParameters` 原地换会话」「整块布局替换」这类无事件变化脱节，会漏杀或误杀
-- **旧版（M6.1 前单 dockview）模板只喂 terminal dockview**：成功路径的 rebind 与收尾 kill 都必须按 `sshTouched` / `live` 集合门控——rebind 会把面板参数改写成新**本地**会话，对没被 fromJSON 触碰的 ssh dockview 跑一遍等于把活 SSH 面板降级成终端再杀会话
-- 主机密钥队列只渲染队头，且主进程 `DEFAULT_TIMEOUTS.prompt`（120s）超时后**不再广播**：渲染层用同 TTL 的定时清扫（`HOST_KEY_PROMPT_TTL_MS`）移除过期条目，否则陈旧弹窗永远占住队头挡住后续主机；两处 TTL 必须同步改。`respondHostKey` 等 IPC 调用**不得写进 setState 的 updater**（React 可能重放 updater）
-- **tab 关闭二次确认**（`settings.terminal.confirmTabClose` / `confirmSshTabClose`，默认关）：拦截点在 `TerminalTab.tsx` 的 `requestClose`——dockview 8.2.0 没有可否决的关闭前钩子，杀会话发生在 `onDidRemovePanel` 之后无法回滚，所以所有用户关闭入口（× 按钮、右键三关闭项、键盘 Delete/Backspace）必须在调用 `api.close()` 之前过它；键盘路径靠挂在 `.dv-tab` 外壳（自定义 div 的 dockview 祖先元素，DOM 焦点落点）上的原生捕获监听拦截。**新增用户可触发的关闭入口必须走 `requestClose`**，会话已死自动关闭/模板应用等程序性路径不走
+- 应用外来模板时 `fromJSON` 中途失败，dockview **先清空再抛错**——旧会话在抛错前已被 `onDidRemovePanel` 杀掉。失败路径：先 `toJSON()` 快照 → 只回灌**这次真的被 fromJSON 触碰的** dockview（回灌会清空，别灌没碰过的）→ `rebindRestoredPanels` → kill 没有面板引用的旧会话 → `message.error`；`JSON.parse` 失败同样要提示
+- 会话计数不靠累加器：`releaseSession` 直接扫 `api.panels`（累加器与「updateParameters 原地换会话」「整块布局替换」脱节）
+- 旧版（M6.1 前单 dockview）模板只喂 terminal dockview：rebind 与收尾 kill 按 `sshTouched`/`live` 门控，否则会把活 SSH 面板降级成终端再杀会话
+- 主机密钥队列只渲染队头；TTL `DEFAULT_TIMEOUTS.prompt`（120s）超时后主进程不再广播，渲染层同 TTL 定时清扫（`HOST_KEY_PROMPT_TTL_MS`，两处必须同步改）；`respondHostKey` 等 IPC 调用**不得写进 setState updater**（React 可能重放）
+- **tab 关闭二次确认**（`settings.terminal.confirmTabClose`/`confirmSshTabClose`，默认关）：dockview 8.2.0 没有可否决的关闭前钩子，杀会话在 `onDidRemovePanel` 之后无法回滚——所有用户关闭入口（× 按钮、右键菜单、Delete/Backspace）必须在 `api.close()` 之前过 `TerminalTab.requestClose`（键盘路径靠 `.dv-tab` 外壳上的原生捕获监听）；程序性路径（会话已死自动关、模板应用）不走
 
 ## 关键词高亮
 
-- 预设规则表在 `src/shared/settings.ts` 的 `DEFAULT_HIGHLIGHT_RULES`（22 条），引擎在 `src/renderer/src/terminal/highlightEngine.ts`；规则按 priority 升序应用，**先匹配到的 span 归先跑的规则，后续规则遇到重叠直接跳过**
-- 状态类预设（danger/okstate/warnstate/badstate）priority 排在 `shellkw` **之前**：`done` 既是 shell 关键字又是成功词、`if` 还在 `dd if=` 里，先跑谁就由谁着色
-- 状态符号（`✓ ✔ ✅ ✗ ✘ ✖ ❌ ⚠`）**不能放进 `\b…\b` 组**：`\b✓` 永不成立。预设把它们写在 `\b(?:…)\b|[✓✔✅]\uFE0F?` 的第二个分支里，尾随的 `\uFE0F?` 是为了把 emoji 变体选择符一起圈进着色范围
-- 严重级别按颜色拆开：成功（okstate 绿）/ 警告（warnstate 黄）/ 错误·致命（badstate 红，含 `CRITICAL`、`FATAL`、`PANIC`）/ 删除·移动·覆盖（delop 橙）/ 新建·创建·安装（createop 亮绿）；`badstate` 里的 `NOT …` 分支负责 `not ok` / `not found`，`okstate` 的反向断言保证它不会被染绿
-- delop/createop 只列**操作动词**（delete/remove/rm/mkdir/touch/add/install/clone/…），`export` 等 shell 关键字仍归 `shellkw`，别把两边都写进去抢 span
-- **数值分级（`bands`）**：匹配里的第一个数字决定颜色（最后一个 `min <= 值` 的分级胜出），无数字或低于最小分级时回落到 `color.fg`；预设 `percent` 用它做百分比（<20% 红 / 20–50% 黄 / 50–80% 浅绿 / ≥80% 绿）。它的 priority 22 **必须早于 `numbers`(25)**，否则 `45%` 会先被数字规则整段吃掉；`numbers` 规则本身不含百分比分支
-- 词干要自带词尾（`DELET(?:E|ED|ES|ING|ION)` 而非 `DELETE(?:D|S|ING)?`，否则漏 `deleting`）；不成词的词干（MOV/SAV/CLON/PURG/ERAS/WIP/REVOK）必须强制要求词尾
-- 上下文敏感的规则用 **lookbehind/lookahead 只圈住关键词本身**，否则分级会读到错误的数字：`(?<=\bHTTP/\d(?:\.\d)?\s)[1-5]\d\d\b` 让 `HTTP/1.1 404` 只着色 `404`（若把 `HTTP/1.1` 一起匹配，bands 会读到版本号 `1`）。同理 `[1-5]\d\d(?=\s+OK|…)` 靠先行断言限定"后面跟原因短语"才算状态码，避免把 `123` 这类普通数字当成 404
-- 裸 3 位数（`[1-5]\d\d`）**不能单独成规则**，必须有上下文锚点；同理 MAC、短哈希这类高误伤模式不进预设
-- 导入 / 导出与实时预览：`src/shared/highlightIO.ts` 管 JSON 信封（`kind`/`version`，外来 JSON 直接拒绝）与 replace/append 合并；渲染层用剪贴板 + FileReader + Blob 下载完成，**不新增 IPC**。编辑器预览走引擎的 `previewSpans`（跑真实高亮再解析它自己的 SGR 输出），并且**带上当前其它规则**，这样 span 被别的规则抢走时能一眼看出来
-- **锚定语义（改预设 `^…` 前必读）**：规则只作用于「转义序列之间的 text run」，且默认**没有 `m` flag**——裸 `^` 锚定 run 起点而非行首（`perm` 预设曾因此整类失效）。行首锚定用 lookbehind `(?<=^|\s)`；规则可开 `lineAnchor: true`（schema 字段，编译成 `gm`/`gim`，编辑器有「按行匹配」开关，徽标 `^$`），让用户的 `^ERROR$` 按行生效
-- **span 结束恢复应用 SGR**：引擎给命中 span 收尾时不再是裸 `\x1b[0m`，而是 `\x1b[0m` + 重放进入 span 前活跃的 SGR 序列。状态由 `HighlightStream` 持有并跨 push 传递——`hl-split-smoke` 的逐切分点字节一致依赖这一点，动 `applyHighlights` 第 4 参（sgr 状态）签名前先想清楚。四条护栏（全部踩过坑，别拆）：
-  - **reset 判定必须解析参数**，不能字符串全等。ECMA-48 里 `ESC[m`/`ESC[0m`/`ESC[00m`/`ESC[0;0m` 都是全量复位，`ESC[0;32m`（复位+设色，Go/Java 日志库常写）要先清空再记录新色。只认两种规范写法会让其它拼法被**追加**进累积器，每行涨几字节直到撞上上限，之后所有 span 的恢复永久失效
-  - **回放闸门按序列条数**（`MAX_REPLAY_SEQUENCES=3`）而不是字节数。同一个「单个前景色」的写法长度差近 4 倍（`ESC[31m` 5B / `ESC[38;5;196m` 11B / 真彩色 13–19B），按字节卡会砍掉真彩色却放过索引色，语义不一致。`MAX_RESTORE_LEN=256` 只是累积器的内存上限
-  - **恢复串只插在「可见间隙」前后**（`MIN_GAP_FOR_RESTORE=3` 个可见字符），不是每个 span 后。Kimi 这类全彩 TUI 一行 ~19 个 span，每 span 都重放会让 9.5KB 输出膨胀到 40.8KB（**4.30x**，无恢复时 2.78x），下游 xterm 解析 + WebGL 字形图集（背景图模式 MCR=4.5 逐字形算对比度，真彩色让缓存全 miss）被压垮，实测渲染线程卡 **18.4 秒**（日志 `[renderer] main thread stalled ~18384ms`）。现在的实现：最后一个 span 后必恢复，中间间隙够长才恢复，膨胀 3.05x 且长间隙着色正常
-  - **改以上任何参数必须重跑 `[restore cost budget]` 基准段**（`tests/hl-rules.mjs`，断言密集真彩色 TUI 膨胀 < 3.2x）。功能性用例全绿不代表热路径没回归——`hl-split-smoke` 的样本每行以 reset 结尾，恰好绕过了这类膨胀
-- **CSI 参数类必须含私有前缀与中间字节**：`ESCAPE_RE` 的 CSI 分支是 `[0-9;:?<>=]*[ -/]*[A-Za-z]`。漏掉 `<`/`>`/`=` 和中间字节（`ESC[>4;1m` modifyOtherKeys、`ESC[<0;1;2M` SGR 鼠标、`ESC[=1;1$y` DECRQM）会让整行被当成含裸 ESC 的文本透传，**该行之后直到下一个换行的所有关键词全部失去高亮**——vim/tmux 在鼠标与按键上报时正好发这些序列
-- **ReDoS =「静态提示 + 主进程动态校验 + 编译期 fail-closed 闸门」**，三层各自职责别混：
-  - `highlightEngine.ts` 的 `isReDoSProne` 仍是**编辑器即时提示**，有实测漏判/误判，绝不能当执行依据；文案里的 `passed` 也只能说「已通过当前探针」，不能承诺对任意输入安全
-  - 执行闸门在 `compileRules` / `compileLinkRules`：内置高亮预设按「pattern+flags 精确命中 `DEFAULT_HIGHLIGHT_RULES` 派生白名单」放行；其它自定义规则必须持有 `RuleValidation.state='passed'` 且 **pattern、flags、probeVersion、runtime 四项全匹配**才编译。`pending`/`quarantined`/缺失/失配一律跳过，编辑器预览与链接 provider 都走同一闸门，没有旁路
-  - 动态校验在 `src/main/redosValidator.ts` + `redosProbeWorker.ts`（electron-vite `?nodeWorker`，产物 `out/main/redosProbeWorker-*.js`）：`src/shared/redosProbes.ts` 的 24 条固定合成探针（≤4KB、不含终端内容）在 Worker 里执行，**500ms 硬超时由主控侧计时并 terminate**，超时才 `quarantined`；Worker 崩溃重试一次后回 `pending`，Worker 不可用也回 `pending` 并在设置页明示。并发上限 2、同 key 去重、空闲回收；默认纯预设安装不启动 Worker，热路径零新增每块开销
-  - runtime 指纹由 `src/main/ruleRuntime.ts` 安装、renderer 经 `AppInfo.runtimeKey` 对齐；Electron/V8 环境变化会让旧 `passed` 失效回 `pending`。validation 是规则内部元数据：主进程清洗形状，导入文件里的裁决一律不作数，导出剥离
-  - 测试：`tests/redos-probes.mjs`（语料与已知病态样本）、`tests/rule-validation.mjs`（闸门真值表）、`tests/redos-validator.mjs`（真实 Worker/ terminate/并发/失败策略，经 build-bundles 产物）；`tests/worker-artifact.mjs` 只在 build/dist 后跑，防 Worker 产物静默丢失
-- **fit 耗时埋点（只观测，不改变 fit 时机）**：`TerminalView.scheduleFit(trigger)` 记录 `fit.fit()` 的 trigger（mount/resize/font/scrollback/renderer-switch/unknown）、耗时、cols×rows、**实际 bufferLines** 与 scrollback；超 `FIT_SLOW_LOG_MS=200` 写 `PERF fit`，每 pane 30s 限频并带 `suppressed=N`。`fit` 是渲染层代价随会话历史增长的操作（reflow 全量 scrollback），但 stall 归因必须与 longtask/write 时间线对照，不能只凭一条日志下结论
-- **超长行按行降级**：run 无 >4KB 行时走整段扫描（保留跨行匹配）；有则按 `\n` 逐行，>4KB 的行原样透传不上色（该 run 内跨行匹配放弃）。回溯防护不变式：**任何 >4KB 的行不进用户正则**
-- **统计按 pane 实例聚合**：`highlightStats.ts` 按 pane id（`crypto.randomUUID()`，**不是 sessionId**——SSH 分屏同一 session 挂两 pane）登记各自 sink，订阅方拿跨 pane 求和；卸载与关统计开关都要注销，重绑定（rebind）**不**注销（React 先跑完 cleanups 再 setups，在那里注销会让 pane 从汇总消失一拍）。重置清各 pane 的真实计数器
-- 分类（`category`，`safety|status|file|net|text|metric`）：预设的分类放在 `PRESET_CATEGORIES` 一张表里，`basic` 集合必须始终是 safety+status 的子集（有测试守）；`settings.terminal.highlightGroupByCategory` 只影响设置页（加分类列 + 按分类聚簇，组内仍按 priority），**热路径完全不涉及**
-- 跟随主题（`settings.terminal.highlightThemeColors`，默认关）：`src/renderer/src/theme/highlightColors.ts` 按**色相分桶**把规则颜色映射到当前主题的 ANSI 调色板（不用"最近色"，否则语义会漂移），亮度决定用普通色还是 bright 色（这样 percent 的两档绿仍能区分）；饱和度低于 0.15 的中性色保持原样；**背景色不映射**（它是文字底块，不是语义信号）。映射在编译期一次性完成，热路径零成本；编辑器预览走同一函数，否则预览会与终端不一致
-- 统计（`settings.terminal.highlightStats`，默认关）：引擎的 `applyHighlights`/`HighlightStream` 接受可选 `StatsSink`，**只在传了 sink 时才计数与计时**（默认路径不插桩）；`TerminalView` 只在开关打开时挂 sink，并**每秒发布一次快照**（不是每块），否则忙碌的终端会把设置页重渲染到卡死；设置页通过 `subscribeHighlightStats` 订阅，多出「命中/耗时」两列（耗时按 µs/ms 格式化）
-- 性能护栏（别拆）：`MAX_CHUNK` 512KB 整块跳过、`MAX_LINE_LEN` 4KB 超长行不跑规则（挡 `(a+)+b` 这类回溯）、`MAX_PER_RULE` 300 每条规则每块上限。实测 180–200KB 混合输出：**全预设 4–9ms/块**（0.02–0.05ms/KB，取决于转义序列密度；典型 4KB chunk ≈ 0.05–0.26ms）、**basic 档 ~1.3ms/块（≈49µs/chunk）**、**off 档 0**；单条规则最贵的是 `http`(0.82ms)、`percent`、`danger`
-- 总开关是**三档模式** `settings.terminal.highlightMode`（`all` / `basic` / `off`，读取一律过 `highlightModeOf` 兜底）：`basic` 只跑带 `basic: true` 的规则（预设里是 danger/secret/okstate/warnstate/badstate 这 5 条；用户可在规则编辑器里用「基础规则」开关给自建规则打标），`off` 时 `TerminalView` 把规则集清空而不是绕过 `HighlightStream`——stream 会 hold 住尾部文本，绕过会丢字节；空规则集在 tokenize 之前就返回，几乎零成本
-- 按主机绑定规则集（`settings.terminal.highlightPerHost`，默认关）：`HighlightProfile { id, name, ruleIds }` 存在 `AppSettings.highlightProfiles`（顶层数组，仿 `customThemes`），清洗在 `src/shared/highlightProfiles.ts`；`ruleIds` **为空 = 全部规则**，`rulesForProfile` 对未绑定 / 绑到不存在的 id / 空 profile 一律回落到全集，`excludedByProfile` 给设置页算「这个 profile 排除了哪些规则」。绑定存在 **`connections.json`**（`SshConnection.highlightProfileId`）而不是 settings，`TerminalView` 只在 mount 时查一次连接——改了绑定要重开会话才生效。新增连接字段时必须同时改三处：`PUBLIC_KEYS`（update 路径靠它回写）、`toPublic()`、`saveConnection()` 的新记录字面量，漏一处该字段会在某条路径上静默丢失
-- 编辑器预览的输入要**截断**（前 2000 字符）：200KB 样本会产出 7000+ 个 span，React 每敲一个键重渲染会卡
-- `caseInsensitive: true` 的规则编译成 `gi`（规则级开关，默认关闭）；预设里 `okstate` 带 `(?<!not\s)` 反向断言，把 `not ok` 让给 `badstate`
-- 词边界是这套预设的全部难点：新增关键词后请跑 `node tests/.hl-rules.cjs`（`invalid` 不能点亮 `valid`、`disabled` 不能点亮 `enabled` 等）
-- 升级旧安装：`settingsStore.refreshBuiltinRules` 只把**仍是出厂 pattern** 的内置规则升到新预设（保留用户的颜色/优先级/启停），且仅当规则集恰好等于旧预设集时才追加新增的内置规则——否则用户删掉的规则会每次加载都复活。改预设 pattern 时同步更新 `LEGACY_BUILTIN_PATTERNS` / `LEGACY_BUILTIN_IDS`
+- 预设 `DEFAULT_HIGHLIGHT_RULES`（22 条）在 `shared/settings.ts`，引擎 `highlightEngine.ts`；规则按 priority 升序，**先匹配先得 span**，重叠跳过
+- 词边界是全部难点（改关键词跑 `node tests/.hl-rules.cjs`）：状态符号（✓✔✅✗❌⚠）不进 `\b` 组（`\b✓` 永不成立，写第二分支 + `\uFE0F?`）；状态类 priority 在 `shellkw` 之前（`done`/`if` 归属）；delop/createop 只列操作动词，shell 关键字仍归 shellkw；词干自带词尾（`DELET(?:E|ED|ES|ING|ION)`），不成词词干强制词尾；裸 3 位数 / MAC / 短哈希不能单独成规则（须上下文锚点）；lookbehind/lookahead **只圈关键词本身**（圈多了 bands 会读错数字，如 `HTTP/1.1 404` 只该着色 `404`）
+- bands 数值分级：匹配里**第一个数字**定色，最后一个 `min <= 值` 胜出；`percent` priority 22 必须早于 `numbers`(25)
+- 锚定：规则作用于转义序列之间的 text run，默认无 m flag，裸 `^` 锚 run 起点非行首；行首锚定用 `(?<=^|\s)` 或 `lineAnchor: true`（编译成 gm/gim）
+- **SGR 回放四护栏**（全踩过坑，别拆）：① reset 判定必须解析参数（`ESC[0;32m` = 复位+设色，只认两种规范写法会让累积器逐行膨胀直至恢复永久失效）；② 回放闸门按序列条数 `MAX_REPLAY_SEQUENCES=3`，不是字节数（同义写法长度差 4 倍；`MAX_RESTORE_LEN=256` 只是累积器内存上限）；③ 恢复串只插在可见间隙（`MIN_GAP_FOR_RESTORE=3` 个可见字符）——每 span 都恢复会让密集真彩 TUI 膨胀 4.3x、渲染线程卡 18s，现在 3.05x；④ 改以上任何参数必须重跑 `tests/hl-rules.mjs` 的 `[restore cost budget]` 段（断言 < 3.2x）
+- `ESCAPE_RE` 的 CSI 参数类必须含私有前缀与中间字节（`[0-9;:?<>=]*[ -/]*[A-Za-z]`）：漏了 `<>=` 会让 `ESC[>4;1m`（modifyOtherKeys）/`ESC[<0;1;2M`（SGR 鼠标）这类序列所在行之后的关键词全部失高亮（vim/tmux 正好发这些）
+- 超长行降级：run 有 >4KB 行时按 `\n` 逐行，超长行原样透传不上色（该 run 放弃跨行匹配）；不变式：**任何 >4KB 的行不进用户正则**。性能护栏：`MAX_CHUNK` 512KB 整块跳过 / `MAX_LINE_LEN` 4KB / `MAX_PER_RULE` 300；实测全预设 4–9ms/块，最贵的是 http/percent/danger
+- **ReDoS 三层别混**：① `isReDoSProne` 只是编辑器即时提示（有漏判误判，不当执行依据，文案只能说「通过当前探针」）；② 执行闸门在 `compileRules`/`compileLinkRules`——内置预设按 pattern+flags 精确命中白名单放行，自定义规则须 `RuleValidation.state='passed'` 且 **pattern/flags/probeVersion/runtime 四项全匹配**，pending/quarantined/失配一律跳过，编辑器预览与链接 provider 同一闸门无旁路；③ 动态校验 `redosValidator` + `redosProbeWorker`（`?nodeWorker` 产物）：24 条固定探针 ≤4KB、500ms 硬超时由主控计时并 terminate → quarantined，Worker 崩溃重试一次回 pending，不可用也回 pending；并发上限 2、同 key 去重、空闲回收；默认纯预设安装不启动 Worker。runtime 指纹由 `ruleRuntime` 安装、renderer 经 `AppInfo.runtimeKey` 对齐；validation 是规则内部元数据——导入的裁决不作数，导出剥离
+- 模式三档 `highlightMode` all/basic/off（读取一律过 `highlightModeOf` 兜底）：basic 只跑 `basic: true` 的规则（预设 5 条：danger/secret/okstate/warnstate/badstate，用户可给自建规则打标；`basic` 集合必须是 safety+status 子集，有测试守）；off = **清空规则集**而不是绕过 `HighlightStream`（stream 会 hold 尾部文本，绕过丢字节）
+- 开关键名：`highlightStats` / `highlightThemeColors` / `highlightPerHost`（均默认关）与 `highlightGroupByCategory`（只影响设置页分组展示，热路径不涉及）；分类集合 `safety|status|file|net|text|metric` 单表在 `PRESET_CATEGORIES`
+- 按主机绑定：`HighlightProfile` 存 `AppSettings.highlightProfiles`（清洗在 `shared/highlightProfiles.ts`），`ruleIds` 空 = 全部规则；绑定存在 **connections.json**（`SshConnection.highlightProfileId`），`TerminalView` 只在 mount 查一次，改绑定要重开会话。**新增连接字段必须同时改三处**：`PUBLIC_KEYS`、`toPublic()`、`saveConnection()` 新记录字面量，漏一处该字段在某条路径静默丢失
+- 跟随主题 `highlightColors.ts`：按**色相分桶**映射到当前主题 ANSI 调色板（不用最近色，防语义漂移），亮度决定普通/bright 色，饱和度 <0.15 中性色保持原样，**背景色不映射**；编译期一次完成，编辑器预览走同一函数
+- 统计按 pane 实例聚合（`crypto.randomUUID()` 的 pane id，**不是 sessionId**）；sink 只在开关开时挂（默认路径不插桩），**每秒发一次快照**不是每块；卸载与关开关都注销，重绑定不注销；编辑器预览输入截断 2000 字符
+- 导入/导出：`shared/highlightIO.ts` 管 JSON 信封（kind/version，外来 JSON 拒绝）；渲染层用剪贴板 + FileReader + Blob 下载，**不新增 IPC**；预览走 `previewSpans` 且带上当前其它规则（span 被抢走能看出来）
+- `caseInsensitive: true` 编译成 `gi`；`okstate` 带 `(?<!not\s)` 把 `not ok` 让给 badstate
+- 升级旧安装：`settingsStore.refreshBuiltinRules` 只升级**仍是出厂 pattern** 的内置规则（保留用户颜色/优先级/启停），且仅当规则集恰好等于旧预设集才追加新增；改预设 pattern 同步更新 `LEGACY_BUILTIN_PATTERNS`/`LEGACY_BUILTIN_IDS`（当前已含 `url: 'https?://[^\\s]+'`）
 
 ## 可点击链接规则
 
-- 内置链接（`src/renderer/src/terminal/urlLinks.ts` 的 `findUrls`，4 条写死的正则：http(s) / ftp / `www.` / 裸 host:port）**不动**；用户自定义规则是叠加在其上的第二来源
-- 引擎在 `src/shared/linkRules.ts`（可被 `tests/link-rules.mjs` 直连；它 import 共享 `ruleValidation.ts` / `redosProbes.ts`，说明符必须带 `.ts` + 局部 `@ts-expect-error TS5097`，否则 Node 原生类型剥离找不到模块——**别复制闸门/常量造成分表**）：`sanitizeLinkRules` 清洗（id/pattern/template 必填、非法正则丢弃、模板空串丢弃、`enabled` 缺省为 true、note 截断 60、上限 100 条、validation 形状清洗）、`formatLinkTemplate` 展开模板（`$0` 整段 / `$1`–`$9` 分组 / `$$` 字面 `$`，**只吃一位数字**所以 `$10` = 分组 1 + 字面 `0`，未参与分组展开为空串而非 `undefined`）、`compileLinkRules`、`findRuleLinks`、`mergeLinkSpans`
-- **安全闸门有两层**：① ReDoS 执行闸门——`compileLinkRules` 与高亮规则共用 `validationAllows`，用户链接规则没有内置白名单，`pending`/`quarantined` 不编译；② `isSafeLinkTarget`——生成 span 时就把非 `http:`/`https:` 目标丢掉，`file://` / `javascript:` / `ms-settings:` / 相对路径连下划线都不会出现。主进程 `openExternal` 的协议白名单是第三道，别拆
-- 接线点在 `TerminalView.tsx` 的 link provider：`mergeLinkSpans(findRuleLinks(text, linkRulesRef.current), findUrls(text))`——**用户规则优先，重叠的内置链接让位**；hover 提示 `text: link.url` 显示的是展开后的真实目标
-- **热更走 `linkRulesRef`**（照 `streamRef.setRules` / `notifyRulesRef` 的模式）：provider 随终端注册一次，改规则只换 ref 指向，绝不重建终端。`EMPTY_LINK_RULES` 是共享的稳定空数组——选择器返回新建的 `[]` 会让 zustand 每次拿到新身份，任何无关设置写入都会重渲染所有 pane
-- 性能护栏：`LINK_TEXT_MAX` 4KB 以上的逻辑行整行跳过（内置正则是固定集合，用户正则可回溯爆炸）；每规则每行上限 200 个匹配；能匹配空串的 pattern 强制 `lastIndex` 前进，避免死循环
-- UI 在 `HighlightTab.tsx` 底部的 `ClickableLinkRules`（与高亮同属「终端输出的模式匹配」心智）：表格（启用/正则/模板/操作）+ 编辑弹窗（pattern 非法正则内联报错、template 非 http(s) 内联报错、note、启用、探针状态）。导入导出与 profile 联动**尚未做**，属后续可加
-- 设置字段 `AppSettings.linkRules?: LinkRule[]`（可选，默认 `[]`）；三处接线照 `highlightProfiles`：`src/main/settingsStore.ts` 的 `deepMerge` 分支 + `sanitizeLinkRules` 调用 + `defaultSettings()`，渲染层 `settings/store.ts` 的 `setLinkRules` + persist 白名单
-- 测试：`node tests/link-rules.mjs`；校验服务语义另见 `tests/redos-validator.mjs` 与「关键词高亮」的 ReDoS 条目
+- 内置链接 `urlLinks.ts` 的 `findUrls`（4 条写死正则）**不动**；用户自定义规则叠加其上
+- 引擎在 `shared/linkRules.ts`（可被 `tests/link-rules.mjs` 直连；它 import 共享 `ruleValidation.ts`/`redosProbes.ts`，说明符必须带 `.ts` + 局部 `@ts-expect-error TS5097`，**别复制闸门/常量造成分表**）：`sanitizeLinkRules`（id/pattern/template 必填、非法正则丢弃、模板空串丢弃、enabled 缺省 true、note 截断 60、上限 100 条）、`formatLinkTemplate`（`$0` 整段 / `$1`–`$9` 分组 / `$$` 字面，只吃一位数字，未参与分组展开为空串）、`compileLinkRules`/`findRuleLinks`/`mergeLinkSpans`
+- **安全闸门**：① ReDoS 执行闸门——用户链接规则没有内置白名单，pending/quarantined 不编译；② `isSafeLinkTarget`——生成 span 时就把非 http/https 目标丢掉；主进程 `openExternal` 协议白名单是第三道
+- 接线在 `TerminalView` link provider：`mergeLinkSpans(findRuleLinks(...), findUrls(...))`，**用户规则优先**，重叠的内置链接让位；hover 提示显示展开后的真实目标；热更走 `linkRulesRef`（只换 ref 指向，绝不重建终端）；`EMPTY_LINK_RULES` 是共享稳定空数组（选择器返回新建 `[]` 会让 zustand 每次拿到新身份）
+- 性能护栏：`LINK_TEXT_MAX` 4KB 以上逻辑行整行跳过；每规则每行上限 200；能匹配空串的 pattern 强制 `lastIndex` 前进
+- 设置字段 `AppSettings.linkRules?: LinkRule[]`（默认 `[]`）；接线三处照 highlightProfiles：settingsStore `deepMerge` + sanitize 调用 + `defaultSettings()`，渲染层 `setLinkRules` + persist 白名单
+- UI 在 `HighlightTab.tsx` 底部 `ClickableLinkRules`；导入导出与 profile 联动**尚未做**，属后续可加

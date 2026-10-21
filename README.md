@@ -1,5 +1,7 @@
 # OpenTerminal
 
+**简体中文** | [English](README.en.md)
+
 开源的现代化终端应用：本地终端 + SSH 远程会话 + 分屏管理 + 主题/字体定制。Electron + React + TypeScript，从 0 到 1 独立开发。
 
 > 产品官网（GitHub Pages）：<https://billowliu2.github.io/OpenTerminal/>，源码在 [`website/`](website/)。
@@ -21,7 +23,7 @@
 - **性能**：xterm.js WebGL 渲染；关键词高亮引擎实测 0.02–0.05ms/KB（200KB 混合输出 4–9ms）；SFTP 大目录虚拟滚动；分屏尺寸去抖同步，TUI 不反复重绘
 - **AI 编程友好**：为 Kimi Code / Claude Code / Codex 等高频刷新 TUI 优化；中文输入法候选窗紧贴光标
 - **国内可用**：更新检查 GitHub 优先（跟随系统代理），失败自动回退国内直连通道，两边都拿不到时 30s 整体超时兜底
-- **开源可审计**：MIT 协议；主/预载/渲染三端契约集中在 `src/shared/`，模块间零横向依赖；19 个离线测试覆盖存储、锁屏、高亮、传输与更新回退
+- **开源可审计**：MIT 协议；主/预载/渲染三端契约集中在 `src/shared/`，模块间零横向依赖；36 个离线测试覆盖存储、锁屏、高亮、传输与更新回退
 
 ## 快速开始
 
@@ -30,7 +32,7 @@ npm install        # 已安装可跳过
 npm run dev        # 开发模式（热更新）
 npm run build      # 生产构建到 out/
 npm run typecheck  # 全量类型检查
-npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 19 个离线测试（详见「测试」）
+npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 36 个离线测试（详见「测试」）
 ```
 
 > Electron 二进制下载失败时：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`
@@ -51,7 +53,7 @@ npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 19 �
 - ssh2 实现：密码 / 私钥（文件路径或粘贴内容）/ SSH Agent 三种认证
 - 连接管理器：左侧书签栏（分组手风琴）、双击连接、新建/编辑/删除对话框
 - 凭据安全：密码/私钥/口令经 Electron safeStorage（DPAPI）加密后落盘，渲染层永远接触不到明文密钥；支持「连接时询问密码」模式
-- 主机指纹校验（known hosts 固定）：首次连接确认、指纹变更红色告警、30s 无响应自动拒绝
+- 主机指纹校验（known hosts 固定）：首次连接确认、指纹变更红色告警、120s 无响应自动拒绝
 - 服务器硬件监控：CPU / 内存 / 磁盘 / 网络实时面板（无需在服务器部署任何脚本）
 - SFTP 文件管理：双栏浏览、拖拽传输、队列/进度/取消、权限与属主修改
 - ZMODEM（rz/sz）文件传输
@@ -93,27 +95,13 @@ npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 19 �
 
 **测试**
 
-`npm test` 会先跑 `pretest`（= `npm run typecheck`），再重建 esbuild bundle，最后依次跑下列 19 个测试（全部离线，无需服务器与凭据）：
+`npm test` 会先跑 `pretest`（= `npm run typecheck`），再重建 esbuild bundle，最后依次跑 36 个离线测试（无需服务器与凭据，清单见 `package.json` 的 `test` 脚本与 `tests/`），按方向大致分为：
 
-- `node tests/ssh-loopback.mjs` — ssh2 客户端/服务端回环（认证、shell、数据、resize、指纹）
-- `node tests/commands-store.mjs` — 命令库 / 历史 / 会话日志存储
-- `node tests/connections-store.mjs` — SSH 书签 CRUD、公开/密文字段切分、损坏文件备份
-- `node tests/settings-store.mjs` — 设置清洗器（closeAction/高亮规则修复/旧预设升级/告警日志）
-- `node tests/local-path-grants.mjs` — 本地路径准入（对话框授权、realpath+stat 双重校验、大小写折叠）
-- `node tests/lock-store.mjs` — 锁屏密码校验器（scrypt 往返、文件损坏处理）
-- `node tests/lock-controller.mjs` — 锁屏控制器（冷却阶梯、并发串行化、落盘恢复、闲置触发、清除联动）
-- `node tests/lock-shortcuts.mjs` — 锁屏快捷键分类器（表驱动：Ctrl+L 恐慌锁 / 锁定时禁用的组合键）
-- `node tests/reserved-accelerators.mjs` — 保留快捷键表（设置录制器与全局注册共用同一张表）
-- `node tests/.terminal-title.cjs` — 终端标签自动标题（四语言反解与重渲染）
-- `node tests/ipc-guard.mjs` — IPC 发送方守卫（仅信任本应用渲染帧）
-- `node tests/updater-fallback.mjs` — 更新通道回退（GitHub 优先 / Gitea 兜底、超时、防降级）
-- `node tests/log-sanitizer.mjs` — 会话日志脱敏（原始 PTY 字节流转可读文本）
-- `node tests/sftp-timeout.mjs` — SFTP 操作超时（半死通道驱逐与重试）
-- `node tests/.hl-split-smoke.cjs` — 关键词高亮流分块回归（bundle 由 `node tests/build-bundles.cjs` 生成）
-- `node tests/.hl-rules.cjs` — 内置高亮预设（词边界、大小写、负向词、危险命令）
-- `node tests/zmodem-e2e.mjs` — ZMODEM 双向传输（与第二个 zmodem.js Sentry 对接，内容一致性）
-- `node tests/ssh-session-e2e.mjs` — 会话路由层端到端（SSH 数据面、replay、resize、kill）
-- `node tests/sysinfo-e2e.mjs` — 服务器监控轮询端到端（META、采样速率、stopPolling）
+- **存储类**：命令库 / SSH 书签 / 设置清洗（含旧高亮预设升级）/ 广播 / 已知主机
+- **锁屏类**：密码校验器、锁屏控制器（冷却阶梯、落盘恢复、闲置触发）、快捷键分类器
+- **终端与渲染类**：高亮引擎（词边界、分块回归、ReDoS 探针与校验闸门）、主题语义变量与对比度、字体栈、尺寸同步去抖、链接规则、标签标题、终端 CWD、模式按钮手势
+- **传输与会话类**：SFTP 超时与驱逐、ZMODEM 双向传输、ssh2 回环与会话路由端到端、服务器监控端到端
+- **平台类**：IPC 守卫、更新通道回退、日志脱敏与诊断日志、保留快捷键表、本地路径准入
 
 - 真实服务器测试（需 `JD_HOST/JD_USER/JD_PASS`，**不在** `npm test` 内，需联网与真实凭据）：`tests/sftp-real.mjs`、`tests/sftp-chmod.mjs`
 

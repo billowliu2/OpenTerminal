@@ -2,6 +2,8 @@
 
 > 用途：新会话/子代理从此文件恢复全部工作状态，无需对话历史。每次里程碑后更新。
 
+> ⚠️ **本快照已过期（内容截至 v1.0.23，当前已发布 v1.0.31）**：里程碑总表以 [`ROADMAP.md`](ROADMAP.md) 为准，后续计划见 [`PLAN-2026-10-21-backlog.md`](PLAN-2026-10-21-backlog.md)，日常开发规则以根目录 [`AGENTS.md`](../AGENTS.md) 为准。下文实现要点仍具参考价值，但版本号与细节可能与最新代码有出入。
+
 ## 当前版本与仓库
 
 - v1.0.23，远程 `git.codingplan.site/admin/OpenTerminal.git`（国内仓）+ `github.com/billowliu2/OpenTerminal.git`（GitHub 镜像仓）；凭据存于 `.env`（已 git 忽略），凭据助手按 host 自动读取

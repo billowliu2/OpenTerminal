@@ -1,5 +1,7 @@
 # 主题系统全面改造（A+B+C）实施计划
 
+> ⚠️ **已归档（2026-10-21）**：本计划已实施完毕（M14，2026-10-16 完成）并随正式版发布，仅作历史记录，不再维护。后续工作见 [`docs/PLAN-2026-10-21-backlog.md`](../../PLAN-2026-10-21-backlog.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or swarm waves as mapped in §11. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 浅色主题下终端与全部 UI 文字达到 WCAG AA 可读、底色柔化、194 处硬编码颜色全量收敛进语义变量层并以 fail-closed 测试锁死。
@@ -37,7 +39,7 @@
 - `semanticVars(colors, light): Record<string, string>`（chrome.ts 逐个 `setProperty`；键不含 `--ot-` 前缀，写入时加）
 - `SEMANTIC`（锚点色常量表，CSS 静态兜底与 TSX 内联取色共用）
 
-- [ ] **Step 1: 写失败测试 `tests/semantic-theme.mjs`**（完整文件）
+- [x] **Step 1: 写失败测试 `tests/semantic-theme.mjs`**（完整文件）
 
 ```js
 /**
@@ -103,9 +105,9 @@ if (failed > 0) {
 console.log('semantic-theme: all ok')
 ```
 
-- [ ] **Step 2: 跑测试确认失败**：`node tests/semantic-theme.mjs` → 期望 `ERR_MODULE_NOT_FOUND`（semantic.ts 不存在）。
+- [x] **Step 2: 跑测试确认失败**：`node tests/semantic-theme.mjs` → 期望 `ERR_MODULE_NOT_FOUND`（semantic.ts 不存在）。
 
-- [ ] **Step 3: 写 `src/renderer/src/theme/semantic.ts`**（完整文件；**零 import**）
+- [x] **Step 3: 写 `src/renderer/src/theme/semantic.ts`**（完整文件；**零 import**）
 
 ```ts
 /**
@@ -253,9 +255,9 @@ export function semanticVars(colors: ThemeLike, light: boolean): Record<string, 
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**：`node tests/semantic-theme.mjs` → `semantic-theme: all ok`。
+- [x] **Step 4: 跑测试确认通过**：`node tests/semantic-theme.mjs` → `semantic-theme: all ok`。
 
-- [ ] **Step 5: 重构 `chrome.ts`**
+- [x] **Step 5: 重构 `chrome.ts`**
   - 删除 chrome.ts 内的 `parseHex/luminance/toHex/mix/contrast` 本地实现与 `chromeIsLight` 模块级变量，改为：
     ```ts
     import { isLightTheme, luminance, mix, semanticVars, contrast } from './semantic'
@@ -273,11 +275,11 @@ export function semanticVars(colors: ThemeLike, light: boolean): Record<string, 
   - `applyTabAccent` 里原 `chromeIsLight` 判断改用 `isLightTheme` 需要背景色——改为在 `applyChromeTheme` 里把 `light` 存进模块级 `let chromeIsLight`（保留原变量名，只是赋值来源换成 `isLightTheme(colors.background)`），`applyTabAccent` 逻辑不变。
   - `tabLabel` 助手保留（仍用 contrast）。
 
-- [ ] **Step 6: 接入测试链**：`package.json` 的 `"test"` 值末尾（`node tests/refit-throttle.mjs` 之后）追加 ` && node tests/semantic-theme.mjs`。
+- [x] **Step 6: 接入测试链**：`package.json` 的 `"test"` 值末尾（`node tests/refit-throttle.mjs` 之后）追加 ` && node tests/semantic-theme.mjs`。
 
-- [ ] **Step 7: 验证**：`npm run typecheck` 通过；`node tests/semantic-theme.mjs` 通过。
+- [x] **Step 7: 验证**：`npm run typecheck` 通过；`node tests/semantic-theme.mjs` 通过。
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```bash
 git add src/renderer/src/theme/semantic.ts src/renderer/src/theme/chrome.ts tests/semantic-theme.mjs package.json
@@ -298,7 +300,7 @@ git commit -m "feat(theme): 语义变量层基座 --ot-*（深色锁现值/浅�
 
 **Interfaces:** 消费 T1 的 `isLightTheme`（`@renderer/theme/semantic`）。
 
-- [ ] **Step 1: 写失败测试 `tests/theme-contrast.mjs`**（完整文件）
+- [x] **Step 1: 写失败测试 `tests/theme-contrast.mjs`**（完整文件）
 
 ```js
 /**
@@ -349,9 +351,9 @@ if (failed > 0) {
 console.log('theme-contrast: all ok')
 ```
 
-- [ ] **Step 2: 跑测试确认失败**：`node tests/theme-contrast.mjs` → 期望多条 FAIL（现三套浅色主题大量 <4.5）。
+- [x] **Step 2: 跑测试确认失败**：`node tests/theme-contrast.mjs` → 期望多条 FAIL（现三套浅色主题大量 <4.5）。
 
-- [ ] **Step 3: 替换 `src/shared/theme.ts` 三套浅色主题**（算法生成：`mix(原值,#000,t)` 步进 0.05 至 ≥4.5，色相保留；`white/brightWhite` 同规则自动落到中灰）。**整体替换 `colors` 对象**，未列字段不变：
+- [x] **Step 3: 替换 `src/shared/theme.ts` 三套浅色主题**（算法生成：`mix(原值,#000,t)` 步进 0.05 至 ≥4.5，色相保留；`white/brightWhite` 同规则自动落到中灰）。**整体替换 `colors` 对象**，未列字段不变：
 
 github-light（`background` 柔化 + `cursorAccent` 跟随）：
 ```
@@ -377,9 +379,9 @@ brightBlack: '#677171', brightRed: '#c14715', brightGreen: '#586e75', brightYell
 brightBlue: '#626f71', brightMagenta: '#6166b0', brightCyan: '#677171', brightWhite: '#726f66'
 ```
 
-- [ ] **Step 4: 跑测试确认通过**：`node tests/theme-contrast.mjs` → all ok。
+- [x] **Step 4: 跑测试确认通过**：`node tests/theme-contrast.mjs` → all ok。
 
-- [ ] **Step 5: `TerminalView.tsx` 两处动态选项**
+- [x] **Step 5: `TerminalView.tsx` 两处动态选项**
   顶部导入：`import { isLightTheme } from '@renderer/theme/semantic'`。
   构造 effect（约 :855-873，`theme: withChromeColors(...)` 一带）改为：
   ```ts
@@ -402,7 +404,7 @@ brightBlue: '#626f71', brightMagenta: '#6166b0', brightCyan: '#677171', brightWh
   term.options.minimumContrastRatio = bgOpts.image || lightTheme ? 4.5 : 1
   ```
 
-- [ ] **Step 6: `main.tsx` ThemedConfigProvider**
+- [x] **Step 6: `main.tsx` ThemedConfigProvider**
   导入改为 `import { isLightTheme, mix } from '@renderer/theme/semantic'`（先确认现 `mix` 的导入源并迁移；若 chrome.ts 的兼容 re-export 仍被别处使用则保留）。函数体：
   ```tsx
   const colors = getThemeById(themeId, customThemes).colors
@@ -415,11 +417,11 @@ brightBlue: '#626f71', brightMagenta: '#6166b0', brightCyan: '#677171', brightWh
   colorBgElevated: mix(colors.background, colors.foreground, 0.1) ?? (light ? '#f5f5f5' : '#252525'),
   ```
 
-- [ ] **Step 7: `ErrorBoundary.tsx`** 两处内联色：`color: '#cccccc'` → `'var(--ot-text, #cccccc)'`；`color: '#ff6b6b'` → `'var(--ot-danger-fg, #ff6b6b)'`。
+- [x] **Step 7: `ErrorBoundary.tsx`** 两处内联色：`color: '#cccccc'` → `'var(--ot-text, #cccccc)'`；`color: '#ff6b6b'` → `'var(--ot-danger-fg, #ff6b6b)'`。
 
-- [ ] **Step 8: 接链 + 验证**：`package.json` test 链末尾追加 ` && node tests/theme-contrast.mjs`；`npm run typecheck` + `node tests/theme-contrast.mjs` + `node tests/semantic-theme.mjs` 全过。
+- [x] **Step 8: 接链 + 验证**：`package.json` test 链末尾追加 ` && node tests/theme-contrast.mjs`；`npm run typecheck` + `node tests/theme-contrast.mjs` + `node tests/semantic-theme.mjs` 全过。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add src/shared/theme.ts src/renderer/src/terminal/TerminalView.tsx src/renderer/src/main.tsx src/renderer/src/ErrorBoundary.tsx tests/theme-contrast.mjs package.json
@@ -454,7 +456,7 @@ git commit -m "fix(theme): 浅色主题 ANSI 调色板重做到 WCAG AA + MCR/bo
 
 **铁律例外（terminal.css，保持硬编码）：** `:34` 的 `#0d1117`（`.has-bg-image .terminal-view-dock` 深底衬，AGENTS.md 铁律①）；`:390` 的 `#000`（`.term-bg-dim` 背景图压暗层，铁律③）；`:409-410` 的 `rgba(0,0,0,0.55)` + `#fff`（`.term-dead-mask` 死终端遮罩——有意为之的深色 scrim，浅色主题下同样成立）；所有 `#00000000` 透明色。
 
-- [ ] **Step 1: global.css**
+- [x] **Step 1: global.css**
   `:root` 块（:3-15）现有 `--chrome-*` 静态兜底**保留不动**，其后追加（暗色默认， chrome.ts 启动后覆盖）：
   ```css
     --ot-text: #cccccc;
@@ -481,13 +483,13 @@ git commit -m "fix(theme): 浅色主题 ANSI 调色板重做到 WCAG AA + MCR/bo
   ```
   `:35/:48` 滚动条 → `var(--ot-scrollbar, rgba(125, 145, 170, 0.5))`；`:56` → `var(--ot-scrollbar-active, rgba(150, 172, 200, 0.7))`；`:137 #ff6b6b` → `var(--ot-danger-fg, #f85149)`。
 
-- [ ] **Step 2: terminal.css 逐行替换**（除铁律例外外 0 硬编码残留）：
+- [x] **Step 2: terminal.css 逐行替换**（除铁律例外外 0 硬编码残留）：
   `:43/:55` 滚动条、`:63` active、`:150 rgba(0,0,0,.4)` → `--ot-shadow`、`:213` 深色面板底 → `--ot-surface-raised`、`:237 #8a8a8a` → `--ot-text-muted`、`:243 #ffffff` + `:244` 白色半透明 → `--ot-text` + `--ot-hover`、`:281` → `--ot-shadow`、`:311 rgba(59,142,234,.18)` → `--ot-focus-ring`、`:312 #ffffff` → `--ot-text`、`:330 #9a9a9a` → `--ot-text-muted`、`:331` → `--ot-hover`、`:337` → `--ot-text-muted`、`:419`（`.term-dead-btn` 的 `#fff`，底是 `--chrome-accent`）→ `var(--tab-accent-fg, #fff)`；`:409/:410` 见上方铁律例外保留。
   注意：**只改颜色声明值，不动选择器/布局/盒模型**；替换后逐条目检上下文确保语义正确（尤其 :409-419 一带）。
 
-- [ ] **Step 3: 验证**：`npm run typecheck`；对两文件跑残留扫描（见 §10 命令）应为 0（铁律例外除外）；`node tests/semantic-theme.mjs` 仍过。
+- [x] **Step 3: 验证**：`npm run typecheck`；对两文件跑残留扫描（见 §10 命令）应为 0（铁律例外除外）；`node tests/semantic-theme.mjs` 仍过。
 
-- [ ] **Step 4: 提交**
+- [x] **Step 4: 提交**
 
 ```bash
 git add src/renderer/src/global.css src/renderer/src/terminal/terminal.css
@@ -505,17 +507,17 @@ git commit -m "refactor(theme): global/terminal 硬编码颜色收敛进 --ot-* 
 
 **Interfaces:** 同 T3 判定表与兜底规则。
 
-- [ ] **Step 1: workspace.css**（22 处，逐行）：
+- [x] **Step 1: workspace.css**（22 处，逐行）：
   `:82 #1f1f1f` 实底 → `var(--ot-surface-raised, rgba(24, 26, 31, 0.85))`（若该选择器是弹层/工具条；读上下文，若是静态面板底改用 `--ot-surface`）；`:85` → `--ot-shadow`；`:96 rgba(255,255,255,.85)` 文本 → `--ot-text`；`:105 #ffffff` → `--ot-text`；`:180 --dv-sash-color` → `var(--ot-border, rgba(148, 163, 184, 0.28))`；`:181 --dv-active-sash-color` → `var(--ot-info, rgba(59, 142, 234, 0.75))`；`:279/:342/:556/:562/:661/:669/:725/:739 #8a8a8a` → `--ot-text-muted`；`:285 #6a6a6a` → `--ot-text-muted`；`:347 #ffffff` → `--ot-text`；`:348` 白色半透明 .1 → `--ot-hover`；`:705 #ff4d4f` → `--ot-danger-fg`；`:750 #4cc38a` → `--ot-success-fg`；`:751 rgba(76,195,138,.14)` → `color-mix(in srgb, var(--ot-success, #3fb950) 14%, transparent)`；`:754 #6aa9ff` → `--ot-info-fg`；`:755 rgba(106,169,255,.14)` → `color-mix(in srgb, var(--ot-info, #58a6ff) 14%, transparent)`。
 
-- [ ] **Step 2: connections.css**（26 处，逐行）：
+- [x] **Step 2: connections.css**（26 处，逐行）：
   所有 `#8a8a8a`(7 处)/`#9a9a9a`(3 处)/`#6a6a6a`(2 处) → `--ot-text-muted`；`:74/:147/:303/:374 rgba(255,255,255,.08)` 背景 → `--ot-hover`；`:81 rgba(255,255,255,.05)` 边框 → `--ot-border`；`:189` 边框 → `--ot-border`；`:166 #ffffff` + `:167` 白色半透明 .1 → `--ot-text` + `--ot-hover`；`:266 #ffffff` → `--ot-text`；`:196 rgba(255,255,255,.55)`、`:210 rgba(255,255,255,.88)`、`:215 rgba(255,255,255,.45)` ——**先读上下文**：若文本在语义色徽章/强调底上 → 对应 `--ot-*-fg`；普通底上 → `--ot-text-secondary`/`--ot-text-muted`；`:248/:64/:131 #cf6679` → `--ot-danger-fg`；`:335 rgba(121,121,121,.45)` 滚动条/滑块底 → `--ot-scrollbar`。
 
-- [ ] **Step 3: commands.css**（8 处）：`#8a8a8a`(5 处) → `--ot-text-muted`；`#9a9a9a` → `--ot-text-muted`；`#cf6679`(2 处，含 `!important`) → `var(--ot-danger-fg, #cf6679) !important`（保留 !important）；`#f85149` → `--ot-danger-fg`。
+- [x] **Step 3: commands.css**（8 处）：`#8a8a8a`(5 处) → `--ot-text-muted`；`#9a9a9a` → `--ot-text-muted`；`#cf6679`(2 处，含 `!important`) → `var(--ot-danger-fg, #cf6679) !important`（保留 !important）；`#f85149` → `--ot-danger-fg`。
 
-- [ ] **Step 4: 验证**：typecheck + 残留扫描 0 + 语义测试过。
+- [x] **Step 4: 验证**：typecheck + 残留扫描 0 + 语义测试过。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add src/renderer/src/workspace/workspace.css src/renderer/src/connections/connections.css src/renderer/src/commands/commands.css
@@ -538,11 +540,11 @@ git commit -m "refactor(theme): 工作区/连接侧栏/命令面板颜色语义�
 
 **sftp 铁律（AGENTS.md）：** 不动 grid 模板/`--sftp-row-h` 系变量/`box-sizing: border-box`/`.ant-dropdown-trigger` 相关选择器——只改颜色值。
 
-- [ ] **Step 1: sftp.css**（18 处）：`#8a8a8a`(10 处)/`#9a9a9a`/`#6a6a6a` → `--ot-text-muted`；`#e3b341` → `--ot-warning-fg`；`#3fb950`(2 处) → `--ot-success-fg`；`#f85149`(4 处) → `--ot-danger-fg`；`:155 rgba(59,142,234,.18)` → `--ot-focus-ring`；`:342` → `--ot-shadow`。
+- [x] **Step 1: sftp.css**（18 处）：`#8a8a8a`(10 处)/`#9a9a9a`/`#6a6a6a` → `--ot-text-muted`；`#e3b341` → `--ot-warning-fg`；`#3fb950`(2 处) → `--ot-success-fg`；`#f85149`(4 处) → `--ot-danger-fg`；`:155 rgba(59,142,234,.18)` → `--ot-focus-ring`；`:342` → `--ot-shadow`。
 
-- [ ] **Step 2: monitor.css**（15 处）：`#8a8a8a`(9 处) → `--ot-text-muted`；`:22/:25 #f85149` → `--ot-danger-fg`；`:24 rgba(248,81,73,.12)` → `color-mix(in srgb, var(--ot-danger, #f85149) 12%, transparent)`；`:89 #3fb950` → `--ot-success-fg`；`:144 #d29922` → `--ot-warning-fg`；`:234 #58a6ff` → `--ot-info-fg`；`:238 #f0a55a` → `--ot-warning-fg`。
+- [x] **Step 2: monitor.css**（15 处）：`#8a8a8a`(9 处) → `--ot-text-muted`；`:22/:25 #f85149` → `--ot-danger-fg`；`:24 rgba(248,81,73,.12)` → `color-mix(in srgb, var(--ot-danger, #f85149) 12%, transparent)`；`:89 #3fb950` → `--ot-success-fg`；`:144 #d29922` → `--ot-warning-fg`；`:234 #58a6ff` → `--ot-info-fg`；`:238 #f0a55a` → `--ot-warning-fg`。
 
-- [ ] **Step 3: MonitorPanel.tsx**（7 处内联；HistoryChart 是 **canvas 绘制**——`ctx.strokeStyle/fillStyle` 赋值不解析 CSS 变量串，必须传实色）：
+- [x] **Step 3: MonitorPanel.tsx**（7 处内联；HistoryChart 是 **canvas 绘制**——`ctx.strokeStyle/fillStyle` 赋值不解析 CSS 变量串，必须传实色）：
   ```tsx
   import { useResolvedTheme } from '@renderer/settings/store'
   import { isLightTheme, semanticVars } from '@renderer/theme/semantic'
@@ -558,15 +560,15 @@ git commit -m "refactor(theme): 工作区/连接侧栏/命令面板颜色语义�
   替换：usage 档位函数（约 :110-112）返回值 → `vars.dangerFg`/`vars.warningFg`/`vars.successFg`（**该函数若在组件外，移入组件或改为接收 vars 参数**）；`:237` `lineColor={vars.successFg} fillColor={withAlpha(vars.success, 0.15)}`；`:249` `color={vars.warningFg}`；`:298` `lineColor={vars.infoFg} fillColor={withAlpha(vars.info, 0.15)}`；`:299` `lineColor={vars.warningFg} fillColor={withAlpha(vars.warning, 0.15)}`。
   效果：图表色随主题明暗自动达标（浅色吃加深变体），文件内不再有颜色字面量、无需白名单。
 
-- [ ] **Step 4: settings.css**（11 处）：`:203/:208 #fff` → 读上下文：强调底按钮上的文字 → `var(--tab-accent-fg, #fff)`，否则 `--ot-text`；`:302/:303 #3b8eea` → `--ot-focus-ring`（保留 inset box-shadow 结构）；`:336 rgba(59,142,234,.2)` → `--ot-focus-ring`；`:513 #3fd06a` → `--ot-success-fg`；`:517/:603 #f85149` → `--ot-danger-fg`；`:599 #3fb950` → `--ot-success-fg`；`:630 #d29922` → `--ot-warning-fg`；`:49` 注释里的 `#ffffff` 不动（T6 扫描器剥注释）。
+- [x] **Step 4: settings.css**（11 处）：`:203/:208 #fff` → 读上下文：强调底按钮上的文字 → `var(--tab-accent-fg, #fff)`，否则 `--ot-text`；`:302/:303 #3b8eea` → `--ot-focus-ring`（保留 inset box-shadow 结构）；`:336 rgba(59,142,234,.2)` → `--ot-focus-ring`；`:513 #3fd06a` → `--ot-success-fg`；`:517/:603 #f85149` → `--ot-danger-fg`；`:599 #3fb950` → `--ot-success-fg`；`:630 #d29922` → `--ot-warning-fg`；`:49` 注释里的 `#ffffff` 不动（T6 扫描器剥注释）。
 
-- [ ] **Step 5: highlight.css**（6 处）：`#f85149`(4 处 color) → `--ot-danger-fg`；`:296/:301 border-color #f85149` → `--ot-danger`（描边用基色）；`:302 rgba(248,81,73,.2)` → `color-mix(in srgb, var(--ot-danger, #f85149) 20%, transparent)`。
+- [x] **Step 5: highlight.css**（6 处）：`#f85149`(4 处 color) → `--ot-danger-fg`；`:296/:301 border-color #f85149` → `--ot-danger`（描边用基色）；`:302 rgba(248,81,73,.2)` → `color-mix(in srgb, var(--ot-danger, #f85149) 20%, transparent)`。
 
-- [ ] **Step 6: lock.css**（2 处）：`:40` → `--ot-shadow`；`:73 #f85149` → `--ot-danger-fg`。锁屏遮罩底色如为深色实底（读 lock.css 全文确认）**保持不动**（安全优先：锁屏必须不透明遮罩，z-index 4000 语义不变）。
+- [x] **Step 6: lock.css**（2 处）：`:40` → `--ot-shadow`；`:73 #f85149` → `--ot-danger-fg`。锁屏遮罩底色如为深色实底（读 lock.css 全文确认）**保持不动**（安全优先：锁屏必须不透明遮罩，z-index 4000 语义不变）。
 
-- [ ] **Step 7: 验证**：typecheck + 残留扫描（白名单：MonitorPanel.tsx 若走锚点路线的两行 fillColor）+ 语义测试。
+- [x] **Step 7: 验证**：typecheck + 残留扫描（白名单：MonitorPanel.tsx 若走锚点路线的两行 fillColor）+ 语义测试。
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```bash
 git add src/renderer/src/sftp/sftp.css src/renderer/src/monitor/monitor.css src/renderer/src/monitor/MonitorPanel.tsx src/renderer/src/settings/settings.css src/renderer/src/settings/highlight.css src/renderer/src/lock/lock.css
@@ -585,7 +587,7 @@ git commit -m "refactor(theme): SFTP/监控/设置/高亮/锁屏面板颜色语�
 
 **Interfaces:** 无新接口；消费 T1-T5 的最终状态。
 
-- [ ] **Step 1: 写 `tests/css-theme-vars.mjs`**（完整文件；先跑一次看当前残留并按实况填 `WHITELIST`，基线必须为「白名单外 0」）
+- [x] **Step 1: 写 `tests/css-theme-vars.mjs`**（完整文件；先跑一次看当前残留并按实况填 `WHITELIST`，基线必须为「白名单外 0」）
 
 ```js
 /**
@@ -685,11 +687,11 @@ if (violations > 0) {
 console.log('css-theme-vars: all ok')
 ```
 
-- [ ] **Step 2: 基线清零**：跑 `node tests/css-theme-vars.mjs`，对每条 RAW/FALLBACK 输出：属于遗漏清扫 → 回对应文件改掉（**不扩大白名单来逃课**；若确属主题数据/铁律 → 加进 WHITELIST 精确值并在此步骤记录理由）。目标：白名单外 0 违规。
+- [x] **Step 2: 基线清零**：跑 `node tests/css-theme-vars.mjs`，对每条 RAW/FALLBACK 输出：属于遗漏清扫 → 回对应文件改掉（**不扩大白名单来逃课**；若确属主题数据/铁律 → 加进 WHITELIST 精确值并在此步骤记录理由）。目标：白名单外 0 违规。
 
-- [ ] **Step 3: 接链 + 全量验证**：`package.json` test 链末尾追加 `&& node tests/css-theme-vars.mjs`；跑 **`npm test` 全链**（typecheck + 全部测试）必须全绿。
+- [x] **Step 3: 接链 + 全量验证**：`package.json` test 链末尾追加 `&& node tests/css-theme-vars.mjs`；跑 **`npm test` 全链**（typecheck + 全部测试）必须全绿。
 
-- [ ] **Step 4: AGENTS.md「主题机制」增补**（追加 bullet，保留既有内容）：
+- [x] **Step 4: AGENTS.md「主题机制」增补**（追加 bullet，保留既有内容）：
 
 ```markdown
 - 语义变量层（2026-10 主题改造）：`src/renderer/src/theme/semantic.ts`（零 import 纯模块，`isLightTheme`/`mix`/`darkenToRatio`/`SEMANTIC` 锚点）→ `chrome.ts` 的 `applyChromeTheme` 随主题派生 `--ot-*` 变量并写 `color-scheme`；**深色分支锁 SEMANTIC 锚点（零回归），浅色分支 darkenToRatio 按 WCAG 派生**。CSS 一律 `var(--ot-*, 锚点兜底)`，新代码禁止再写裸颜色字面量——`node tests/css-theme-vars.mjs` fail-closed 扫描（先剥注释、忽略 var() 兜底但有受控清单，白名单按「文件+精确值」登记）
@@ -697,9 +699,9 @@ console.log('css-theme-vars: all ok')
 - 内置主题调色板是「主题数据」不是 chrome 颜色：改浅色主题色值用统一加深算法（`darkenToRatio`），不许手挑色
 ```
 
-- [ ] **Step 5: docs/STATE.md 追加条目**（一行式，随仓库现有格式）：主题系统 A+B+C 落地——语义变量层 + 浅色 AA 调色板 + 防护测试（semantic-theme/theme-contrast/css-theme-vars）。
+- [x] **Step 5: docs/STATE.md 追加条目**（一行式，随仓库现有格式）：主题系统 A+B+C 落地——语义变量层 + 浅色 AA 调色板 + 防护测试（semantic-theme/theme-contrast/css-theme-vars）。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add tests/css-theme-vars.mjs package.json AGENTS.md docs/STATE.md

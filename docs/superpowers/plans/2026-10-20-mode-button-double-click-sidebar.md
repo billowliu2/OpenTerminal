@@ -1,5 +1,7 @@
 # 侧栏模式按钮双击收展侧栏 Implementation Plan
 
+> ⚠️ **已归档（2026-10-21）**：本计划已实施完毕并随 v1.0.31 发布，仅作历史记录，不再维护。后续工作见 [`docs/PLAN-2026-10-21-backlog.md`](../../PLAN-2026-10-21-backlog.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 图标栏的「终端工作区 / SSH 工作区」模式按钮新增双击手势：双击当前工作区按钮 = 展开/收起侧栏；单击（含双击另一个按钮）只切换工作区。
@@ -37,7 +39,7 @@
 **Interfaces:**
 - Produces: `decideModeClick(detail: number, preGestureMode: RailMode | null, buttonMode: RailMode): ModeClickAction`，`RailMode = 'terminal' | 'ssh'`，`ModeClickAction = 'switch' | 'toggle-sidebar' | 'noop'` —— Task 2 的 `ModeRailButtons` 消费此签名。
 
-- [ ] **Step 1: 先写测试 `tests/mode-rail-gesture.mjs`**
+- [x] **Step 1: 先写测试 `tests/mode-rail-gesture.mjs`**
 
 ```js
 /**
@@ -79,12 +81,12 @@ if (failed > 0) {
 console.log('mode-rail-gesture: all ok')
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `node tests/mode-rail-gesture.mjs`
 Expected: FAIL —— `ERR_MODULE_NOT_FOUND`（模块尚不存在）
 
-- [ ] **Step 3: 实现 `src/renderer/src/workspace/modeRailGesture.ts`**
+- [x] **Step 3: 实现 `src/renderer/src/workspace/modeRailGesture.ts`**
 
 ```ts
 /**
@@ -112,12 +114,12 @@ export function decideModeClick(detail: number, preGestureMode: RailMode | null,
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 Run: `node tests/mode-rail-gesture.mjs`
 Expected: PASS —— 10 行 `ok`，末尾 `mode-rail-gesture: all ok`，exit 0
 
-- [ ] **Step 5: 登记测试到 package.json**
+- [x] **Step 5: 登记测试到 package.json**
 
 `package.json:16` 的 `"test"` 链尾，在 `node tests/link-rules.mjs` 之后追加：
 
@@ -127,7 +129,7 @@ Expected: PASS —— 10 行 `ok`，末尾 `mode-rail-gesture: all ok`，exit 0
 
 （新测试是零 import 直连型，不依赖 bundle，位置在链尾即可。）
 
-- [ ] **Step 6: 同步 AGENTS.md 测试清单（项目规则：改 AGENTS.md 所载内容须同步）**
+- [x] **Step 6: 同步 AGENTS.md 测试清单（项目规则：改 AGENTS.md 所载内容须同步）**
 
 两处编辑：
 1. 「测试」条目里 `可离线运行的 35 个测试` → `36 个测试`，枚举末尾 `font-stack、link-rules；` → `font-stack、link-rules、mode-rail-gesture；`
@@ -141,7 +143,7 @@ Expected: PASS —— 10 行 `ok`，末尾 `mode-rail-gesture: all ok`，exit 0
 **Interfaces:**
 - Consumes: Task 1 的 `decideModeClick` / `ModeClickAction`；既有 `useWorkspaceModeStore`（含 `.getState()`）、`WorkspaceMode` 类型（已在 :42 导入）、`useRef`（已在用）、IconRail 已有的 `onToggleSidebar` prop。
 
-- [ ] **Step 1: 加 import**
+- [x] **Step 1: 加 import**
 
 在 Workspace.tsx:43 `import { useWorkspaceModeStore } from './workspaceModeStore'` 之后加：
 
@@ -149,7 +151,7 @@ Expected: PASS —— 10 行 `ok`，末尾 `mode-rail-gesture: all ok`，exit 0
 import { decideModeClick } from './modeRailGesture'
 ```
 
-- [ ] **Step 2: 替换 ModeRailButtons（:1545–1564 整段）**
+- [x] **Step 2: 替换 ModeRailButtons（:1545–1564 整段）**
 
 旧代码（原样，供 Edit 的 old_string）：
 
@@ -217,21 +219,21 @@ function ModeRailButtons({ onToggleSidebar }: { onToggleSidebar: () => void }): 
 }
 ```
 
-- [ ] **Step 3: IconRail 内透传（:1532）**
+- [x] **Step 3: IconRail 内透传（:1532）**
 
 `<ModeRailButtons />` → `<ModeRailButtons onToggleSidebar={onToggleSidebar} />`
 
-- [ ] **Step 4: 渲染层类型检查**
+- [x] **Step 4: 渲染层类型检查**
 
 Run: `npx tsc --noEmit -p tsconfig.web.json`
 Expected: 无输出，exit 0
 
-- [ ] **Step 5: 全量测试**
+- [x] **Step 5: 全量测试**
 
 Run: `npm test`
 Expected: pretest 类型检查 + 36 个离线测试全部通过，exit 0
 
-- [ ] **Step 6: 自审 diff**
+- [x] **Step 6: 自审 diff**
 
 Run: `git diff --stat` + `git status`
 Expected: 恰好 3 改 2 新：`Workspace.tsx`、`package.json`、`AGENTS.md` 修改；`modeRailGesture.ts`、`tests/mode-rail-gesture.mjs` 新增（共 5 个路径；本计划文档自身 untracked 属预期，无其它文件）；无 CSS / i18n 词典改动
