@@ -155,6 +155,9 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '近期更新',
 
+    'changelog.1.0.31.li.1': '双击图标栏的「终端工作区 / SSH 工作区」当前按钮，可快速展开或收起侧栏',
+    'changelog.1.0.31.li.2': '单击仍然只切换工作区，双击另一个工作区按钮也只切换，侧栏状态不受影响',
+    'changelog.1.0.31.li.3': '键盘（Enter / 空格）触发保持单击语义，无障碍操作不受影响',
     'changelog.1.0.30.li.1': '中文显示更准：终端启用 Unicode 11 宽度表，中文、全角符号与表格线对齐正确；设置新增「中文字体」回退槽位',
     'changelog.1.0.30.li.2': '新增自定义可点击链接规则：正则捕获组可展开为 http/https 链接，Ctrl+点击打开；高亮规则新增「按行匹配」开关',
     'changelog.1.0.30.li.3': '修复彩色 TUI 输出在高亮区段后掉色、ls -l 权限位高亮在多行下失效、含空格或括号的字体名静默失效；非法配置导致窗格崩溃会在启动时自动修复',
@@ -171,9 +174,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.27.li.2': '覆盖标签 × 按钮、右键「关闭 / 关闭其他 / 关闭右侧」与键盘 Delete / Backspace 误关——点击标签后按 Backspace 不再直接关闭',
     'changelog.1.0.27.li.3': '批量关闭整批只确认一次；开关保存后立即生效，无需重启',
 
-    'changelog.1.0.26.li.1': '修复拖动缩放窗口或终端高频输出时界面冻结数秒（网格重排节流 + 输出批量写入）',
-    'changelog.1.0.26.li.2': '新增落盘诊断日志：默认开启，按天一个文件保留 7 天，设置 → 系统可关闭',
-    'changelog.1.0.26.li.3': '反馈卡顿问题时附上当天的日志文件即可精确定位',
 
     'cl.morePre': '完整日志见仓库',
     'cl.morePost': '。',
@@ -329,6 +329,9 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '近期更新',
 
+    'changelog.1.0.31.li.1': '雙擊圖示列的「終端工作區 / SSH 工作區」目前按鈕，可快速展開或收起側欄',
+    'changelog.1.0.31.li.2': '單擊仍然只切換工作區，雙擊另一個工作區按鈕也只切換，側欄狀態不受影響',
+    'changelog.1.0.31.li.3': '鍵盤（Enter / 空白鍵）觸發保持單擊語義，無障礙操作不受影響',
     'changelog.1.0.30.li.1': '中文顯示更準：終端機啟用 Unicode 11 寬度表，中文、全形符號與表格線對齊正確；設定新增「中文字型」回退欄位',
     'changelog.1.0.30.li.2': '新增自訂可點擊連結規則：正規表達式捕獲組可展開為 http/https 連結，Ctrl+點擊開啟；高亮規則新增「逐行比對」開關',
     'changelog.1.0.30.li.3': '修復彩色 TUI 輸出在高亮區段後掉色、ls -l 權限位高亮在多行下失效、含空格或括號的字型名稱默默失效；非法設定導致窗格崩潰會在啟動時自動修復',
@@ -345,9 +348,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.27.li.2': '涵蓋分頁 × 按鈕、右鍵「關閉 / 關閉其他 / 關閉右側」與鍵盤 Delete / Backspace 誤關——點擊分頁後按 Backspace 不再直接關閉',
     'changelog.1.0.27.li.3': '批量關閉整批只確認一次；開關儲存後立即生效，無需重啟',
 
-    'changelog.1.0.26.li.1': '修復拖動縮放視窗或終端機高頻輸出時介面凍結數秒（網格重排節流 + 輸出批量寫入）',
-    'changelog.1.0.26.li.2': '新增落盤診斷日誌：預設開啟，按天一個檔案保留 7 天，設定 → 系統可關閉',
-    'changelog.1.0.26.li.3': '回報卡頓問題時附上當天的日誌檔案即可精確定位',
 
     'cl.morePre': '完整日誌請見倉庫',
     'cl.morePost': '。',
@@ -503,6 +503,9 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': 'Recent updates',
 
+    'changelog.1.0.31.li.1': "Double-clicking the active \"Terminal workspace / SSH workspace\" button on the icon rail quickly expands or collapses the sidebar",
+    'changelog.1.0.31.li.2': 'A single click still only switches workspaces; double-clicking the other workspace button also just switches, leaving the sidebar untouched',
+    'changelog.1.0.31.li.3': 'Keyboard activation (Enter / Space) keeps single-click semantics, so accessibility is unaffected',
     'changelog.1.0.30.li.1': 'Better CJK rendering: the terminal now uses the Unicode 11 width table so Chinese, full-width punctuation and box-drawing characters align correctly; a CJK font fallback slot was added to Settings',
     'changelog.1.0.30.li.2': 'Added custom clickable link rules: a regex capture group can expand into an http/https link, opened with Ctrl+click; highlight rules gained a line-anchored matching switch',
     'changelog.1.0.30.li.3': 'Fixed coloured TUI output losing its colour after a highlighted span, ls -l permission bits not highlighting across wrapped lines, and font names with spaces or parentheses silently failing; panes no longer crash on invalid settings, which are repaired at startup',
@@ -519,9 +522,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.27.li.2': 'Covers the tab × button, the context menu\'s Close / Close others / Close right, and accidental Delete / Backspace — pressing Backspace after clicking a tab no longer closes it',
     'changelog.1.0.27.li.3': 'Batch closes ask once for the whole batch; switches take effect immediately, no restart needed',
 
-    'changelog.1.0.26.li.1': 'Fixed the UI freezing for seconds while resizing the window or under high-frequency terminal output (reflow throttling + batched writes)',
-    'changelog.1.0.26.li.2': 'Added on-disk diagnostic logs: on by default, one file per day kept for 7 days, can be disabled in Settings → System',
-    'changelog.1.0.26.li.3': 'Attach the day\'s log file when reporting freezes for precise diagnosis',
 
     'cl.morePre': 'Full changelog in',
     'cl.morePost': '.',
@@ -677,6 +677,9 @@ window.OPENTERMINAL_I18N = {
     'cl.eyebrow': 'Changelog',
     'cl.title': '最近の更新',
 
+    'changelog.1.0.31.li.1': 'アイコンレールの「ターミナルワークスペース / SSHワークスペース」のアクティブなボタンをダブルクリックすると、サイドバーをすばやく開閉できます',
+    'changelog.1.0.31.li.2': 'シングルクリックはこれまでどおりワークスペースの切替のみ。もう一方のボタンをダブルクリックした場合も切替だけで、サイドバーの状態は変わりません',
+    'changelog.1.0.31.li.3': 'キーボード（Enter / スペース）での操作はシングルクリック相当のまま保たれ、アクセシビリティに影響しません',
     'changelog.1.0.30.li.1': '中国語表示の精度を改善：ターミナルが Unicode 11 の文字幅テーブルを使うようになり、中国語・全角記号・罫線の位置が揃います。設定に「中国語フォント」のフォールバック欄を追加',
     'changelog.1.0.30.li.2': 'カスタムのクリック可能リンク規則を追加：正規表現のキャプチャグループを http/https リンクに展開し、Ctrl+クリックで開けます。ハイライト規則に「行単位で照合」スイッチを追加',
     'changelog.1.0.30.li.3': '色付き TUI 出力がハイライト区間の後で色を失う問題、ls -l のパーミッション表示が折り返し時にハイライトされない問題、空白や括弧を含むフォント名が黙って無効になる問題を修正。不正な設定でペインが落ちる問題は起動時に自動修復',
@@ -693,9 +696,6 @@ window.OPENTERMINAL_I18N = {
     'changelog.1.0.27.li.2': 'タブの × ボタン、右クリックメニューの「閉じる / ほかを閉じる / 右側を閉じる」、および Delete / Backspace による誤クローズに対応——タブクリック後の Backspace で閉じなくなります',
     'changelog.1.0.27.li.3': 'バッチクローズは全体で 1 回だけ確認；スイッチは保存後すぐに反映され、再起動不要',
 
-    'changelog.1.0.26.li.1': 'ウィンドウのリサイズや高頻度ターミナル出力時に UI が数秒固まる問題を修正（リフローのスロットリング + 書き込みバッチ化）',
-    'changelog.1.0.26.li.2': '診断ログを追加：既定で有効、日ごとに 1 ファイルを 7 日間保持、設定 → システムで無効化可能',
-    'changelog.1.0.26.li.3': '固まりの報告時に当日のログファイルを添付すれば正確に特定できます',
 
     'cl.morePre': '完全な変更履歴は',
     'cl.morePost': ' をご覧ください。',
