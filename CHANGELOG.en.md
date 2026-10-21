@@ -1,5 +1,14 @@
 # OpenTerminal Changelog
 
+## v1.0.31 - 2026-10-21
+
+A small feature update: the mode buttons on the icon rail gain a double-click gesture, making sidebar toggling one step faster.
+
+### Added: double-click a workspace button to toggle the sidebar
+- Double-clicking the active "Terminal workspace / SSH workspace" button on the icon rail quickly expands or collapses the sidebar
+- A single click still only switches workspaces and leaves the sidebar untouched; double-clicking the other workspace button also just switches, never disturbing the sidebar
+- Keyboard activation (Enter / Space) keeps single-click semantics, so the accessibility path is unaffected
+
 ## v1.0.30 - 2026-10-18
 
 This release improves CJK text rendering, keyword highlighting, and custom link rules; adds ReDoS protection for user-defined regular expressions; and introduces a more precise renderer performance timeline for diagnosing long freezes.
