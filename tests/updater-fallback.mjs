@@ -591,9 +591,10 @@ console.log('install')
  *    release at a time, is dropped by a manual check and is replaced wholesale
  *    when a different version shows up — so each scenario uses its own version
  *    number (7.x and 9.9.9 are spent by section 7), or starts from a manual check;
- *  - the "startup check armed" flag is per run too: the first `applyUpdateSchedule`
- *    that allows startup checks is the only one that can arm it, which is why
- *    sections 10-13 run in this order.
+ *  - the "startup check armed" flag is consumed by the process's FIRST
+ *    `applyUpdateSchedule` call regardless of the startup toggle; the sections
+ *    below replay "the first apply of a run" through the __resetStartupArmForTests
+ *    seam, so their relative order no longer encodes the arming state.
  * `reset()` re-points the feeds and the check/download doubles, so those do not
  * leak between sections.
  */
@@ -677,6 +678,9 @@ console.log('interval 0: the periodic check is off, the startup check still runs
   ctl.checkForUpdates = recordCheck
   fetchImpl = () => Promise.resolve(errResponse(503))
 
+  // Replay the first apply of a run with the toggle already on (the section
+  // above consumed the real one with the toggle off).
+  updater.__resetStartupArmForTests()
   const from = checkLog.length
   updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 0 })
   await sleep(150)
@@ -684,6 +688,64 @@ console.log('interval 0: the periodic check is off, the startup check still runs
   ok(ran.length === 1, `exactly one check ran — the startup one (${ran.length})`)
   ok(ran[0] === false, "'never' means the startup check is the only one, and it is not marked scheduled")
   ok(startupChecks() === 1, 'the run has seen its startup check exactly once')
+}
+
+console.log('a settings save that keeps the interval does not restart the countdown')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ startupDelay: 20, hour: 5 })
+  writeSystem({ autoCheckUpdate: false, updateCheckIntervalHours: 24, autoDownloadUpdate: false })
+  ctl.checkForUpdates = recordCheck
+  fetchImpl = () => Promise.resolve(errResponse(503))
+
+  // 24h at 5ms/hour = a 120ms period. The first apply starts the countdown;
+  // 50ms in — mid-period — an unrelated settings save re-runs the applier with
+  // the very same interval. If that rebuilt the timer, the next tick would land
+  // a full period after the re-apply (~120ms); if the countdown survives, it
+  // lands ~70ms after it.
+  const from = checkLog.length
+  updater.applyUpdateSchedule({ autoCheckUpdate: false, updateCheckIntervalHours: 24 })
+  await sleep(50)
+  const reappliedAt = checkLog.length // === from: mid-period, nothing fired yet
+  const reappliedWall = Date.now()
+  updater.applyUpdateSchedule({ autoCheckUpdate: false, updateCheckIntervalHours: 24 })
+  let guard = 0
+  while (checkLog.length === reappliedAt && guard++ < 200) await sleep(5)
+  const gap = Date.now() - reappliedWall
+  ok(checkLog.length > reappliedAt, 'the periodic timer kept ticking across the re-apply')
+  ok(gap < 100, `the countdown was not restarted (next tick ${gap}ms after the re-apply; a restart would be ~120ms)`)
+
+  // Leave the section clean: stop the timer so its phase cannot bleed into the
+  // cadence section below.
+  updater.applyUpdateSchedule({ autoCheckUpdate: false, updateCheckIntervalHours: 0 })
+}
+
+console.log('enabling the startup check mid-session does not fire a startup check')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ startupDelay: 20, hour: 5 })
+  writeSystem({ autoCheckUpdate: false, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  ctl.checkForUpdates = recordCheck
+  fetchImpl = () => Promise.resolve(errResponse(503))
+
+  // Replay a run whose FIRST apply sees the toggle off: the arming is consumed
+  // silently. Flipping the toggle on later must arm only future behavior (the
+  // periodic timer), never retroactively fire a "startup" check hours into the
+  // session — the settings label promises a check *at startup*.
+  updater.__resetStartupArmForTests()
+  const before = checkLog.length
+  updater.applyUpdateSchedule({ autoCheckUpdate: false, updateCheckIntervalHours: 0 })
+  await sleep(60) // well past the 20ms startup delay
+  ok(checkLog.length === before, 'the toggle-off first apply scheduled nothing')
+
+  updater.applyUpdateSchedule({ autoCheckUpdate: true, updateCheckIntervalHours: 0 })
+  await sleep(80)
+  ok(
+    checkLog.length === before && startupChecks() === 1,
+    'enabling mid-session fires no startup check (the earlier section still owns the only one)'
+  )
 }
 
 console.log('re-applying the schedule replaces the cadence (and 0 stops it)')

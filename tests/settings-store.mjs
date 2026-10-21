@@ -493,6 +493,15 @@ console.log('[preset refresh]')
     okstate?.priority === 10 && okstate?.color.fg === '#123456' && okstate?.enabled === true,
     'a refreshed rule keeps the priority, colour and switch the user left it at'
   )
+  // The very first url preset (https?:// only, widened by ftp/www alternation
+  // later) is a registered legacy pattern too — an early install upgrades
+  // exactly like okstate above. This regressed silently before the url entry
+  // was added to LEGACY_BUILTIN_PATTERNS.
+  const url = upgraded.find((r) => r.id === 'url')
+  ok(
+    typeof url?.pattern === 'string' && url.pattern.includes('ftp://') && url.pattern !== V1.url,
+    'the early url preset (https?:// only) is refreshed to the current one'
+  )
   const addedSince = [
     'warnstate',
     'danger',
@@ -522,6 +531,14 @@ console.log('[preset refresh]')
   ok(
     afterCustom.find((r) => r.id === 'badstate')?.pattern === '\\bMY_FAILURE\\b',
     'a hand-edited built-in rule is left alone'
+  )
+
+  // The legacy url pattern on a NON-builtin rule must not be refreshed either.
+  const nonBuiltin = v1Set().map((r) => (r.id === 'url' ? { ...r, builtin: false } : r))
+  const afterNonBuiltin = (await roundTrip({ highlightRules: nonBuiltin })).highlightRules
+  ok(
+    afterNonBuiltin.find((r) => r.id === 'url')?.pattern === V1.url,
+    'the legacy url pattern on a non-builtin rule is left alone'
   )
 
   // ...and so must a rule the user deleted: it must not come back.

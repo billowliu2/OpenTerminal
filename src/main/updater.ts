@@ -76,11 +76,23 @@ let eventsWired = false
  */
 let checkInFlight: Promise<UpdateState> | undefined
 let downloadInFlight: Promise<void> | undefined
-/** The periodic check timer; reassigned on every settings save. */
+/** The periodic check timer; rebuilt only when the configured interval changes. */
 let intervalTimer: NodeJS.Timeout | undefined
+/** The interval the current `intervalTimer` was armed with, so a settings save
+ *  that does not touch the interval leaves the countdown running. */
+let scheduledIntervalHours: number | undefined
 /** Once per run: the startup check is armed the first time the schedule is
  *  applied, and a later settings save must not schedule a second one. */
 let startupArmed = false
+
+/**
+ * Test seam only: the arming is per-run state with no reset path in the app
+ * itself. The self-test replays "the first apply of a run" with different
+ * startup-toggle states, which a single process cannot do otherwise.
+ */
+export function __resetStartupArmForTests(): void {
+  startupArmed = false
+}
 
 /**
  * What has already been done for ONE release, so an app left running for days
@@ -517,33 +529,39 @@ export function configureAutoUpdater(): void {
 
   // The startup check and the periodic one are armed by applyUpdateSchedule
   // (wired in index.ts through settingsStore's injected applier) instead of
-  // here: a settings save must re-arm the schedule, not add a second timer.
+  // here: a settings save feeds the same applier, which rebuilds the timer only
+  // when the interval changed.
 }
 
 /**
  * Arm (or re-arm) the update schedule from the current settings. Called by
  * settingsStore's injected applier on startup and after every settings save, so
- * it must be idempotent: the previous interval timer is dropped first, and the
- * startup check is armed at most once per run — a settings save two seconds into
- * the run must not schedule a second "startup" check.
+ * it must be idempotent:
+ *
+ *  - the startup check is armed at most once per run, on the process's FIRST
+ *    call — and the arming is consumed even when the user left 「启动时自动检
+ *    查」off, so enabling it mid-session arms only the periodic timer (a
+ *    "startup" check hours into the session would contradict the label);
+ *  - the periodic timer is rebuilt only when the configured interval actually
+ *    changes. Every settings save re-runs this function, and an unconditional
+ *    rebuild would reset the countdown on keystroke-level writes (color
+ *    pickers, text fields) — a 4h check could be postponed forever.
  *
  * Dev builds schedule nothing (there is no feed), which is also why the startup
  * flag is not set on the way out.
  */
 export function applyUpdateSchedule(system: SystemSettings): void {
-  if (intervalTimer) {
-    clearInterval(intervalTimer)
-    intervalTimer = undefined
-  }
   if (!app.isPackaged) return
 
-  // Startup check only when the user left it enabled (设置 → 关于). Left alone by
-  // later calls, and unref'd like every other timer here: a pending check must
-  // never keep the app (or a test process) alive.
-  if (!startupArmed && system.autoCheckUpdate !== false) {
+  // Startup check only when the user left it enabled (设置 → 关于). Unref'd like
+  // every other timer here: a pending check must never keep the app (or a test
+  // process) alive.
+  if (!startupArmed) {
     startupArmed = true
-    const startup = setTimeout(() => void runCheck('startup'), budgets.startupDelay)
-    startup.unref?.()
+    if (system.autoCheckUpdate !== false) {
+      const startup = setTimeout(() => void runCheck('startup'), budgets.startupDelay)
+      startup.unref?.()
+    }
   }
 
   // 0 = never: the startup and the manual check are all that is left. Any other
@@ -552,10 +570,17 @@ export function applyUpdateSchedule(system: SystemSettings): void {
   const hours = isUpdateCheckInterval(system.updateCheckIntervalHours)
     ? system.updateCheckIntervalHours
     : FALLBACK_CHECK_INTERVAL_HOURS
-  if (hours > 0) {
-    const timer = setInterval(() => void runCheck('scheduled'), hours * budgets.hour)
-    timer.unref?.()
-    intervalTimer = timer
+  if (hours !== scheduledIntervalHours) {
+    if (intervalTimer) {
+      clearInterval(intervalTimer)
+      intervalTimer = undefined
+    }
+    scheduledIntervalHours = hours
+    if (hours > 0) {
+      const timer = setInterval(() => void runCheck('scheduled'), hours * budgets.hour)
+      timer.unref?.()
+      intervalTimer = timer
+    }
   }
 
   // Auto-download switched on while an update was already found: start now, the

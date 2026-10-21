@@ -33,6 +33,18 @@ const SKIP_GH = process.argv.includes('--skip-github')
 const SKIP_GITEA = process.argv.includes('--skip-gitea')
 const SKIP_GITEA_RELEASE = process.argv.includes('--skip-gitea-release')
 const CHANNEL_ONLY = process.argv.includes('--channel-only')
+// Rejected before anything runs (no network, no uploads): --channel-only exists
+// to republish the Gitea update channel, so pairing it with --skip-gitea asks
+// for two opposite things. Without this check the CHANNEL_ONLY branch returns
+// before the SKIP_GITEA warning is ever printed and the channel silently
+// uploads anyway. (--skip-gitea-release is fine: channel-only never creates a
+// release object.)
+if (CHANNEL_ONLY && SKIP_GITEA) {
+  console.error('*** --channel-only and --skip-gitea are contradictory: --channel-only exists to ***')
+  console.error('*** publish the Gitea update channel. To republish just the channel, use       ***')
+  console.error('*** --channel-only alone; to skip Gitea entirely, drop --channel-only.        ***')
+  process.exit(1)
+}
 
 /** Strip one pair of matching quotes. A .env quotes its values for the shell
     that would source it, so the quotes are syntax, not part of the token. */

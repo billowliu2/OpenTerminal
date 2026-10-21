@@ -204,11 +204,19 @@ function coerceRule(value: unknown, index: number, warnings: Warnings): Highligh
  * Preset patterns shipped by earlier versions, keyed by rule id. A built-in rule
  * whose pattern is still one of these was never edited by the user, so the
  * load-time refresh below may swap in the current preset for it.
+ *
+ * MAINTENANCE RULE: whenever a built-in preset's pattern changes, the pattern it
+ * replaces MUST be appended here in the same change — an unregistered old
+ * pattern means every install that shipped it keeps the stale pattern forever
+ * (the refresh only upgrades patterns it recognizes). The entries below are the
+ * complete set of historically changed presets, extracted from git history.
  */
 const LEGACY_BUILTIN_PATTERNS: Record<string, string[]> = {
   perm: ['^[-dlbcps][rwxstST-]{9}'],
   okstate: ['\\b(SUCCESS|PASS|OK|DONE|PASSED)\\b'],
-  badstate: ['\\b(FAILED|ERROR|FAIL|FATAL|WARN|WARNING|DENIED)\\b']
+  badstate: ['\\b(FAILED|ERROR|FAIL|FATAL|WARN|WARNING|DENIED)\\b'],
+  // v0.x preset, widened in 237265e (ftp/www alternation)
+  url: ['https?://[^\\s]+']
 }
 
 /** Built-in ids of the preset set as it stood before `warnstate`/`danger` existed. */
