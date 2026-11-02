@@ -1,5 +1,19 @@
 # OpenTerminal Changelog
 
+## v1.0.32 - 2026-11-02
+
+This release fixes the disappearing terminal scrollbar that made scrollback difficult to use, and now downloads update packages in the background by default.
+
+### Fixed: terminal scrollbar and scrollback
+- Adapted to xterm's custom scrollbar, fixing the scrollbar disappearing completely when the pointer leaves the terminal and becoming impossible to drag
+- The scrollbar now stays visible, and its slider follows the active terminal theme for better visibility on dark backgrounds and background images
+- The scrollbar is now 10px wide, taking less space on the right; mouse-wheel scrollback and slider dragging remain available
+
+### Improved: automatic update downloads
+- Download updates automatically is now enabled by default, so new versions are downloaded in the background without repeated manual action
+- Existing users who explicitly disabled automatic downloads keep their choice, and the option remains available under Settings → System
+- Automatic downloads never force the app to quit or install immediately; installation still happens when the user quits the app
+
 ## v1.0.31 - 2026-10-21
 
 A small feature update: the mode buttons on the icon rail gain a double-click gesture, making sidebar toggling one step faster.
