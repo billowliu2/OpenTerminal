@@ -34,11 +34,32 @@
   background: #0d1117;
 }
 
-/* xterm 6.1 draws its own scrollbar; keep it visible and draggable even when
-   the pointer is outside the terminal. Slider colors come from ITheme. */
-.terminal-view .xterm .xterm-scrollable-element > .xterm-invisible {
+/* xterm 6.1 stopped scrolling .xterm-viewport (it kept the class but writes
+   nothing to it any more) and draws its own scrollbar in a sibling node. The
+   leftover `overflow-y: scroll` still makes Chromium paint a native groove
+   with a full-height thumb that cannot scroll anything — it sits under the
+   real bar and reads as "the scrollbar is there but dead". */
+.terminal-view .xterm .xterm-viewport {
+  overflow: hidden;
+}
+
+/* Keep the real slider on screen so it is draggable without hovering first.
+   Only the `xterm-fade` state may be forced visible: xterm adds it from
+   `_hide(true)`, i.e. "there IS something to scroll, but it is currently
+   hidden". The bare `xterm-invisible` class comes from `_hide(false)`, i.e.
+   "nothing to scroll" — alternate-screen TUIs, short output — and forcing
+   that one visible paints a full-height ghost slider that swallows right-edge
+   clicks over a terminal that cannot scroll at all. */
+.terminal-view .xterm .xterm-scrollable-element > .xterm-scrollbar.xterm-vertical.xterm-invisible.xterm-fade {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* xterm always creates a horizontal bar (hard-wired to HIDDEN) and its slider
+   style is a global `.xterm-scrollbar > .xterm-slider` rule, so it would paint
+   a full-width band along the bottom edge. We never scroll horizontally. */
+.terminal-view .xterm .xterm-scrollable-element > .xterm-scrollbar.xterm-horizontal {
+  display: none;
 }
 
 .terminal-view .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {

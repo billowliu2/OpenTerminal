@@ -58,6 +58,15 @@ import {
  * before the symptom.
  */
 const FIT_SLOW_LOG_MS = 200
+
+/**
+ * Width of xterm 6.1's own scrollbar. It also sizes the overview-ruler canvas
+ * and the dead right-edge gutter the slider occupies. FitAddon still reserves a
+ * flat 14px on the right (`options.overviewRuler?.width` no longer exists in
+ * 6.1, so its `|| 14` always wins), so this value never changes the column
+ * count — it only decides how wide the painted bar is inside that gutter.
+ */
+const SCROLLBAR_WIDTH = 8
 import { quoteFontStack } from './fontStack'
 import { subscribePtyData, subscribePtyExit } from './ptyDispatcher'
 import { cdArgument, conemuCwd } from './cwdTracker'
@@ -1142,9 +1151,7 @@ export function TerminalView({
       // WebGL renderer only (the DOM renderer lays out per cell by the browser).
       rescaleOverlappingGlyphs: true,
       scrollback: fontOpts.scrollback,
-      // xterm derives overviewRuler.width from this value, which FitAddon
-      // reads when reserving the terminal's right gutter.
-      scrollbar: { width: 10 },
+      scrollbar: { width: SCROLLBAR_WIDTH },
       cursorBlink: fontOpts.cursorBlink,
       cursorStyle: fontOpts.cursorStyle,
       cursorInactiveStyle: fontOpts.cursorInactiveStyle,

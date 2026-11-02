@@ -79,6 +79,14 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - `scheduleFit`：fit 后 **100ms 去抖**再发 PTY，跳过相同尺寸（防全屏 TUI 中间尺寸反复重绘）；fit 本身 **150ms 节流**（`fitThrottle.ts`，拖动窗口防主线程占满）；**首次 fit 绝不等待**（PTY 以占位尺寸启动，shell 可能已在画），重绑时重置
 - PTY 输出经 `WriteBatcher` 批量进 xterm（~16ms 窗口合并，顺序不变）。两个接线点别漏：`markDead` 先 `flushNow()` 再置 dead 标志（PTY_EXIT 在数据之后、flush 定时器之前到达）；effect cleanup 里 `batcher.dispose()`
 
+## 终端滚动条（xterm 6.1 自绘）
+
+- xterm 6.1 的 `.xterm-viewport` 是**死层**（全 bundle 对它零 scrollTop/scrollHeight 读写），滚动条画在**兄弟节点** `.xterm-scrollable-element > .xterm-scrollbar > .xterm-slider`。xterm.css 里残留的 `overflow-y: scroll` 会让 Chromium 画一条满高、拖不动的原生滑块压在真条下面（白吃右侧宽度：`clientWidth` 比 `offsetWidth` 小），必须 `overflow: hidden`
+- **`xterm-invisible` 有两种语义，别混**：`_hide(true)` → `xterm-invisible xterm-fade` = 「能滚但当前隐藏」；`_hide(false)` → 裸 `xterm-invisible` = 「不能滚」（备用屏 / 内容不满屏）。强制显形只能命中 `.xterm-vertical.xterm-invisible.xterm-fade`；命中裸 `invisible` 会在 alt screen 里点亮满高幽灵条并吞掉右边缘 10px 的点击与焦点
+- 横向条恒为 HIDDEN 但 xterm 照建，且滑块样式是全局 `.xterm-scrollbar > .xterm-slider` 规则 → 会画满宽色带，必须 `display: none`
+- 宽度 `SCROLLBAR_WIDTH=8`（`scrollbar.width`）。**它不影响列数**：FitAddon 读的是 6.1 已删除的顶层 `options.overviewRuler?.width`，`|| 14` 恒命中，右侧 gutter 永远留 14px
+- 备用屏（vim/tmux/kimi Fullscreen 等）`scrollHeight == height`，滚轮与滑块同时失效是**设计使然**（备用屏无 scrollback），不是 bug；鼠标上报模式（`?1000h`）会让 xterm 主动交掉滚轮（`handleMouseWheel=false`），此时只有拖滑块有效
+
 ## 性能与安全边界
 
 - `TerminalView` 用 **5 组 `useShallow` 字段级订阅**（fontOpts/themeOpts/bgOpts/highlightOpts/toolbar + rendererMode），**不要回到整对象订阅**（主进程任何设置写入都会让所有 pane 重写 options + refit）；`useResolvedTheme` 同理 shallow + memo
