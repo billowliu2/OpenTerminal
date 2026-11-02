@@ -426,6 +426,9 @@ console.log('updater events drive the state the renderer reads')
   const userData = mkdtempSync(join(tmpdir(), 'ot-updater-'))
   stub.__setUserData(userData)
   stub.__setPackaged(true)
+  // This section tests the available/downloading state transitions themselves;
+  // the separate auto-download section owns the default-on behavior.
+  writeFileSync(join(userData, 'settings.json'), JSON.stringify({ system: { autoDownloadUpdate: false } }))
 
   // configureAutoUpdater wires the event listeners. It arms NO timer: the startup
   // check and the periodic one belong to applyUpdateSchedule, which

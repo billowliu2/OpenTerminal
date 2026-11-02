@@ -10,7 +10,7 @@ import { ClearOutlined, CopyOutlined, ExportOutlined, FolderOpenOutlined, PauseO
 import { App as AntdApp, Checkbox, Modal } from 'antd'
 import { DEFAULT_LANGUAGE, tFor, type Language } from '@shared/i18n'
 import { getThemeById } from '@shared/theme'
-import { isLightTheme } from '@renderer/theme/semantic'
+import { isLightTheme, semanticVars } from '@renderer/theme/semantic'
 import type { CommandItem } from '@shared/commands'
 import { highlightModeOf, type HighlightRule, type TerminalSettings } from '@shared/settings'
 import { rulesForProfile } from '@shared/highlightProfiles'
@@ -135,10 +135,14 @@ const SEARCH_DECORATIONS: NonNullable<NonNullable<Parameters<SearchAddon['findNe
 // xterm's default overviewRulerBorder (#7f7f7f) renders as a light vertical line
 // on the dark surface once scrollback exists. Force it transparent; search-match
 // marks in the ruler keep their own colors.
-function withChromeColors(colors: ITheme, transparentBackground: boolean): ITheme {
+function withChromeColors(colors: ITheme, transparentBackground: boolean, lightTheme: boolean): ITheme {
+  const semantic = semanticVars({ background: colors.background ?? '', foreground: colors.foreground ?? '' }, lightTheme)
   return {
     ...colors,
     overviewRulerBorder: '#00000000',
+    scrollbarSliderBackground: semantic['--ot-scrollbar'],
+    scrollbarSliderHoverBackground: semantic['--ot-scrollbar-active'],
+    scrollbarSliderActiveBackground: semantic['--ot-scrollbar-active'],
     // While a custom background image is set the xterm surface goes fully
     // transparent so the image layer behind the host is what shows through.
     ...(transparentBackground ? { background: '#00000000' } : {})
@@ -1138,10 +1142,13 @@ export function TerminalView({
       // WebGL renderer only (the DOM renderer lays out per cell by the browser).
       rescaleOverlappingGlyphs: true,
       scrollback: fontOpts.scrollback,
+      // xterm derives overviewRuler.width from this value, which FitAddon
+      // reads when reserving the terminal's right gutter.
+      scrollbar: { width: 10 },
       cursorBlink: fontOpts.cursorBlink,
       cursorStyle: fontOpts.cursorStyle,
       cursorInactiveStyle: fontOpts.cursorInactiveStyle,
-      theme: withChromeColors(themeColors as ITheme, bgOpts.image !== ''),
+      theme: withChromeColors(themeColors as ITheme, bgOpts.image !== '', lightTheme),
       allowProposedApi: true,
       allowTransparency: true,
       // Light themes ship WCAG-compliant palettes, but apps still emit
@@ -1642,7 +1649,7 @@ export function TerminalView({
     if (!term) return
     const colors = getThemeById(themeOpts.themeId, themeOpts.customThemes).colors
     const lightTheme = isLightTheme(colors.background)
-    term.options.theme = withChromeColors(colors as ITheme, bgOpts.image !== '')
+    term.options.theme = withChromeColors(colors as ITheme, bgOpts.image !== '', lightTheme)
     term.options.drawBoldTextInBrightColors = !lightTheme
     term.options.minimumContrastRatio = bgOpts.image || lightTheme ? 4.5 : 1
   }, [themeOpts, bgOpts])

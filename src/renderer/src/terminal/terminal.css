@@ -34,41 +34,15 @@
   background: #0d1117;
 }
 
-/* Slim slate scrollbar for the xterm viewport — the native Windows one renders
-   light track + arrow buttons that look broken on the dark surface. The thumb
-   sits inset inside a wider grab lane (transparent border + padding-box clip)
-   so it reads as a soft slate bar, never a white line. */
-.terminal-view .xterm-viewport {
-  scrollbar-width: thin;
-  scrollbar-color: var(--ot-scrollbar, rgba(125, 145, 170, 0.5)) transparent;
+/* xterm 6.1 draws its own scrollbar; keep it visible and draggable even when
+   the pointer is outside the terminal. Slider colors come from ITheme. */
+.terminal-view .xterm .xterm-scrollable-element > .xterm-invisible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.terminal-view .xterm-viewport::-webkit-scrollbar {
-  width: 12px;
-}
-
-.terminal-view .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.terminal-view .xterm-viewport::-webkit-scrollbar-thumb {
-  background: var(--ot-scrollbar, rgba(125, 145, 170, 0.5));
-  border: 3px solid transparent;
+.terminal-view .xterm .xterm-scrollable-element > .xterm-scrollbar > .xterm-slider {
   border-radius: 6px;
-  background-clip: padding-box;
-  min-height: 28px;
-}
-
-.terminal-view .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: var(--ot-scrollbar-active, rgba(150, 172, 200, 0.7));
-  border: 3px solid transparent;
-  background-clip: padding-box;
-}
-
-.terminal-view .xterm-viewport::-webkit-scrollbar-button,
-.terminal-view .xterm-viewport::-webkit-scrollbar-corner {
-  display: none;
-  background: transparent;
 }
 
 /* ---- search bar ---- */

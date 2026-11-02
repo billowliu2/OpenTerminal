@@ -619,8 +619,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   highlightRules: DEFAULT_HIGHLIGHT_RULES,
   highlightProfiles: [],
   linkRules: [],
-  // Every 4 hours by default: often enough for a terminal app that runs all day,
-  // and the download stays manual (autoDownloadUpdate) until the user opts in.
+  // Every 4 hours by default: often enough for a terminal app that runs all day.
+  // Downloads are automatic; installing still waits for the user to quit.
   system: {
     launchAtLogin: false,
     preventSleep: false,
@@ -628,7 +628,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     closeAction: 'tray',
     autoCheckUpdate: true,
     updateCheckIntervalHours: 4,
-    autoDownloadUpdate: false,
+    autoDownloadUpdate: true,
     restoreSession: true,
     shellIntegration: false,
     language: 'zh-CN',

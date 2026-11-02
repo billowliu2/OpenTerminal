@@ -4,6 +4,7 @@
  * Guards the sanitizer's repair-instead-of-drop behavior:
  *   - closeAction 'ask' survives a save/load round trip (it used to be coerced
  *     to 'tray', which made the "ask every time" option dead in the UI)
+ *   - automatic update downloads default on, while an explicit opt-out survives
  *   - a rule with a repairable shape (priority "5", enabled 1, missing fg
  *     colour) is corrected rather than dropped
  *   - preset rules are carried onto the current pattern set by an upgrade,
@@ -61,6 +62,17 @@ for (const action of ['tray', 'exit', 'ask']) {
 {
   const back = (await roundTrip({ system: { ...store.loadSettings().system, closeAction: 'nonsense' } })).system.closeAction
   ok(back === 'tray', `unknown closeAction falls back to 'tray' (got '${back}')`)
+}
+
+// ---- 1a. automatic update downloads default on, explicit opt-out survives ---
+console.log('[auto-download default]')
+{
+  writeFileSync(join(userData, 'settings.json'), JSON.stringify({ system: {} }), 'utf8')
+  ok(store.loadSettings().system.autoDownloadUpdate === true, 'an older config without the field defaults to on')
+  writeFileSync(join(userData, 'settings.json'), JSON.stringify({ system: { autoDownloadUpdate: false } }), 'utf8')
+  ok(store.loadSettings().system.autoDownloadUpdate === false, 'an explicit opt-out stays off')
+  writeFileSync(join(userData, 'settings.json'), JSON.stringify({ system: { autoDownloadUpdate: true } }), 'utf8')
+  ok(store.loadSettings().system.autoDownloadUpdate === true, 'an explicit opt-in stays on')
 }
 
 // ---- 1b. numeric font settings are clamped on load ---------------------------

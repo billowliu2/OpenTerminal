@@ -467,7 +467,8 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         updateCheckIntervalHours: isUpdateCheckInterval(candidate.updateCheckIntervalHours)
           ? candidate.updateCheckIntervalHours
           : DEFAULT_SYSTEM.updateCheckIntervalHours,
-        autoDownloadUpdate: candidate.autoDownloadUpdate === true,
+        // Default on for new and older configs, but preserve an explicit opt-out.
+        autoDownloadUpdate: candidate.autoDownloadUpdate !== false,
         // Both default on/off as in DEFAULT_SETTINGS; absent means "not chosen".
         restoreSession: candidate.restoreSession !== false,
         diagnosticLog: candidate.diagnosticLog !== false,

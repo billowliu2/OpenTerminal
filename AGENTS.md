@@ -51,7 +51,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - 每次 checkForUpdates 包 **30s 整体超时**；changelog / releases API fetch 带 `AbortSignal.timeout(15s)`
 - 三种来源（启动 5s / 周期定时 / 手动）共用一条路径；周期 `settings.system.updateCheckIntervalHours` 白名单 `{0,4,12,24}` 默认 4，0 = 从不；**所有 timer 必须 `.unref()`**；已有在途检查返回同一 promise（`checkInFlight`）
 - 调度器由 `index.ts` 注入（`settingsStore.setUpdateScheduleApplier`）避免 import 环；applier 幂等，**interval 未变不重建定时器**；启动检查 `startupArmed` 每进程只武装一次
-- `autoUpdater.autoDownload` 恒 false，单一事实源在 settings（`autoDownloadUpdate` 默认关）；下载失败落 error 不重试；**绝不自动退出安装**，`autoInstallOnAppQuit` 只覆盖用户自己退出
+- `autoUpdater.autoDownload` 恒 false，单一事实源在 settings（`autoDownloadUpdate` 默认开；配置缺字段也默认开，显式 false 保留用户关闭选择）；下载失败落 error 不重试；**绝不自动退出安装**，`autoInstallOnAppQuit` 只覆盖用户自己退出
 - 差量下载已禁用（`disableDifferentialDownload`）：GitHub 资产多段 Range 返回 501、通道被 prune 只剩最新 blockmap、NSIS LZMA 固相漂移 —— 注定失败且流量近乎翻倍
 - `actedRelease` 单槽去重（announced/fetchHandled/downloaded/downloadedAnnounced）；`downloaded` 与 `fetchHandled` 必须分开判「已完成」；手动检查无条件清空记录；`update-not-available`/`error` **不清空**；下载失败回滚该次 `fetchHandled`；`update-available` 时该版本已 `downloaded` 必须先 `setState` 等价 downloaded 状态再早退（裸 return 会让「关于」页永远转圈）
 - 通知走托盘气泡：非 win32 / 无 tray / **有可见窗口**都不弹；自动下载时不弹「发现新版本」，手动下载完成也不弹
