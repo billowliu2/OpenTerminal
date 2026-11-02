@@ -1,5 +1,21 @@
 # OpenTerminal Changelog
 
+## v1.0.33 - 2026-11-02
+
+This is a hotfix for 1.0.32: it fixes the scrollbar being visible but unable to scroll, and narrows the bar.
+
+### Fixed: scrollbar visible but not scrolling
+- Removed the native slider that was painting underneath the real one. The newest xterm no longer scrolls the legacy native container, but leftover styling still rendered a full-height, inert thumb — it looked like "the scrollbar is there, but nothing happens"
+- Removed the full-height ghost slider that appeared on the alternate screen (vim, tmux, full-screen TUIs) and with short output. It could not scroll and it blocked clicks, selection and focus along the right edge
+- The horizontal bar no longer shows up as a full-width band across the bottom
+
+### Improved: narrower scrollbar
+- Width reduced from 10px to 8px, taking less space on the right while staying clearly visible and easy to drag
+
+### Notes
+- A full-screen TUI's alternate screen has no scrollback of its own, so not being able to look further back while inside one is normal terminal behaviour; the history is still there once you leave the TUI
+- "Auto-download updates" stays on by default (since 1.0.32): new versions download in the background, but the app never quits or installs on its own
+
 ## v1.0.32 - 2026-11-02
 
 This release fixes the disappearing terminal scrollbar that made scrollback difficult to use, and now downloads update packages in the background by default.
