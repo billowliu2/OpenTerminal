@@ -1,5 +1,19 @@
 # OpenTerminal Changelog
 
+## v1.0.34 - 2026-11-05
+
+This release fixes the corrupted Chinese text that appeared after a terminal had been open for a while.
+
+### Fixed: garbled, clipped and swapped Chinese characters in long-lived terminals
+- Symptoms were Chinese characters in mixed CJK/Latin lines gradually turning clipped or being replaced by other characters, individual Latin letters vanishing inside words, and stray fragments flashing on the far left. The buffer text was always correct (copy and paste returned clean content); only what was painted on screen was wrong
+- The cause was the GPU renderer's glyph atlas: every pane with the same font and theme shares one atlas, and once it filled up, merging atlas pages computed texture positions wrongly, so later draws sampled a neighbouring character. Each CJK character occupies its own atlas slot, so CJK-heavy sessions hit the limit sooner — which is why it only showed up after long use with a lot of text
+- The renderer component was upgraded, fixing three related defects: page merges now require equal page widths, a monotonic version counter makes every pane sharing the atlas rebuild its draw data, and an atlas that would exceed texture capacity is rebuilt wholesale instead of drawn out of bounds
+- Also fixed a hidden performance problem: once the old version entered that state, it rebuilt the entire screen's draw data on every single frame, which caused noticeable stalls with several panes open
+
+### Notes
+- Only the WebGL renderer (the default) is affected. To avoid upgrading, switch "Settings → Terminal → Renderer" to "Compatible DOM" and the display recovers immediately
+- On remote desktops or virtual display adapters the GPU driver may fall back from WebGL, so the symptoms can differ slightly; this fix covers that path as well
+
 ## v1.0.33 - 2026-11-02
 
 This is a hotfix for 1.0.32: it fixes the scrollbar being visible but unable to scroll, and narrows the bar.
