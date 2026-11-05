@@ -71,6 +71,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 
 - 引号包裹在消费点做：`fontStack.ts` 的 `quoteFontStack`（幂等）只在传给 xterm（构造 + 热更）与预览 inline style 时调用，settings 存用户原文；CJK 回退槽位 `settings.terminal.cjkFontFamily` 在 `appendCjk` 里**先拼栈再 quote**（一次切分）；枚举端 `font-list` 的 `disableQuoting: true` 不动
 - `@xterm/addon-unicode11@0.10.0-beta.301` **精确锁定**（peer 恰好接受 6.1.0-beta.304）；**升 xterm 必须同步重配 addon 版本**。加载后 `unicode.activeVersion = '11'`，addon 随 term.dispose 连带清理
+- `@xterm/addon-webgl@0.20.0-beta.300` **精确锁定**（peer 恰好是 `^6.1.0-beta.304`，与核心配对；**不升核心也能只换这个包**）。**不要降回 0.19.x**：0.19 的图集（texture atlas）失效用「消费一次」的 `_requestClearModel`，多 pane 共享图集时只有第一个绘制的 renderer 重建顶点模型，兄弟 pane 会长期采样陈旧纹理坐标 → 跑到图集页数上限（中文字形种类多，开久了必现）后整屏中文缺笔/串字；同时该标志**永不复位**，此后每帧整屏重建模型，直接吃掉主线程（实测 7 pane `long task ~6.4s`）。beta.300 起改为单调 `pageLayoutVersion` + 同宽合并校验 + 凑不齐 4 张同宽页时 `_evictAllPages()` 整体重建 + `clearTexture()` 补 bump。四个修复缺一不可；用「两台同配置终端共享图集，A 灌新字形逼出合并、B 只保持静态内容后对比画布 `readPixels` 哈希」的探针可复现：0.19.0 下 B 的哈希会变（画面花了，缓冲区文本仍是好的），beta.300 下哈希不变
+- 上游仍未修（[xtermjs#6291](https://github.com/xtermjs/xterm.js/issues/6291)）：`BaseRenderLayer` 取图集用硬编码 `2048`、`WebglRenderer` 用 `MAX_TEXTURE_SIZE`，`configEquals` 比这个字段 → **每次 `options.theme` 赋值都会新建并丢弃一张 TextureAtlas**。`TerminalView` 的主题 effect 只在主题/背景图真变时才赋值，别改成每帧/每次 render 都写 `term.options.theme`
 - `rescaleOverlappingGlyphs: true` 仅 WebGL 渲染器有效（把超宽字形压回格内）
 - 字体下拉等宽徽标：离屏 canvas `measureText` 逐字符采样，误判只会漏徽标不会错标
 
