@@ -33,7 +33,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
    - 更新通道上传顺序：exe.blockmap → exe → release-notes.md → **latest.yml 最后**；新版全部传完才清上一版，中途失败不会打空通道
    - `--channel-only` 只补通道；`--skip-github` 跳 GitHub；`--skip-gitea-release` 只跳 release、通道照常；`--skip-gitea` 两者都跳（国内用户收不到，慎用）。**`--channel-only --skip-gitea` 组合直接 exit 1**
    - 防降级 `assertNoDowngrade()` **fail-closed**：通道版本更高 / 网络错误 / 解析失败一律中止发布，只有通道真空（404）才放行；pruneChannel 前那次探测是 best-effort（失败只跳过清理并打日志）
-   - GitHub 走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只对 GitHub 请求用它）；Gitea 通道直连不需要代理
+   - GitHub 走 `HTTPS_PROXY=http://127.0.0.1:7890`（脚本只对 GitHub 请求用它；**7897 已不通**，见下条）；Gitea 通道直连不需要代理
+   - 代理端口会变：先 `netstat -ano | grep LISTENING | grep -E "789[0-9]"` 确认实际监听端口再跑。2026-11 实测 7897 超时、7890 可用；`git push` 要走代理还必须用 URL 级键覆盖全局那条死代理 `http.https://github.com.proxy=socks5://127.0.0.1:12348`：`git -c http.https://github.com.proxy=http://127.0.0.1:7890 push github ...`（通用 `-c http.proxy` 压不过它）
 5. 验证：`curl https://git.codingplan.site/api/packages/admin/generic/openterminal-update/stable/latest.yml` 应返回新版本号
 6. `git tag v<版本号>` 并推两个远程。**tag 必须先推再跑 release.cjs**：否则 Gitea/GitHub 会在默认分支 HEAD 自动建错位 tag，事后要 `git push -f` 修正（v1.0.22 踩过）
 
