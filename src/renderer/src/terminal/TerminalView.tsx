@@ -23,6 +23,7 @@ import { publishHighlightStats, unregisterHighlightStats } from './highlightStat
 import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
 import { WriteBatcher } from './writeBatcher'
+import { wheelFallbackSequence } from './wheelFallback'
 import { refitDelay } from './fitThrottle'
 import {
   emitPerfLog,
@@ -1567,6 +1568,25 @@ export function TerminalView({
     }
     host?.addEventListener('keydown', onPasteKey, true)
 
+    // Full-screen TUIs whose mouse reporting never arrived (Windows ConPTY drops
+    // the child's `\x1b[?1000h…?1003h…?1006h`, see wheelFallback.ts) leave xterm
+    // with no tracking, so it degrades each notch to ESC[A/ESC[B — which such a
+    // TUI either ignores or (worse) feeds to its text editor as history. Page
+    // keys are what it does scroll on, so translate there. Capture phase and
+    // passive:false because xterm's own wheel listener calls preventDefault;
+    // when tracking IS live this returns early and changes nothing.
+    const onWheelFallback = (e: WheelEvent): void => {
+      const seq = wheelFallbackSequence(
+        { alternate: term.buffer.active.type === 'alternate', mouseTrackingMode: term.modes.mouseTrackingMode },
+        e.deltaY
+      )
+      if (seq === undefined) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (!deadRef.current) writeBroadcast(sessionId, seq)
+    }
+    host?.addEventListener('wheel', onWheelFallback, { capture: true, passive: false })
+
     return () => {
       if (carryTimer !== undefined) window.clearTimeout(carryTimer)
       if (ptyTimerRef.current) window.clearTimeout(ptyTimerRef.current)
@@ -1578,6 +1598,7 @@ export function TerminalView({
       // pane re-fetches the session replay, so nothing visible is lost.
       batcher.dispose()
       host?.removeEventListener('keydown', onPasteKey, true)
+      host?.removeEventListener('wheel', onWheelFallback, true)
       for (const unsubscribe of unsubscribes) unsubscribe()
       for (const disposable of disposables) disposable.dispose()
       observer?.disconnect()

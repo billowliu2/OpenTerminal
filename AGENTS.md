@@ -89,6 +89,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - 横向条恒为 HIDDEN 但 xterm 照建，且滑块样式是全局 `.xterm-scrollbar > .xterm-slider` 规则 → 会画满宽色带，必须 `display: none`
 - 宽度 `SCROLLBAR_WIDTH=8`（`scrollbar.width`）。**它不影响列数**：FitAddon 读的是 6.1 已删除的顶层 `options.overviewRuler?.width`，`|| 14` 恒命中，右侧 gutter 永远留 14px
 - 备用屏（vim/tmux/kimi Fullscreen 等）`scrollHeight == height`，滚轮与滑块同时失效是**设计使然**（备用屏无 scrollback），不是 bug；鼠标上报模式（`?1000h`）会让 xterm 主动交掉滚轮（`handleMouseWheel=false`），此时只有拖滑块有效
+- **Windows ConPTY 会吞掉子进程的鼠标上报开启序列**：mes 里 `\x1b[?1000h?1002h?1003h?1006h` 只有在子进程**已进入 raw（VT）输入模式之后**写入才会被转发，之前写入的连同 `?7l` 一起丢弃（`?1049h`/`?1004h` 例外）。kimi-code 的 pi-tui 恰好是「先进备用屏再 setRawMode」，所以它的 Fullscreen 在 OpenTerminal 里拿不到鼠标上报，xterm 只能把滚轮降级成 `ESC[A/B`。换 node-pty 后端（自带 conpty.dll / 退回 winpty）**无效**，三种都丢
+- 兜底在 `src/renderer/src/terminal/wheelFallback.ts`（纯模块，`tests/wheel-fallback.mjs` 守门）：备用屏 + `modes.mouseTrackingMode === 'none'` 时把滚轮翻成 `ESC[5~`/`ESC[6~`（PageUp/PageDown），`TerminalView` 用 capture 阶段 `passive:false` 监听并 `preventDefault`。**鼠标上报真开着的应用（vim/tmux）必须原样放行**，否则会抢掉它们自己的滚轮处理；普通屏（有 scrollback）绝不介入
 
 ## 性能与安全边界
 
