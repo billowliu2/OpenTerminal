@@ -171,16 +171,28 @@ const finishes = (pattern) => {
   // Control: a cheap pattern must complete inside the same timeout, otherwise a
   // killed child would prove nothing about the pattern. It also exercises the
   // child's whole path (startup, .ts import, corpus scan).
-  const started = performance.now()
-  const control = finishes('a')
-  const controlMs = performance.now() - started
+  //
+  // The headroom check uses the FASTEST of a few runs, not one sample: this
+  // number is a floor cost (node startup + type-stripped import + corpus scan),
+  // and a single sample picks up whatever else the machine happened to be doing
+  // (a concurrent test bundle build, an antivirus scan) and reports it as if the
+  // corpus itself had grown. A slow *floor* still fails — three noisy runs
+  // cannot all be fast by accident.
+  const controlRuns = []
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const started = performance.now()
+    const control = finishes('a')
+    controlRuns.push({ ms: performance.now() - started, ...control })
+  }
+  const controlMs = Math.min(...controlRuns.map((run) => run.ms))
+  const spread = controlRuns.map((run) => `${run.ms.toFixed(0)}ms`).join(' / ')
   ok(
-    control.finished,
-    `the control child scans the whole corpus (${controlMs.toFixed(0)}ms of ${CHILD_TIMEOUT_MS}ms, killed=${control.killed})`
+    controlRuns.every((run) => run.finished),
+    `the control child scans the whole corpus (${spread} of ${CHILD_TIMEOUT_MS}ms)`
   )
   ok(
     controlMs < CHILD_TIMEOUT_MS * 0.6,
-    `the control leaves headroom, so a killed child means the pattern, not the machine (${controlMs.toFixed(0)}ms)`
+    `the control leaves headroom, so a killed child means the pattern, not the machine (fastest ${controlMs.toFixed(0)}ms of ${spread})`
   )
 
   // `(a+)+$` is the classic. The rest include the plan's static-heuristic misses
