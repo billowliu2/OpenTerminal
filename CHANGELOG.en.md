@@ -2,17 +2,13 @@
 
 ## v1.0.36 - 2026-11-26
 
-This release fixes “light background, white text” being unreadable in some full-screen terminal programs.
+This release fixes two problems in full-screen terminal programs: the wheel does nothing, and text painted on the program’s own light background is unreadable.
 
 ### Fixed: text unreadable in areas the program paints itself
 - Symptom: in some full-screen programs (the Doubao CLI message card, for one) the text and the background are almost the same colour — on a dark theme that means white text on a light card, and it cannot be read. Switching themes changes how bad it is
 - Cause: such programs paint a light background of their own but keep the terminal’s default text colour. They pick that background from the host terminal’s palette, and Windows’ pseudo console ships with the legacy palette instead of this app’s theme — so the card came out light grey, while a dark theme’s default text is near-white: light text on a light background
 - Fix: the terminal now enforces a minimum contrast between text and background, darkening or lightening the text when the pair falls below 4.5:1. The theme’s own colours are untouched; only combinations that were already unreadable are adjusted (measured on the Doubao card: 1.05:1 → 4.8:1)
 - Tunable: “Settings → Render → Minimum text contrast” (1 = no correction, range 1–21, default 4.5)
-
-## v1.0.35 - 2026-11-26
-
-This release fixes "the wheel does nothing" inside full-screen terminal programs — Pi Agent and similar now scroll back properly.
 
 ### Fixed: the wheel no longer does anything in full-screen programs
 - Symptom: in a full-screen terminal program such as Pi Agent, the mouse wheel does nothing at all — the view never scrolls back to earlier content, as if the wheel were broken
