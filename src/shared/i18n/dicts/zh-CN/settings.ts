@@ -73,6 +73,8 @@ const settings: Record<string, string> = {
   'settings.render.modeLabel': '渲染模式',
   'settings.render.modeHint': '终端单元渲染加速方式，改动将应用到所有终端',
   'settings.render.copyOnSelect': '选中即复制',
+  'settings.render.contrastRatio': '最低文字对比度',
+  'settings.render.contrastRatioDesc': '文字与背景对比度低于该值时自动加深或提亮文字。1 = 不调整。某些全屏程序会自绘浅色背景而沿用终端的默认字色，深色主题下会变成「白字白底」看不见 —— 保持 4.5 可让它们可读',
   'settings.render.copyOnSelectDesc': '鼠标选中文字时自动复制',
   'settings.render.pasteRiskConfirm': '粘贴风险确认',
   'settings.render.pasteRiskConfirmDesc': '多行文本（或超长单行）粘贴前弹出确认；单行直接粘贴',

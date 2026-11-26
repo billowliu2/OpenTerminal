@@ -65,7 +65,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - `theme/semantic.ts` 是**零 import 纯模块**（测试经 Node 原生类型剥离直连，加 import 前先想清楚）；深色分支锁 SEMANTIC 锚点原值，浅色分支 `darkenToRatio` 按 WCAG 派生（正文 ≥4.5:1，语义基色 ≥3:1）
 - **单一命名体系**：`semanticVars()` 的键**就是**最终 CSS 自定义属性名（如 `'--ot-text-muted'`）；加变量时 `OtVarName` 联合与 `semanticVars()` 两个分支三处一起改。键名拼错在读取处是 TS 编译错；`tests/ot-var-names.mjs` 锁「CSS 引用名 = JS 写入名 = global.css 声明名」
 - CSS 一律 `var(--ot-*, 锚点兜底)`，**禁止裸颜色字面量**（`tests/css-theme-vars.mjs` fail-closed 扫描）；**canvas 绘制吃不到 var()**，图表类用 `useResolvedTheme()` + `semanticVars()` 取实色
-- 浅色主题：内置 ANSI 调色板 16 色 + fg 全部 ≥4.5:1（`tests/theme-contrast.mjs` 守门；改色用 `darkenToRatio` 统一算法，不许手挑）；`minimumContrastRatio` 矩阵 = 背景图 4.5｜浅色无图 4.5｜深色无图 1（构造 + 热更两处都改；正确拼写是 `minimumContrastRatio`）；浅色关 `drawBoldTextInBrightColors`；antd 浅色用 `defaultAlgorithm`（没有 lightAlgorithm）
+- 浅色主题：内置 ANSI 调色板 16 色 + fg 全部 ≥4.5:1（`tests/theme-contrast.mjs` 守门；改色用 `darkenToRatio` 统一算法，不许手挑）；`minimumContrastRatio` = 用户设置 `terminal.minimumContrastRatio`（默认 **4.5**，1 = 关闭），背景图场景保底 4.5（xterm 把透明背景当黑）；计算在 `shared/contrastFloor.ts`（纯模块，`tests/contrast-floor.mjs` 守门），构造 + 热更两处都要用（正确拼写是 `minimumContrastRatio`）；浅色关 `drawBoldTextInBrightColors`；antd 浅色用 `defaultAlgorithm`（没有 lightAlgorithm）
+- **为什么要这个下限**：有些全屏程序（如 Doubao CLI）会自绘**浅色背景**（消息卡片）却沿用终端的默认字色 —— 它按「宿主终端的调色板」选卡片色，而 ConPTY 的伪控制台默认是 Windows 传统色（白 = #f0f0f0），node-pty 又够不到伪控制台的调色板（Windows Terminal 是自己配的，所以那边显示深卡片+白字、正常）。深色主题下默认字色接近白 → **白字白底，完全看不见**。xterm 的对比度下限只调整「对比度低于下限」的单元格，所以主题自身的颜色不受影响，被程序画坏的单元格会被自动加深/提亮（实测 Doubao 卡片从 1.05:1 回到 10:1）
 - 背景图三铁律：① `.terminal-view.has-bg-image .terminal-view-dock` 底衬强制 `#0d1117`，不能用 `--chrome-bg`（浅色下会把图洗白）；② MCR 提到 4.5（xterm 把透明背景当黑色亮度，会自动提亮深色前景）；③ 压暗层 `settings.terminal.backgroundImageDim`（0–90，默认 0）纯黑 scrim 靠 DOM 序压图（z-index 同层、位于图后 xterm 前），dim=0 不渲染零成本
 - 标签强调色：`settings.tabAccentColor`（默认 `#3fb950`）经 `--tab-accent` 生效；`--tab-accent-fg` 明暗自适应
 

@@ -75,6 +75,8 @@ const settings: Record<string, string> = {
   'settings.render.modeLabel': 'Renderer',
   'settings.render.modeHint': 'How terminal cells are accelerated; applies to every terminal',
   'settings.render.copyOnSelect': 'Copy on select',
+  'settings.render.contrastRatio': 'Minimum text contrast',
+  'settings.render.contrastRatioDesc': 'Text is darkened or lightened when its contrast against the background falls below this value. 1 = no adjustment. Some full-screen programs paint their own light background and keep the terminal’s default text colour, which on a dark theme means white text on a white card — invisible. Keeping 4.5 makes them readable',
   'settings.render.copyOnSelectDesc': 'Copy text automatically when you select it with the mouse',
   'settings.render.pasteRiskConfirm': 'Confirm risky paste',
   'settings.render.pasteRiskConfirmDesc':

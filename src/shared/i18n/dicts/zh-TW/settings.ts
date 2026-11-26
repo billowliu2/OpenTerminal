@@ -73,6 +73,8 @@ const settings: Record<string, string> = {
   'settings.render.modeLabel': '渲染模式',
   'settings.render.modeHint': '終端儲存格的渲染加速方式，變更將套用到所有終端',
   'settings.render.copyOnSelect': '選取即複製',
+  'settings.render.contrastRatio': '最低文字對比度',
+  'settings.render.contrastRatioDesc': '文字與背景對比度低於該值時自動加深或提亮文字。1 = 不調整。某些全螢幕程式會自繪淺色背景而沿用終端的預設字色，深色主題下會變成「白字白底」看不見 —— 保持 4.5 可讓它們可讀',
   'settings.render.copyOnSelectDesc': '以滑鼠選取文字時自動複製',
   'settings.render.pasteRiskConfirm': '貼上風險確認',
   'settings.render.pasteRiskConfirmDesc': '多行文字（或超長單行）貼上前彈出確認；單行直接貼上',

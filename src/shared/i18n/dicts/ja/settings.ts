@@ -73,6 +73,8 @@ const settings: Record<string, string> = {
   'settings.render.modeLabel': '描画モード',
   'settings.render.modeHint': 'ターミナルセルの描画を高速化する方式。変更はすべてのターミナルに適用されます',
   'settings.render.copyOnSelect': '選択時にコピー',
+  'settings.render.contrastRatio': '文字の最小コントラスト',
+  'settings.render.contrastRatioDesc': '背景とのコントラストがこの値を下回ると、文字を自動的に暗く／明るく補正します。1 = 補正なし。全画面アプリの多くが独自の明るい背景を描きつつターミナルの既定文字色を使うため、ダークテーマでは「白文字に白背景」になり見えません。4.5 のままとけば読めます',
   'settings.render.copyOnSelectDesc': 'マウスで文字を選択すると自動でコピーします',
   'settings.render.pasteRiskConfirm': '貼り付け前の確認',
   'settings.render.pasteRiskConfirmDesc':

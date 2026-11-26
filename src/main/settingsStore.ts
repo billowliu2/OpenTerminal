@@ -2,6 +2,7 @@ import { app, ipcMain, powerSaveBlocker } from 'electron'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { Ipc } from '../shared/ipc'
+import { contrastFloor } from '../shared/contrastFloor'
 import {
   DEFAULT_HIGHLIGHT_RULES,
   DEFAULT_SETTINGS,
@@ -422,6 +423,10 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         DEFAULT_SETTINGS.terminal.letterSpacing
       )
       terminal.scrollback = clampFontSetting('scrollback', terminal.scrollback, DEFAULT_SETTINGS.terminal.scrollback)
+      terminal.minimumContrastRatio = contrastFloor(
+        terminal.minimumContrastRatio,
+        false
+      )
       terminal.cursorStyle = pickCursorStyle(terminal.cursorStyle, DEFAULT_SETTINGS.terminal.cursorStyle)
       terminal.cursorInactiveStyle = pickCursorInactiveStyle(
         terminal.cursorInactiveStyle,

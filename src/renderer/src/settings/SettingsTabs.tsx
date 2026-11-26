@@ -376,6 +376,22 @@ export function RenderSettingsTab(): React.JSX.Element {
         {rendererModes.find((o) => o.value === settings.terminal.rendererMode)?.hint}
       </div>
       <SettingRow
+        label={t('settings.render.contrastRatio')}
+        desc={t('settings.render.contrastRatioDesc')}
+        control={
+          <InputNumber
+            className="settings-input-number"
+            min={1}
+            max={21}
+            step={0.5}
+            value={settings.terminal.minimumContrastRatio}
+            onChange={(v) => {
+              if (v !== null) void updateTerminal({ minimumContrastRatio: v })
+            }}
+          />
+        }
+      />
+      <SettingRow
         label={t('settings.render.copyOnSelect')}
         desc={t('settings.render.copyOnSelectDesc')}
         control={

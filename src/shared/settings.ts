@@ -92,6 +92,15 @@ export interface TerminalSettings {
   cursorInactiveStyle: 'outline' | 'block' | 'bar' | 'underline' | 'none'
   themeId: string
   rendererMode: 'auto' | 'webgl' | 'dom'
+  /**
+   * Minimum contrast ratio the renderer enforces between a cell's text and its
+   * background. 1 turns the enforcement off; 4.5 is the WCAG AA ratio for
+   * body text. The renderer adjusts a cell's foreground colour only when the
+   * pair it would draw falls below the floor, so a dark theme keeps its own
+   * colours and a light-on-light cell (an app that painted its own light
+   * background) becomes readable instead of invisible.
+   */
+  minimumContrastRatio: number
   copyOnSelect: boolean
   /** confirm before pasting multi-line / suspicious text */
   pasteRiskConfirm: boolean
@@ -595,6 +604,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     cursorInactiveStyle: 'outline',
     themeId: 'material-dark',
     rendererMode: 'auto',
+    minimumContrastRatio: 4.5,
     copyOnSelect: false,
     pasteRiskConfirm: true,
     confirmTabClose: false,

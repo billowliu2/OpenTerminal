@@ -24,6 +24,7 @@ import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
 import { WriteBatcher } from './writeBatcher'
 import { wheelFallbackSequence } from './wheelFallback'
+import { contrastFloor } from '@shared/contrastFloor'
 import { refitDelay } from './fitThrottle'
 import {
   emitPerfLog,
@@ -405,7 +406,11 @@ export function TerminalView({
     }))
   )
   const themeOpts = useSettingsStore(
-    useShallow((s) => ({ themeId: s.settings.terminal.themeId, customThemes: s.settings.customThemes }))
+    useShallow((s) => ({
+      themeId: s.settings.terminal.themeId,
+      customThemes: s.settings.customThemes,
+      contrastRatio: s.settings.terminal.minimumContrastRatio
+    }))
   )
   const bgOpts = useSettingsStore(
     useShallow((s) => ({
@@ -1162,14 +1167,15 @@ export function TerminalView({
       // Light themes ship WCAG-compliant palettes, but apps still emit
       // dark-tuned bright/bold colors; bold must NOT jump to the bright set.
       drawBoldTextInBrightColors: !lightTheme,
-      // In image mode the xterm background is transparent (#00000000), which
-      // xterm's contrast cache treats as black; a raised contrast floor lifts
-      // dark foreground colors (light themes) enough to stay readable over
-      // the wallpaper. Without an image light themes keep the 4.5 floor to
-      // rescue low-contrast app output; dark themes keep 1 (off) to honor
-      // theme colors. (Spelled minimumContrastRatio — minContrastRatio is
-      // silently ignored.)
-      minimumContrastRatio: bgOpts.image || lightTheme ? 4.5 : 1,
+      // The contrast floor repairs cells the application itself made
+      // unreadable — it paints its own light background and leaves the
+      // foreground at the terminal's default, so a dark theme would draw
+      // near-white text on a near-white card (see contrastFloor.ts). The
+      // renderer only touches a cell whose pair falls below the floor, so
+      // the theme's own colours are untouched. A background image keeps its
+      // own 4.5 floor (xterm reads a transparent background as black).
+      // (Spelled minimumContrastRatio — minContrastRatio is silently ignored.)
+      minimumContrastRatio: contrastFloor(themeOpts.contrastRatio, bgOpts.image !== ''),
       convertEol: false,
       windowsPty: { backend: 'conpty', buildNumber: 0 }
     })
@@ -1679,7 +1685,7 @@ export function TerminalView({
     const lightTheme = isLightTheme(colors.background)
     term.options.theme = withChromeColors(colors as ITheme, bgOpts.image !== '', lightTheme)
     term.options.drawBoldTextInBrightColors = !lightTheme
-    term.options.minimumContrastRatio = bgOpts.image || lightTheme ? 4.5 : 1
+    term.options.minimumContrastRatio = contrastFloor(themeOpts.contrastRatio, bgOpts.image !== '')
   }, [themeOpts, bgOpts])
 
   // ---- renderer mode changes: keep the instance, swap renderer, refit ----
