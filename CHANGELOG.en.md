@@ -1,5 +1,15 @@
 # OpenTerminal Changelog
 
+## v1.0.35 - 2026-11-26
+
+This release fixes "the wheel does nothing" inside full-screen terminal programs — Pi Agent and similar now scroll back properly.
+
+### Fixed: the wheel no longer does anything in full-screen programs
+- Symptom: in a full-screen terminal program such as Pi Agent, the mouse wheel does nothing at all — the view never scrolls back to earlier content, as if the wheel were broken
+- Cause: such programs ask the terminal to hand mouse events over to them, but Windows' ConPTY drops that request when it arrives before the program has switched to raw input mode. The terminal therefore does not know the program owns the mouse, degrades every wheel notch to a plain up/down arrow key, and the program reads it as cursor movement inside its own input line — so nothing moves
+- Fix: while a program is in full-screen mode and no program has actually taken over the mouse, a wheel notch is translated into a page-up / page-down key, which full-screen programs understand and can scroll with (one screen per notch)
+- Boundaries unchanged: programs that really do own the mouse (vim, tmux, …) keep handling the wheel themselves, and the wheel in a normal terminal (with scrollback to review) is unaffected
+
 ## v1.0.34 - 2026-11-05
 
 This release fixes the corrupted Chinese text that appeared after a terminal had been open for a while.
