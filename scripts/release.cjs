@@ -2,6 +2,10 @@
 // Usage: node scripts/release.cjs <version> [--skip-github] [--skip-gitea-release] [--skip-gitea] [--channel-only]
 //   node scripts/release.cjs 1.0.2
 //   node scripts/release.cjs 1.0.2 --channel-only        # update channel only (repair)
+// Publish order: GitHub release FIRST (it is the primary update channel the
+// app probes first), then the Gitea release and its generic update channel
+// (the domestic fallback). A GitHub failure does not abort the Gitea side —
+// it is reported and the run exits non-zero, so the retry is a re-run.
 // Flags:
 //   --skip-github          skip the GitHub release (assets included)
 //   --skip-gitea-release   skip only the Gitea *release*; the Gitea update
@@ -190,19 +194,30 @@ function compareVersions(a, b) {
   return 0
 }
 
-/** Refuse to publish a version older than the one the channel already serves.
+/** Refuse to publish a version older than the one a feed already serves.
     The guard rails above only compare the *local* artifacts with V, so
     publishing from an old branch passes all three of them, overwrites
     latest.yml with an older version — and pruneChannel() then deletes the newer
     binaries from the live channel, silently rolling every installed client
-    back. Runs before anything is uploaded. */
+    back. Runs before anything is uploaded.
+
+    Both feeds are guarded, each only when this run is going to write it:
+    GitHub is the primary update channel and the Gitea generic package is the
+    domestic fallback, so a downgrade has to be refused on whichever one this
+    publish touches. Same fail-closed rule — a feed that cannot be read aborts
+    the publish, only a genuinely empty feed (404) lets it through. */
 async function assertNoDowngrade() {
-  const live = await channelVersion(CHANNEL_BASE)
-  if (!live) return
-  if (compareVersions(live, V) > 0) {
-    throw new Error(`refusing to publish v${V}: the update channel already serves v${live} — an older version would overwrite latest.yml and delete the newer binaries. Publish from the newer branch, or bump the version.`)
+  const feeds = []
+  if (!SKIP_GITEA) feeds.push(['update channel', () => channelVersion(CHANNEL_BASE)])
+  if (!SKIP_GH) feeds.push(['GitHub release feed', () => githubLatestVersion()])
+  for (const [label, read] of feeds) {
+    const live = await read()
+    if (!live) continue
+    if (compareVersions(live, V) > 0) {
+      throw new Error(`refusing to publish v${V}: the ${label} already serves v${live} — an older version would overwrite its latest.yml/assets and roll the installed clients back. Publish from the newer branch, or bump the version.`)
+    }
+    console.log(`${label} currently serves v${live}`)
   }
-  console.log(`channel currently serves v${live}`)
 }
 
 /** Version the update channel serves right now (read from its latest.yml).
@@ -223,6 +238,34 @@ async function channelVersion(base) {
   const version = (await resp.text()).match(/^version:\s*(\S+)/m)?.[1]
   if (!version) throw new Error('update channel latest.yml carries no version field')
   return version
+}
+
+/** Version the GitHub release feed serves right now (its latest release).
+    Same fail-closed rule as channelVersion(): only an empty feed (404 / no
+    releases) reports "unknown"; a network error, a non-404 failure or a body
+    without a tag all throw. GitHub is the primary update channel, so its feed
+    has to be guarded exactly as strictly as the domestic one — a downgrade
+    there rolls back the majority of users, not the fallback minority. */
+async function githubLatestVersion() {
+  let resp
+  try {
+    resp = await fetch('https://api.github.com/repos/billowliu2/OpenTerminal/releases/latest', {
+      headers: {
+        Authorization: `Bearer ${env.GH_TOKEN}`,
+        'User-Agent': 'OpenTerminal',
+        Accept: 'application/vnd.github+json'
+      },
+      ...(proxyAgent ? { dispatcher: proxyAgent } : {})
+    })
+  } catch (e) {
+    throw new Error(`cannot reach the GitHub release feed (${e.message})`)
+  }
+  // 404 = the repo has no published release yet; a legal empty feed.
+  if (resp.status === 404) return undefined
+  if (!resp.ok) throw new Error(`GitHub release feed returned HTTP ${resp.status}`)
+  const tag = (await resp.json())?.tag_name
+  if (!tag) throw new Error('GitHub release feed carries no tag_name')
+  return String(tag).replace(/^v/, '')
 }
 
 /** Size of a channel file, or -1 when it is not there. */
@@ -456,11 +499,26 @@ async function main() {
     console.warn('*** Domestic users will NOT receive this version — it is only on GitHub, which most ***')
     console.warn('*** of them cannot reach. To skip just the release, use --skip-gitea-release. ***')
   }
+  // GitHub is the primary update channel: publish it FIRST, so a run that dies
+  // halfway leaves the primary feed complete rather than half-written. A
+  // GitHub failure must not cost the domestic channel its release, though — it
+  // is caught here and re-thrown after the Gitea side has run. The non-zero
+  // exit then says "GitHub needs a retry", and a re-run is safe: assets a
+  // previous run already uploaded are skipped.
+  let githubError
+  if (!SKIP_GH) {
+    try {
+      await github()
+    } catch (err) {
+      githubError = err
+      console.error('[release] GitHub publish failed:', err instanceof Error ? err.message : String(err))
+    }
+  }
   // --skip-gitea-release: the release object already exists (or is not wanted),
   // but the channel still has to be fed — that is the whole update path at home.
   if (!SKIP_GITEA && !SKIP_GITEA_RELEASE) await gitea()
   if (!SKIP_GITEA) await giteaChannel()
-  if (!SKIP_GH) await github()
+  if (githubError) throw githubError
   console.log('done')
 }
 main().catch((e) => { console.error(e); process.exit(1) })

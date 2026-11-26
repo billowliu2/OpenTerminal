@@ -57,6 +57,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - `actedRelease` 单槽去重（announced/fetchHandled/downloaded/downloadedAnnounced）；`downloaded` 与 `fetchHandled` 必须分开判「已完成」；手动检查无条件清空记录；`update-not-available`/`error` **不清空**；下载失败回滚该次 `fetchHandled`；`update-available` 时该版本已 `downloaded` 必须先 `setState` 等价 downloaded 状态再早退（裸 return 会让「关于」页永远转圈）
 - 通知走托盘气泡：非 win32 / 无 tray / **有可见窗口**都不弹；自动下载时不弹「发现新版本」，手动下载完成也不弹
 - 只走 NSIS exe（1.0.22 起无 MSI）；更新日志从通道 `release-notes.md` 读（直连 session），回退 releases API
+- **渠道方针（2026-11-26 起）：GitHub 为主，Gitea 通道为国内兜底**。检查侧已是 GitHub 优先（见上）；发布侧 `scripts/release.cjs` 也改成 **先发 GitHub release、再发 Gitea release + 通道** —— 主通道先落地，中途挂掉时主通道是完整的。**GitHub 失败不许连累 Gitea**：错误先捕获，Gitea 照发，最后再抛（退出码非零 = 需要重跑；重跑安全，已传资产会跳过）。降级护栏 `assertNoDowngrade()` 两侧都查：GitHub 的 `releases/latest` 与 Gitea 通道 `latest.yml`，各只在本轮真要写它时才查，仍然 fail-closed（读不到就中止，只有真空 404 放行）
 
 ## 主题机制
 
