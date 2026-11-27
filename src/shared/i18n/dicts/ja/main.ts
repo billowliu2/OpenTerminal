@@ -21,6 +21,7 @@ const main: Record<string, string> = {
   'main.updater.notifyAvailableContent': 'OpenTerminal v{version} が利用可能です',
   'main.updater.notifyDownloadedTitle': 'アップデートをダウンロードしました',
   'main.updater.notifyDownloadedContent': 'v{version} をダウンロードしました — 終了時にインストールされます',
+  'main.updater.downloadStalled': 'ダウンロードが停滞してキャンセルされました。更新を確認して再試行してください。',
 
   'main.ssh.connectTimeout': '接続がタイムアウトしました ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'ホスト鍵のフィンガープリントを保存できませんでした: {detail}',
@@ -68,6 +69,7 @@ const main: Record<string, string> = {
   'main.sysinfo.pollTimeout': '監視コマンドがタイムアウトしました',
   'main.sysinfo.parseFailed': '解析に失敗しました: {message}',
   'main.pty.serviceNotReady': 'SSH セッションサービスが未初期化です',
+  'main.pty.tooManyPendingOpens': '同時に確立する SSH 接続が多すぎます。しばらくしてからやり直してください',
   'main.pty.missingConnectionId': 'SSH セッションに connectionId がありません',
   'main.log.tuiOmitted': '全画面 (TUI) 出力を省略しました'
 }

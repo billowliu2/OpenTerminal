@@ -21,6 +21,7 @@ const main: Record<string, string> = {
   'main.updater.notifyAvailableContent': 'OpenTerminal v{version} is available',
   'main.updater.notifyDownloadedTitle': 'Update downloaded',
   'main.updater.notifyDownloadedContent': 'v{version} downloaded — it installs when you quit the app',
+  'main.updater.downloadStalled': 'The download stalled and was cancelled. Check for updates again to retry.',
 
   'main.ssh.connectTimeout': 'Connection timed out ({host}:{port})',
   'main.ssh.saveFingerprintFailed': 'Failed to save the host fingerprint: {detail}',
@@ -68,6 +69,7 @@ const main: Record<string, string> = {
   'main.sysinfo.pollTimeout': 'Monitoring command timed out',
   'main.sysinfo.parseFailed': 'Parse failed: {message}',
   'main.pty.serviceNotReady': 'SSH session service is not initialised yet',
+  'main.pty.tooManyPendingOpens': 'Too many SSH connections are being established at once — try again shortly',
   'main.pty.missingConnectionId': 'SSH session is missing its connectionId',
   'main.log.tuiOmitted': 'full-screen (TUI) output omitted'
 }

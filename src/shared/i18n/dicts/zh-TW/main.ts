@@ -21,6 +21,7 @@ const main: Record<string, string> = {
   'main.updater.notifyAvailableContent': 'OpenTerminal v{version} 已可用',
   'main.updater.notifyDownloadedTitle': '更新已下載',
   'main.updater.notifyDownloadedContent': 'v{version} 已下載完成，結束應用程式時將自動安裝',
+  'main.updater.downloadStalled': '下載停滯，已取消。請重新檢查更新後重試。',
 
   'main.ssh.connectTimeout': '連線逾時 ({host}:{port})',
   'main.ssh.saveFingerprintFailed': '儲存主機指紋失敗: {detail}',
@@ -68,6 +69,7 @@ const main: Record<string, string> = {
   'main.sysinfo.pollTimeout': '監控命令回應逾時',
   'main.sysinfo.parseFailed': '解析失敗: {message}',
   'main.pty.serviceNotReady': 'SSH 工作階段服務尚未初始化',
+  'main.pty.tooManyPendingOpens': '同時建立的 SSH 連線過多，請稍後重試',
   'main.pty.missingConnectionId': 'SSH 工作階段缺少 connectionId',
   'main.log.tuiOmitted': '全螢幕介面(TUI)輸出已省略'
 }
