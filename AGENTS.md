@@ -6,7 +6,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 
 - 开发：`npm run dev`（主进程改动不热重建，需重启）。dev 实例用独立 `%APPDATA%\OpenTerminal-dev` + 独立单实例锁，可与正式版并存，测试数据不进真实配置
 - 类型检查：`npm run typecheck`；渲染层单独：`npx tsc --noEmit -p tsconfig.web.json`
-- 测试：`npm test`（pretest 先 typecheck → `tests/build-bundles.cjs` 重建 → 36 个离线测试，清单见 `package.json` 的 `test` 脚本）。渲染层纯函数测试用 Node 22.18+ 原生类型剥离直连 `.ts` 源文件，Node 20/22.17 以下报 `ERR_UNKNOWN_FILE_EXTENSION`；真实服务器测试需 `JD_*` 凭据，不在列
+- 测试：`npm test`（pretest 先 typecheck → `tests/build-bundles.cjs` 重建 → **43** 个离线测试，测试链共 **44** 步，第 1 步 bundle 重建不计入测试数；清单见 `package.json` 的 `test` 脚本）。渲染层纯函数测试用 Node 22.18+ 原生类型剥离直连 `.ts` 源文件，Node 20/22.17 以下报 `ERR_UNKNOWN_FILE_EXTENSION`；真实服务器测试需 `JD_*` 凭据，不在列
 - 依赖分类：**只有 `src/main/`/`src/preload/` 实际 import 的包才能进 `dependencies`**；纯渲染层依赖一律 devDependencies（Vite 全量打包进 out/renderer，`externalizeDepsPlugin` 不作用渲染层）
 - 打包：`npm run dist`（predist = verify-deps → npm test → build；build 后跑 `tests/worker-artifact.mjs` 防 `?nodeWorker` 产物静默丢失；末尾 `npm install --package-lock-only` 对齐 lockfile 根版本，**发布提交必须带 package-lock.json**）。CI（`.github/workflows/ci.yml`，windows-latest + Node 22）只验证不打包不发布
 - 国内镜像：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/ npm run dist`
@@ -55,6 +55,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - `autoUpdater.autoDownload` 恒 false，单一事实源在 settings（`autoDownloadUpdate` 默认开；配置缺字段也默认开，显式 false 保留用户关闭选择）；下载失败落 error 不重试；**绝不自动退出安装**，`autoInstallOnAppQuit` 只覆盖用户自己退出
 - 差量下载已禁用（`disableDifferentialDownload`）：GitHub 资产多段 Range 返回 501、通道被 prune 只剩最新 blockmap、NSIS LZMA 固相漂移 —— 注定失败且流量近乎翻倍
 - `actedRelease` 单槽去重（announced/fetchHandled/downloaded/downloadedAnnounced）；`downloaded` 与 `fetchHandled` 必须分开判「已完成」；手动检查无条件清空记录；`update-not-available`/`error` **不清空**；下载失败回滚该次 `fetchHandled`；`update-available` 时该版本已 `downloaded` 必须先 `setState` 等价 downloaded 状态再早退（裸 return 会让「关于」页永远转圈）
+- **下载停顿检测**：超过 `budgets.stall`（120s）无 `download-progress` 即判停滞 → 用自建的 `CancellationToken` **真取消** `downloadUpdate(token)`（只清应用层 `downloadInFlight` 没用：electron-updater 内部还有自己的 `downloadPromise`，重试会拿回同一个卡死的 promise）；取消后回滚该版本 `fetchHandled` + 落 `error` 态（electron-updater 对 `CancellationError` **不派发** `error` 事件，文案必须自己写）+ 下一轮周期才重试。`builder-util-runtime`（`CancellationToken`/`CancellationError`）是 electron-updater 的同版本传递依赖，现已提为**显式 `dependencies`**（主进程真实 import）
+- **下载世代号**：`download-progress`/`update-downloaded` 是全局监听、不带归属，旧下载的迟到事件会污染新下载。`downloadGeneration` 每次下载自增，`activeGeneration`/`claimingVersion` 标当前尝试；进度只给「当前在途」着色，`update-downloaded` 另加版本匹配。**`downloadGenerationRelease(gen)` 必须带世代号、只在 `gen === downloadGeneration` 时清理** —— 旧 attempt 的 `finally` 可能晚于新 attempt 订阅，无条件清理会误伤新一代（新下载进度被丢弃 + 旧事件重新漏进来）
 - 通知走托盘气泡：非 win32 / 无 tray / **有可见窗口**都不弹；自动下载时不弹「发现新版本」，手动下载完成也不弹
 - 只走 NSIS exe（1.0.22 起无 MSI）；更新日志从通道 `release-notes.md` 读（直连 session），回退 releases API
 - **渠道方针（2026-11-26 起）：GitHub 为主，Gitea 通道为国内兜底**。检查侧已是 GitHub 优先（见上）；发布侧 `scripts/release.cjs` 也改成 **先发 GitHub release、再发 Gitea release + 通道** —— 主通道先落地，中途挂掉时主通道是完整的。**GitHub 失败不许连累 Gitea**：错误先捕获，Gitea 照发，最后再抛（退出码非零 = 需要重跑；重跑安全，已传资产会跳过）。降级护栏 `assertNoDowngrade()` 两侧都查：GitHub 的 `releases/latest` 与 Gitea 通道 `latest.yml`，各只在本轮真要写它时才查，仍然 fail-closed（读不到就中止，只有真空 404 放行）
@@ -69,6 +71,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - **为什么要这个下限**：有些全屏程序（如 Doubao CLI）会自绘**浅色背景**（消息卡片）却沿用终端的默认字色 —— 它按「宿主终端的调色板」选卡片色，而 ConPTY 的伪控制台默认是 Windows 传统色（白 = #f0f0f0），node-pty 又够不到伪控制台的调色板（Windows Terminal 是自己配的，所以那边显示深卡片+白字、正常）。深色主题下默认字色接近白 → **白字白底，完全看不见**。xterm 的对比度下限只调整「对比度低于下限」的单元格，所以主题自身的颜色不受影响，被程序画坏的单元格会被自动加深/提亮（实测 Doubao 卡片从 1.05:1 回到 10:1）
 - 背景图三铁律：① `.terminal-view.has-bg-image .terminal-view-dock` 底衬强制 `#0d1117`，不能用 `--chrome-bg`（浅色下会把图洗白）；② MCR 提到 4.5（xterm 把透明背景当黑色亮度，会自动提亮深色前景）；③ 压暗层 `settings.terminal.backgroundImageDim`（0–90，默认 0）纯黑 scrim 靠 DOM 序压图（z-index 同层、位于图后 xterm 前），dim=0 不渲染零成本
 - 标签强调色：`settings.tabAccentColor`（默认 `#3fb950`）经 `--tab-accent` 生效；`--tab-accent-fg` 明暗自适应
+- antd 的 `colorPrimary` 由应用固定为 `semantic.ts` 的 `PRIMARY_COLOR`；画在主色填充上的标签色用 `onPrimaryLabel()` 对**填充色**推导，不要用对 chrome 背景推导的 `--tab-accent-fg`（后者在主色蓝上实测 1.5–1.9:1）
 
 ## 终端字体
 
@@ -82,7 +85,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 ## 终端尺寸同步
 
 - `scheduleFit`：fit 后 **100ms 去抖**再发 PTY，跳过相同尺寸（防全屏 TUI 中间尺寸反复重绘）；fit 本身 **150ms 节流**（`fitThrottle.ts`，拖动窗口防主线程占满）；**首次 fit 绝不等待**（PTY 以占位尺寸启动，shell 可能已在画），重绑时重置
-- PTY 输出经 `WriteBatcher` 批量进 xterm（~16ms 窗口合并，顺序不变）。两个接线点别漏：`markDead` 先 `flushNow()` 再置 dead 标志（PTY_EXIT 在数据之后、flush 定时器之前到达）；effect cleanup 里 `batcher.dispose()`
+- PTY 输出经 `WriteBatcher` 批量进 xterm（~16ms 窗口合并，顺序不变）。两个接线点别漏：`markDead` 先 `flushNow()` 再置 dead 标志（PTY_EXIT 在数据之后、flush 定时器之前到达）；effect cleanup 里 `batcher.dispose()`。高亮流的 carry 也要一起释放（`flushPendingOutput`），否则会话最后一行输出会随会话一起消失
 
 ## 终端滚动条（xterm 6.1 自绘）
 
@@ -104,6 +107,7 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - **本地路径准入**（`localPathGrants.ts`）：SFTP/ZMODEM 的本地路径必须来自系统对话框授权（进程级内存注册表 + realpath/stat 双重校验）；新增「渲染层构造本地路径传主进程」的调用点必须过这道门，别绕
 - `keyPath`（SSH 私钥）：realpath → stat → 普通文件且 ≤1MB 才读；`src/shared/reservedAccelerators.ts` 是设置录制器与主进程 `applyGlobalShortcut` **共用**的保留键表，加新全局快捷键两边自动一致
 - SFTP 操作有 per-op 超时（`bounded()`：元数据 30s / 传输块 60s / open 10s），超时驱逐半死通道并重试一次；`setSftpTimeouts`/`setUpdateTimeouts` 是测试缝，生产无调用者，别接设置项
+- `src/main/sftp.ts` 的 3 处超时计时器**刻意不 `unref()`**：离线测试进程依赖它们吊住事件循环，补上 `unref()` 会让 `tests/sftp-timeout.mjs` 以退出码 **13（EXIT=13）** 报 `Detected unsettled top-level await` 失败；`src/main/ssh.ts` 两处与 `src/main/updater.ts` 的定时器则照常 `unref()`，别把 SFTP 的例外"顺手补齐"
 - **PTY_EXIT 一次性广播不重放**：晚绑定的窗格靠 `sessionState()` + `sessionExits`（FIFO 上限 512）补偿；SSH 飞行中连接登记 `pendingOpens`，`killPtysByOwner`/`killAllPtys` 靠它中止握手
 - zmodem 接收路径背压靠 `pauseSource`/`resumeSource` 钩子（fs WriteStream 缓冲无上限）；`touchActivity` 只在写入被接受或 drain 恢复时计数，否则 stall 看门狗会把「堆在缓冲里」当进展；删除路径 ENOENT 一律视为已删成功（重跑必须容忍「目标已消失」）
 - `webPreferences` 显式写死 `contextIsolation: true / nodeIntegration: false / webSecurity: true`
@@ -135,8 +139,8 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - 词边界是全部难点（改关键词跑 `node tests/.hl-rules.cjs`）：状态符号（✓✔✅✗❌⚠）不进 `\b` 组（`\b✓` 永不成立，写第二分支 + `\uFE0F?`）；状态类 priority 在 `shellkw` 之前（`done`/`if` 归属）；delop/createop 只列操作动词，shell 关键字仍归 shellkw；词干自带词尾（`DELET(?:E|ED|ES|ING|ION)`），不成词词干强制词尾；裸 3 位数 / MAC / 短哈希不能单独成规则（须上下文锚点）；lookbehind/lookahead **只圈关键词本身**（圈多了 bands 会读错数字，如 `HTTP/1.1 404` 只该着色 `404`）
 - bands 数值分级：匹配里**第一个数字**定色，最后一个 `min <= 值` 胜出；`percent` priority 22 必须早于 `numbers`(25)
 - 锚定：规则作用于转义序列之间的 text run，默认无 m flag，裸 `^` 锚 run 起点非行首；行首锚定用 `(?<=^|\s)` 或 `lineAnchor: true`（编译成 gm/gim）
-- **SGR 回放四护栏**（全踩过坑，别拆）：① reset 判定必须解析参数（`ESC[0;32m` = 复位+设色，只认两种规范写法会让累积器逐行膨胀直至恢复永久失效）；② 回放闸门按序列条数 `MAX_REPLAY_SEQUENCES=3`，不是字节数（同义写法长度差 4 倍；`MAX_RESTORE_LEN=256` 只是累积器内存上限）；③ 恢复串只插在可见间隙（`MIN_GAP_FOR_RESTORE=3` 个可见字符）——每 span 都恢复会让密集真彩 TUI 膨胀 4.3x、渲染线程卡 18s，现在 3.05x；④ 改以上任何参数必须重跑 `tests/hl-rules.mjs` 的 `[restore cost budget]` 段（断言 < 3.2x）
-- `ESCAPE_RE` 的 CSI 参数类必须含私有前缀与中间字节（`[0-9;:?<>=]*[ -/]*[A-Za-z]`）：漏了 `<>=` 会让 `ESC[>4;1m`（modifyOtherKeys）/`ESC[<0;1;2M`（SGR 鼠标）这类序列所在行之后的关键词全部失高亮（vim/tmux 正好发这些）
+- **SGR 回放四护栏**（全踩过坑，别拆）：① reset 判定必须解析参数（`ESC[0;32m` = 复位+设色，只认两种规范写法会让累积器逐行膨胀直至恢复永久失效）；② 回放闸门按序列条数 `MAX_REPLAY_SEQUENCES=3`，不是字节数（同义写法长度差 4 倍；`MAX_RESTORE_LEN=256` 只是累积器内存上限），闸门有边界用例（3 放行 / 4 丢弃），改 `MAX_REPLAY_SEQUENCES` 必须让 `tests/hl-rules.mjs` 变红；③ 恢复串只插在可见间隙（`MIN_GAP_FOR_RESTORE=3` 个可见字符）——每 span 都恢复会让密集真彩 TUI 膨胀 4.3x、渲染线程卡 18s，现在 3.05x；④ 改以上任何参数必须重跑 `tests/hl-rules.mjs` 的 `[restore cost budget]` 段（断言 < 3.2x）
+- `ESCAPE_RE` 的 CSI 参数类必须含私有前缀与中间字节（`[0-9;:?<>=]*[ -/]*[@-~]`），且 final 字节类是 `[@-~]`（ECMA-48 的 CSI final 在 0x40–0x7E，**不限于字母**，`~ @ { | } [ \ ] ^ _` 都能结尾）：漏了 `<>=` 会让 `ESC[>4;1m`（modifyOtherKeys）/`ESC[<0;1;2M`（SGR 鼠标）这类序列所在行之后的关键词全部失高亮；漏了 final 到 `@`/`~` 会让 `ESC[1~`/`ESC[200~`/`ESC[2@`（键上报 / 粘贴 / 插入）同一行之后的关键词失高亮（vim/tmux 正好发这些）
 - 超长行降级：run 有 >4KB 行时按 `\n` 逐行，超长行原样透传不上色（该 run 放弃跨行匹配）；不变式：**任何 >4KB 的行不进用户正则**。性能护栏：`MAX_CHUNK` 512KB 整块跳过 / `MAX_LINE_LEN` 4KB / `MAX_PER_RULE` 300；实测全预设 4–9ms/块，最贵的是 http/percent/danger
 - **ReDoS 三层别混**：① `isReDoSProne` 只是编辑器即时提示（有漏判误判，不当执行依据，文案只能说「通过当前探针」）；② 执行闸门在 `compileRules`/`compileLinkRules`——内置预设按 pattern+flags 精确命中白名单放行，自定义规则须 `RuleValidation.state='passed'` 且 **pattern/flags/probeVersion/runtime 四项全匹配**，pending/quarantined/失配一律跳过，编辑器预览与链接 provider 同一闸门无旁路；③ 动态校验 `redosValidator` + `redosProbeWorker`（`?nodeWorker` 产物）：24 条固定探针 ≤4KB、500ms 硬超时由主控计时并 terminate → quarantined，Worker 崩溃重试一次回 pending，不可用也回 pending；并发上限 2、同 key 去重、空闲回收；默认纯预设安装不启动 Worker。runtime 指纹由 `ruleRuntime` 安装、renderer 经 `AppInfo.runtimeKey` 对齐；validation 是规则内部元数据——导入的裁决不作数，导出剥离
 - 模式三档 `highlightMode` all/basic/off（读取一律过 `highlightModeOf` 兜底）：basic 只跑 `basic: true` 的规则（预设 5 条：danger/secret/okstate/warnstate/badstate，用户可给自建规则打标；`basic` 集合必须是 safety+status 子集，有测试守）；off = **清空规则集**而不是绕过 `HighlightStream`（stream 会 hold 尾部文本，绕过丢字节）

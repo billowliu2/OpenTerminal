@@ -63,21 +63,21 @@
 
 ## 发布流程（下一版本照抄）
 
-1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）。`predist` 会先跑 `npm test`（typecheck + 19 个离线测试）再 `npm install --package-lock-only` 同步锁文件根版本号，**release 提交要包含 package-lock.json**（否则根版本会漂移，v1.0.15–1.0.19 曾漂了 5 个版本）
-2. `node scripts/release.cjs <版本号>`（**不带 skip 参数**，Gitea 与 GitHub 一起发）：脚本自己建 Gitea release（exe 资产）→ 传更新通道 `exe.blockmap → exe → release-notes.md → latest.yml`（**latest.yml 最后**）；再把 exe/exe.blockmap/latest.yml 作为 release 资产同步发到 GitHub（electron-updater 标准 GitHub provider 直接吃 release 资产）。不再先删旧版，latest.yml 生效后才清掉上一版 exe/blockmap。上传前 `assertNoDowngrade()` 会读通道 latest.yml，线上版本更高时直接拒绝——**该探测已 fail-closed**：网络错误 / 非 404 失败 / 解析不出 version 一律抛错中止发布，只有通道真空（404）才放行；通道探测在 `pruneChannel` 前那次是 best-effort（失败只跳过清理并打日志，不中断已生效的发布）
+1. `package.json` version 升位 + 写 `RELEASE_NOTES.md`（可选 `.zh-TW/.en/.ja` 译文）→ `node scripts/sync-changelog.cjs`（**在 dist 之前**：更新日志会打进安装包）→ `npm run dist`（env：ELECTRON_MIRROR + ELECTRON_BUILDER_BINARIES_MIRROR=npmmirror；dist:dir 后先删 release/win-unpacked 避免占用 EPERM）。`predist` 会先跑 `npm test`（typecheck + 43 个离线测试）再 `npm install --package-lock-only` 同步锁文件根版本号，**release 提交要包含 package-lock.json**（否则根版本会漂移，v1.0.15–1.0.19 曾漂了 5 个版本）
+2. `node scripts/release.cjs <版本号>`（**不带 skip 参数**，Gitea 与 GitHub 一起发）：**先发 GitHub release**（主更新通道先落地），再发 Gitea release + 更新通道——GitHub 失败会被捕获，**不影响 Gitea 照发**，最后才以非零退出码抛出（需要重跑；重跑安全，已传资产会跳过）。上传前 `assertNoDowngrade()` 会读**本次要写的那些源**的版本，线上版本更高时直接拒绝——**该探测已 fail-closed**：网络错误 / 非 404 失败 / 解析不出 version 一律抛错中止发布，只有通道真空（404）才放行；通道探测在 `pruneChannel` 前那次是 best-effort（失败只跳过清理并打日志，不中断已生效的发布）。**`--channel-only` 只查国内通道**（它不写 GitHub，探测 GitHub 只会让通道修复被 GitHub 故障拖死）
 3. 通道传坏了只补通道：`node scripts/release.cjs <版本号> --channel-only`（不建 release、不发 GitHub；同一版本可重复运行：release 复用、已传资产跳过）
 4. 跳过部分目标的 flag：`--skip-github` 只跳 GitHub release；`--skip-gitea-release` 只跳 Gitea release，**更新通道照常上传**；`--skip-gitea` 两者都跳（打印醒目警告——国内用户将收不到该版本，只想跳 release 请用 `--skip-gitea-release`）
 5. 校验：无 token `curl .../generic/openterminal-update/stable/latest.yml` 应 200 且 version 正确
 6. `git tag vX.Y.Z && git push origin main vX.Y.Z`（GitHub 镜像推代码/tag + release 资产，与 Gitea 保持同步）
 
-> GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7897`（脚本只把它用于 GitHub）；国内通道全程直连，不设代理
+> GitHub 请求走 `HTTPS_PROXY=http://127.0.0.1:7890`（脚本只把它用于 GitHub）；国内通道全程直连，不设代理。**代理端口会变**：先 `netstat -ano | grep LISTENING | grep -E "789[0-9]"` 确认实际监听端口再跑
 
 ## 测试（全部通过，改动后必跑）
 
 ```bash
 npm run typecheck   # tsconfig.node.json + tsconfig.web.json
 npm run build
-npm test            # = pretest(typecheck) + node tests/build-bundles.cjs + 下面 19 个测试（依次，全部离线可跑）
+npm test            # = pretest(typecheck) + node tests/build-bundles.cjs + 下面 43 个测试（依次，全部离线可跑）
 node tests/ssh-loopback.mjs
 node tests/commands-store.mjs
 node tests/connections-store.mjs       # SSH 书签 CRUD / 公开-密文切分 / 损坏文件备份

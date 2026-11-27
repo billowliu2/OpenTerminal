@@ -27,7 +27,7 @@
 - [x] 连接配置模型（`shared/connections.ts`）：host/port/username、密码 vs 私钥（keyPath/keyContent）vs Agent、keepalive
 - [x] 凭据加密存储：safeStorage(DPAPI) + `plain:` 兜底；渲染层只见 savedAuth 标志
 - [x] 连接管理器 UI：书签侧栏（分组手风琴）+ 新建/编辑对话框 + 双击连接
-- [x] Host key 校验：known_hosts 固定、首次确认、变更告警、30s 超时拒绝
+- [x] Host key 校验：known_hosts 固定、首次确认、变更告警、120s 超时拒绝
 - [x] 测试：tests/ssh-loopback.mjs（ssh2 回环）+ tests/ssh-session-e2e.mjs（真实会话路由层 e2e）
 - 待解锁后的 GUI 验收：双击书签连接、指纹弹窗交互、断线提示
 - 已知限制：连接中 Modal 不可取消；agent 认证未在本机验证（「SSH 面板不能作分屏参照」一条已失效：`Workspace.tsx` 的 `handleSplit` 已支持 SSH dockview 内按同 session 分屏）
@@ -163,12 +163,10 @@
 - [x] ~~关闭标签页整窗崩溃~~（v0.2.1 修复：xterm IDisposable 对象被当函数调用；并新增 ErrorBoundary 兜底 + 渲染层报错转发主进程日志）
 - [x] ~~首启动空屏~~（v0.2.1：启动自动打开一个终端）
 - [ ] zh-TW 用语统一（i18n 质量专项）：`命令/指令` 全文件混用（panels/ssh/settings/terminal，台湾惯用「指令」）、`口令`→`密碼`（ssh.secret.passphrase）、顺带通读 服务器→伺服器 / 默认→預設 / 网络→網路 / 软件→軟體。需要一次全局连贯的专项，零散改会制造新的不一致
-- [ ] ja 片假名长音符号统一：`フォルダ`(6) / `フォルダー`(7) 混用，二选一全局统一
-- [ ] 周期检查可被高频设置写入推迟（updater：每次 mutateSettings 重排 4h 定时器，字体快捷键连按/ColorPicker 拖动会重置倒计时；改为「仅 interval 值变化时重排」或记录上次触发时间）
-- [ ] 「启动时自动检查」运行中途拨开会在 ~5s 后立即检查（startupArmed 语义应为下次启动生效）
-- [ ] 下载无整体超时：检查有 withTimeout，下载没有——慢滴流可让 downloading 卡死且自动下载不再重试（需设计，不能简单套超时杀死慢速下载）
-- [ ] release.cjs `--channel-only` 与 `--skip-gitea` 组合矛盾（channel-only 先 return，警告永不打印，Gitea 通道仍会上传）
-- [ ] release.cjs 通道重传缺口：exe/blockmap 的 PUT 撞 409 直接 throw（只有 release-notes/latest.yml 有「409→删除→重传」路径），同版本替换资产时必须先手动 DELETE 通道文件
+- [ ] ja 片假名长音符号统一：`フォルダ`(6) / `フォルダー`(7) 混用，二选一全局统一；另 `ja/settings.ts:265,268` 用「端末」而词典其余 40 处用「ターミナル」，一并统一
+- ~~周期检查被设置写入推迟 / 启动检查中途拨开 / `--channel-only --skip-gitea` 组合 / 通道 exe+blockmap 重传缺口~~（均已修，见 `AGENTS.md` 更新机制与发布新版本两节）
+- [x] ~~下载停滞检测~~（已修：120s 无进度时清掉应用层 in-flight 标记）
+- [ ] 下载慢速滴流仍无整体时限（持续有缓慢进度也会一直拖下去，尚未修复）
 - [ ] autoWrap=false 的固定列宽模式（xterm.js 无原生 wrapMode，需自定义列数控制）
 - [ ] 终端标题跟随 OSC 序列（窗格标题显示当前目录/命令）
 - [ ] 内置等宽字体打包（OFL 许可：JetBrains Mono / Fira Code 等）

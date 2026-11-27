@@ -23,7 +23,7 @@ A modern, open-source terminal app: local terminal + SSH remote sessions + split
 - **Performance**: xterm.js WebGL rendering; keyword highlight engine measured at 0.02–0.05ms/KB (4–9ms for 200KB of mixed output); virtualized scrolling for large SFTP directories; debounced split-pane resizing so TUIs don't redraw repeatedly
 - **AI-coding friendly**: optimized for high-frequency TUIs like Kimi Code / Claude Code / Codex; IME candidate window follows the cursor for Chinese input
 - **Works in China**: update checks try GitHub first (following the system proxy), then automatically fall back to a direct-connect domestic channel, with a 30s overall timeout when both are unreachable
-- **Open & auditable**: MIT license; contracts for main/preload/renderer live in `src/shared/`, zero cross-module coupling; 36 offline tests covering storage, lock screen, highlighting, transfers and update fallback
+- **Open & auditable**: MIT license; contracts for main/preload/renderer live in `src/shared/`, zero cross-module coupling; 43 offline tests covering storage, lock screen, highlighting, transfers and update fallback
 
 ## Quick Start
 
@@ -32,7 +32,7 @@ npm install        # skip if already installed
 npm run dev        # development mode (hot reload)
 npm run build      # production build to out/
 npm run typecheck  # full type checking
-npm test           # runs typecheck first, then rebuilds test bundles and runs 36 offline tests (see "Tests")
+npm test           # runs typecheck first, then rebuilds test bundles and runs 43 offline tests (see "Tests")
 ```
 
 > If the Electron binary download fails: `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`
@@ -95,7 +95,7 @@ npm test           # runs typecheck first, then rebuilds test bundles and runs 3
 
 **Tests**
 
-`npm test` first runs `pretest` (= `npm run typecheck`), rebuilds the esbuild bundles, then runs 36 offline tests (no server or credentials needed — see the `test` script in `package.json` and `tests/`), roughly grouped as:
+`npm test` first runs `pretest` (= `npm run typecheck`), rebuilds the esbuild bundles, then runs 43 offline tests (no server or credentials needed — see the `test` script in `package.json` and `tests/`), roughly grouped as:
 
 - **Storage**: command library / SSH bookmarks / settings sanitizing (incl. legacy highlight preset upgrades) / broadcast / known hosts
 - **Lock screen**: password verifier, lock controller (cooldown ladder, persisted recovery, idle trigger), shortcut classifier

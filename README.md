@@ -23,7 +23,7 @@
 - **性能**：xterm.js WebGL 渲染；关键词高亮引擎实测 0.02–0.05ms/KB（200KB 混合输出 4–9ms）；SFTP 大目录虚拟滚动；分屏尺寸去抖同步，TUI 不反复重绘
 - **AI 编程友好**：为 Kimi Code / Claude Code / Codex 等高频刷新 TUI 优化；中文输入法候选窗紧贴光标
 - **国内可用**：更新检查 GitHub 优先（跟随系统代理），失败自动回退国内直连通道，两边都拿不到时 30s 整体超时兜底
-- **开源可审计**：MIT 协议；主/预载/渲染三端契约集中在 `src/shared/`，模块间零横向依赖；36 个离线测试覆盖存储、锁屏、高亮、传输与更新回退
+- **开源可审计**：MIT 协议；主/预载/渲染三端契约集中在 `src/shared/`，模块间零横向依赖；43 个离线测试覆盖存储、锁屏、高亮、传输与更新回退
 
 ## 快速开始
 
@@ -32,7 +32,7 @@ npm install        # 已安装可跳过
 npm run dev        # 开发模式（热更新）
 npm run build      # 生产构建到 out/
 npm run typecheck  # 全量类型检查
-npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 36 个离线测试（详见「测试」）
+npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 43 个离线测试（详见「测试」）
 ```
 
 > Electron 二进制下载失败时：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`
@@ -95,7 +95,7 @@ npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 36 �
 
 **测试**
 
-`npm test` 会先跑 `pretest`（= `npm run typecheck`），再重建 esbuild bundle，最后依次跑 36 个离线测试（无需服务器与凭据，清单见 `package.json` 的 `test` 脚本与 `tests/`），按方向大致分为：
+`npm test` 会先跑 `pretest`（= `npm run typecheck`），再重建 esbuild bundle，最后依次跑 43 个离线测试（无需服务器与凭据，清单见 `package.json` 的 `test` 脚本与 `tests/`），按方向大致分为：
 
 - **存储类**：命令库 / SSH 书签 / 设置清洗（含旧高亮预设升级）/ 广播 / 已知主机
 - **锁屏类**：密码校验器、锁屏控制器（冷却阶梯、落盘恢复、闲置触发）、快捷键分类器
