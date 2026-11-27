@@ -36,6 +36,7 @@ const workspace: Record<string, string> = {
   'workspace.template.deleteConfirm': '删除该模板？',
   'workspace.template.applyFailed': '应用布局模板失败',
   'workspace.template.applyFailedRestored': '应用布局模板失败，已恢复原有布局',
+  'workspace.template.applyFailedNoRestore': '应用布局模板失败，且未能恢复原有布局',
   'workspace.broadcast.toggle': '广播输入',
   'workspace.broadcast.activeTitle': '广播中 ({count} 个目标)',
   'workspace.broadcast.popoverTerminal': '广播输入（终端）',
