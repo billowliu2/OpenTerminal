@@ -20,6 +20,7 @@
 // Every field is optional; missing hooks fall back to a resolving promise so a
 // test only has to configure what it asserts on.
 const { EventEmitter } = require('node:events')
+const { CancellationError } = require('builder-util-runtime')
 
 function ctl() {
   return (globalThis.__otAutoUpdater ??= {})
@@ -58,9 +59,26 @@ class FakeAutoUpdater extends EventEmitter {
     return impl ? impl(ctl()) : Promise.resolve(null)
   }
 
-  downloadUpdate() {
-    const impl = ctl().downloadUpdate
-    return impl ? impl(ctl()) : Promise.resolve([])
+  downloadUpdate(token) {
+    // Keep the token around so a test can assert the app actually cancelled the
+    // transfer it handed to electron-updater (the watchdog calls `token.cancel()`).
+    if (token !== undefined) ctl().lastToken = token
+    if (token === undefined) {
+      const impl = ctl().downloadUpdate
+      return impl ? impl(ctl(), token) : Promise.resolve([])
+    }
+    // The real library settles the in-flight promise when the token is cancelled:
+    // racing the hook against the token's cancel gives a never-settling hook the
+    // same shape (reject with a CancellationError) so the watchdog cancel is
+    // actionable under test — whichever settles first wins, the other is ignored.
+    const base = (() => {
+      const impl = ctl().downloadUpdate
+      return impl ? impl(ctl(), token) : Promise.resolve([])
+    })()
+    return new Promise((resolve, reject) => {
+      token.onCancel(() => reject(new CancellationError()))
+      Promise.resolve(base).then(resolve, reject)
+    })
   }
 
   quitAndInstall(...args) {

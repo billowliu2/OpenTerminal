@@ -1,5 +1,6 @@
 import { app, ipcMain, net, session } from 'electron'
 import { autoUpdater } from 'electron-updater'
+import { CancellationToken, CancellationError } from 'builder-util-runtime'
 import type { SystemSettings, UpdateCheckInterval } from '@shared/settings'
 import { isUpdateCheckInterval } from '@shared/settings'
 import { Ipc, type ReleaseNote, type UpdateState } from '../shared/ipc'
@@ -39,6 +40,8 @@ const GITHUB_PROBE_URL =
  *    silence, so a slow trickling response can hold an attempt open forever.
  *  - `fetch`: changelog / releases-API fetches; a stalled response must not
  *    hang the About tab.
+ *  - `stall`: how long a download may go without a `download-progress` event
+ *    before the watchdog cancels it as stalled.
  *  - `startupDelay`: how long after launch the startup check runs.
  *  - `hour`: what one settings "hour" is worth in milliseconds. The periodic
  *    check multiplies the configured interval (4/12/24) by it, so the harness can
@@ -49,11 +52,16 @@ const budgets = {
   check: 30_000,
   fetch: 15_000,
   startupDelay: 5_000,
-  hour: 3_600_000
+  hour: 3_600_000,
+  stall: 120_000
 }
+
+/** A download that reports no progress for this long is considered stalled. */
+let DOWNLOAD_STALL_MS = 120_000
 
 export function setUpdateTimeouts(patch: Partial<typeof budgets>): void {
   Object.assign(budgets, patch)
+  if (patch.stall !== undefined) DOWNLOAD_STALL_MS = patch.stall
 }
 
 /** Interval used when settings carry no whitelisted value (a hand-built object). */
@@ -215,10 +223,19 @@ function wireEvents(): void {
   // nothing (or fails) must not make the next cycle fetch a release it has
   // already dealt with.
   autoUpdater.on('update-not-available', () => setState({ status: 'latest', version: undefined }))
-  autoUpdater.on('download-progress', (p) =>
+  autoUpdater.on('download-progress', (p) => {
+    // Only a LIVE current attempt may paint progress. A superseded or cancelled
+    // transfer's trailing events must not resurrect `downloading` over an error
+    // or overwrite a newer attempt's percent.
+    if (!downloadGenerationIsLive()) return
     setState({ status: 'downloading', percent: Math.round(p.percent) })
-  )
+  })
   autoUpdater.on('update-downloaded', (info) => {
+    // Stale download's late event — the version it names is being replaced by a
+    // newer attempt. Ignore it wholesale so state, the suppression record and the
+    // balloon all stay tied to the running attempt.
+    if (!isCurrentGeneration()) return
+    if (claimingVersion !== undefined && info.version !== claimingVersion) return
     // Read before setState: `auto` says who started this download, and the state
     // keeps it (the About tab shows the automatic variant for it).
     const wasAuto = state.auto === true
@@ -245,6 +262,78 @@ function wireEvents(): void {
   autoUpdater.on('error', (err) =>
     setState({ status: 'error', error: err instanceof Error ? err.message : String(err) })
   )
+}
+
+/**
+ * Generation counter for download attempts. `downloadGeneration` bumps each time
+ * a download starts; `activeGeneration` is the running (most recent) attempt's
+ * generation, `claimingVersion` the version it is fetching. They give the global
+ * listeners two gates that keep a superseded attempt's events off the UI:
+ *
+ *  - `download-progress` only paints for the LIVE current attempt — its events
+ *    carry no generation or version, so the only safe rule is "there is a live
+ *    attempt and it is the newest". A stray or cancelled transfer's trailing
+ *    progress thus cannot resurrect `downloading` over an error, or paint over a
+ *    newer attempt.
+ *  - `update-downloaded` carries its version, so it gets the stronger generation
+ *    gate plus a version match: an event naming a version other than the running
+ *    attempt's claim is stale and is dropped wholesale (state, suppression
+ *    record and balloon all untouched).
+ *
+ * `activeGeneration` is undefined when no attempt is live, at which point both
+ * gates let the module-level listeners act (an event with no running attempt to
+ * belong to is the current one — this is what lets an existing harness emit
+ * download state directly).
+ */
+let downloadGeneration = 0
+/** The running (most recent) attempt's generation; undefined when none is live. */
+let activeGeneration: number | undefined
+/** The version the running attempt is fetching; rejects stale `update-downloaded`. */
+let claimingVersion: string | undefined
+/** Start an attempt: bumps the generation, marks it active, claims the version
+ *  currently on screen. Returns the attempt's generation. */
+function downloadGenerationSubscribe(version: string | undefined): number {
+  downloadGeneration++
+  activeGeneration = downloadGeneration
+  claimingVersion = version
+  return downloadGeneration
+}
+/**
+ * Tear an attempt down. Takes the attempt's OWN generation: a teardown must only
+ * clear the active/claiming markers if it is still current — an old attempt's
+ * `.finally` can run after a newer attempt has already subscribed, and an
+ * unconditional clear would wipe the newer attempt's live marks (dropping its
+ * progress events while re-opening the door to the old one's late events).
+ */
+function downloadGenerationRelease(gen: number): void {
+  if (gen !== downloadGeneration) return
+  activeGeneration = undefined
+  claimingVersion = undefined
+}
+/** True while the current (newest) attempt is live — the only time the
+ *  `download-progress` listener may paint. */
+function downloadGenerationIsLive(): boolean {
+  return activeGeneration !== undefined && activeGeneration === downloadGeneration
+}
+/** True when there is no live attempt or this is the newest (used by the
+ *  `update-downloaded` gate, which also checks the version). */
+function isCurrentGeneration(): boolean {
+  return activeGeneration === undefined || activeGeneration === downloadGeneration
+}
+
+/**
+ * Test seams only: handleDownload serializes transfers through `downloadInFlight`,
+ * so the "old attempt's teardown runs after a newer attempt subscribed" order
+ * never surfaces in the serial harness — a second call just shares the running
+ * attempt's promise. These expose the generation primitives so the regression
+ * test can exercise that teardown order directly (the ordering the fix in
+ * `downloadGenerationRelease` guards against). Nothing in the app calls them.
+ */
+export function __downloadGenerationSubscribeForTests(version: string | undefined): number {
+  return downloadGenerationSubscribe(version)
+}
+export function __downloadGenerationReleaseForTests(gen: number): void {
+  downloadGenerationRelease(gen)
 }
 
 /**
@@ -383,20 +472,75 @@ async function handleDownload(source: DownloadSource = 'manual'): Promise<void> 
   // auto-download silently dead.
   const seen = state.version === undefined ? undefined : actedFor(state.version)
   if (seen) seen.fetchHandled = true
+  // Stall watchdog: a download that never settles leaves `downloadInFlight`
+  // set, and every later attempt returns that stuck promise — the updater is
+  // dead for the rest of the session. A flat timeout would kill a
+  // slow-but-progressing transfer, so the clock is reset by the progress
+  // event (via the subscriber's guard below, which only resets for THIS
+  // attempt's events) instead.
+  //
+  // electron-updater is cancelled through the token we hand it (it only
+  // cancels the SAME in-flight promise — an internal `downloadPromise` — when
+  // given the same one again, which is why the transfer must actually be
+  // interrupted, not the concern of a later re-call): on cancellation the
+  // pending download rejects with a CancellationError, the library forgets the
+  // in-flight promise, and the next `handleDownload` starts a brand-new transfer.
+  const token = new CancellationToken()
+  let lastProgress = Date.now()
+  const gen = downloadGenerationSubscribe(seen?.version)
+  const onProgress = (): void => {
+    if (gen === downloadGeneration) lastProgress = Date.now()
+  }
+  autoUpdater.on('download-progress', onProgress)
   const task = (async (): Promise<void> => {
     setState({ status: 'downloading', percent: 0, auto: source === 'auto' })
     try {
-      await autoUpdater.downloadUpdate()
+      await autoUpdater.downloadUpdate(token)
     } catch (err) {
-      if (seen) seen.fetchHandled = false
-      setState({ status: 'error', error: err instanceof Error ? err.message : String(err) })
+      // electron-updater never raises an `error` event for a cancelled
+      // download, so the stalled/aborted message has to be written here — a
+      // normal failure surfaces its reason through the `error` event instead.
+      const stalled = err instanceof CancellationError
+      if (gen !== downloadGeneration) {
+        // Superseded before its promise settled: this attempt already gave way
+        // to a newer one, so leave the state alone — the newer attempt owns it.
+        return
+      }
+      if (stalled) {
+        // A cancel is not a real download failure: roll the claim back so the
+        // next cycle for this version retries the transfer.
+        if (seen) seen.fetchHandled = false
+        setState({ status: 'error', error: t('main.updater.downloadStalled') })
+      } else {
+        if (seen) seen.fetchHandled = false
+        setState({ status: 'error', error: err instanceof Error ? err.message : String(err) })
+      }
     }
   })()
   downloadInFlight = task
-  const release = (): void => {
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastProgress <= DOWNLOAD_STALL_MS) return
+    if (downloadInFlight !== task) return
+    // Stalled: abort the transfer through the token so the updater's internal
+    // in-flight promise actually settles (and is cleared), keeping the next
+    // download attempt from inheriting the dead one. No error story here — the
+    // error state is written by the task's catch, which the settle triggers.
+    token.cancel()
+  }, Math.max(1000, Math.floor(DOWNLOAD_STALL_MS / 4)))
+  watchdog.unref?.()
+  function release(): void {
+    clearInterval(watchdog)
+    autoUpdater.removeListener('download-progress', onProgress)
     if (downloadInFlight === task) downloadInFlight = undefined
   }
-  task.then(release, release)
+  task
+    .then(release)
+    .catch(() => {
+      // The task body swallows errors (it reports them as state and returns),
+      // so this only catches an unexpected throw from `release` itself.
+      release()
+    })
+    .finally(() => downloadGenerationRelease(gen))
   return task
 }
 

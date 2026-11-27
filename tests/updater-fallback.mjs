@@ -57,7 +57,8 @@ const ctl = {
   downloadUpdate: undefined,
   quitAndInstallCalls: [],
   feeds: [],
-  proxies: []
+  proxies: [],
+  lastToken: undefined
 }
 globalThis.__otAutoUpdater = ctl
 
@@ -147,6 +148,7 @@ const reset = () => {
   ctl.proxies.length = 0
   ctl.quitAndInstallCalls.length = 0
   ctl.checkForUpdates = undefined
+  ctl.lastToken = undefined
   fetchImpl = undefined
   stub.__sessions.clear()
 }
@@ -476,6 +478,13 @@ console.log('updater events drive the state the renderer reads')
     ok(s.percent === undefined, 'the percent is cleared for a fresh availability')
   }
 
+  // A download-progress only paints while its download is live — a stray event
+  // with no attempt in flight cannot resurrect a progress bar. Drive a real,
+  // still-pending download here so the progress and finish events are
+  // attributable to the attempt owns them.
+  let settleDownload
+  ctl.downloadUpdate = () => new Promise((resolve) => { settleDownload = resolve })
+  const download = call(Ipc.UPDATE_DOWNLOAD) // stays 'downloading' until settled
   live.emit('download-progress', { percent: 42.7 })
   ok((await call(Ipc.UPDATE_STATE_GET)).percent === 43, 'the download percent is rounded for the UI')
 
@@ -485,6 +494,8 @@ console.log('updater events drive the state the renderer reads')
     ok(s.status === 'downloaded', "'update-downloaded' sets the downloaded state")
     ok(s.percent === undefined, 'the percent is cleared once downloaded')
   }
+  settleDownload([])
+  await download
 
   live.emit('update-not-available')
   ok((await call(Ipc.UPDATE_STATE_GET)).status === 'latest', "'update-not-available' sets the latest state")
@@ -1105,6 +1116,170 @@ console.log('balloons respect the visible-window guard')
     live.emit('update-available', { version: '3.3.1' })
     ok(balloonCount() === closed + 1, 'and it is shown when no window has been created at all')
   }
+}
+
+// ---- 14. stall watchdog ------------------------------------------------------
+// The watchdog's poll interval is max(1000, stall/4)ms, so tests below sleep
+// past it (stall budget 60 -> ~1s poll) to let the cancel fire.
+console.log('a download that never settles is stalled and cancelled')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ stall: 60 })
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  fetchImpl = () => Promise.resolve(errResponse(503)) // probe fails -> no check interference
+  live.emit('update-available', { version: '2.2.2' })
+  await tick()
+  // A DownloadUpdate that never settles on its own even after the token cancels
+  // (the stub keeps the transfer pending so only the token matters).
+  ctl.downloadUpdate = () => new Promise(() => {})
+  const started = Date.now()
+  await call(Ipc.UPDATE_DOWNLOAD)
+  await sleep(1300) // let the watchdog poll (>=1s) see the stall and act
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(s.status === 'error', `a stalled download lands on 'error', not stuck on 'downloading' (got '${s.status}')`)
+    const msg = s.error ?? ''
+    ok(
+      msg !== 'main.updater.downloadStalled' && msg.includes('停滞'),
+      `the error text is the real translation, not the key (got ${JSON.stringify(msg)})`
+    )
+  }
+  ok(ctl.lastToken !== undefined && ctl.lastToken.cancelled === true, 'the token handed to the updater was cancelled')
+  const elapsed = Date.now() - started
+  ok(elapsed < 2500, `it gave up at the {stall} budget, not 120s (${elapsed}ms)`)
+}
+
+console.log('a stalled download is retried after the claim is rolled back')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ stall: 60 })
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: true })
+  fetchImpl = () => Promise.resolve(errResponse(503))
+  const version = '2.2.1'
+  let calls = 0
+  // First attempt never settles -> watchdog cancels; second attempt resolves.
+  ctl.downloadUpdate = () => {
+    calls++
+    return calls === 1 ? new Promise(() => {}) : Promise.resolve([])
+  }
+  live.emit('update-available', { version }) // auto-download #1 (never settles)
+  await sleep(1300) // stall fires, token cancelled, error state, claim rolled back
+  ok(calls === 1, `the first stalled transfer was attempted once (${calls})`)
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'error', 'the stalled transfer landed on error')
+
+  // Next cycle reports the same release again: the rolled-back claim must let it
+  // re-download rather than be suppressed.
+  live.emit('update-available', { version })
+  await tick()
+  ok(calls === 2, `the claim was rolled back, so the same version is fetched again (${calls})`)
+  live.emit('update-downloaded', { version })
+  await tick()
+  ok(
+    call(Ipc.UPDATE_STATE_GET).status === 'downloaded',
+    `and the fresh transfer actually finished (got '${call(Ipc.UPDATE_STATE_GET).status}')`
+  )
+}
+
+console.log('a stale old-generation download-progress cannot paint over the newer transfer')
+{
+  reset()
+  stub.__setPackaged(true)
+  updater.setUpdateTimeouts({ stall: 60 })
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  fetchImpl = () => Promise.resolve(errResponse(503))
+  const oldVersion = '1.1.1'
+  const newVersion = '1.1.2'
+  let calls = 0
+  const settleFor = {}
+  ctl.downloadUpdate = () => {
+    const which = ++calls
+    return new Promise((resolve) => {
+      settleFor[which] = () => resolve([])
+    })
+  }
+  live.emit('update-available', { version: oldVersion })
+  await tick()
+  await call(Ipc.UPDATE_DOWNLOAD) // old attempt, pending
+  await sleep(1300) // old attempt stalls -> cancelled, error state, generation released
+  ok(calls === 1, 'the old attempt stalled once')
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'error', 'the old attempt stalled to error')
+
+  // A newer release starts its own (still pending) download, which now owns the
+  // state. The old cancelled transfer's trailing events must not touch it.
+  live.emit('update-available', { version: newVersion })
+  await tick()
+  const newDownload = call(Ipc.UPDATE_DOWNLOAD) // new attempt, pending (do not await)
+  await tick()
+  ok(calls === 2, `a newer release starts its own download (${calls})`)
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'downloading', 'the newer transfer is in progress')
+  ok(call(Ipc.UPDATE_STATE_GET).version === newVersion, 'and it names the newer release')
+
+  // Old-generation trailing events arrive while the new attempt is live.
+  live.emit('download-progress', { percent: 10 })
+  live.emit('update-downloaded', { version: oldVersion })
+  await tick()
+  {
+    const s = call(Ipc.UPDATE_STATE_GET)
+    ok(s.status === 'downloading', 'a stale old download-progress cannot move the state off the newer download')
+    ok(s.version === newVersion, `and cannot repaint the version (got '${s.version}')`)
+  }
+
+  // The new transfer finishes and its OWN update-downloaded is honored.
+  settleFor[2]()
+  await newDownload
+  live.emit('update-downloaded', { version: newVersion })
+  await tick()
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'downloaded', 'the newer release finishes')
+  ok(call(Ipc.UPDATE_STATE_GET).version === newVersion, 'the final state names the newer release')
+
+  // The stale update-downloaded for the OLD version must not have folded it into
+  // 'downloaded' — a fresh download for it still runs.
+  live.emit('update-available', { version: oldVersion })
+  await tick()
+  await call(Ipc.UPDATE_DOWNLOAD)
+  await tick()
+  ok(calls === 3, `the old release is not folded into 'downloaded' by its stale own event (${calls})`)
+}
+
+console.log('an old attempt tearing down cannot orphan the newer attempt')
+{
+  reset()
+  stub.__setPackaged(true)
+  writeSystem({ autoCheckUpdate: true, updateCheckIntervalHours: 0, autoDownloadUpdate: false })
+  fetchImpl = () => Promise.resolve(errResponse(503))
+  // Drive the generation primitives directly — the serial downloadInFlight guard
+  // (a second handleDownload shares the running attempt's promise) makes the
+  // exact "old teardown after newer subscribe" interleaving unreachable through
+  // the IPC path. This stands in for `task.finally` of an older attempt landing
+  // after a newer attempt subscribed.
+  const genA = updater.__downloadGenerationSubscribeForTests('0.9.8') // attempt A
+  const genB = updater.__downloadGenerationSubscribeForTests('0.9.9') // newer B subscribes
+  ok(genB !== genA, 'B is a newer generation than A')
+
+  // A's teardown runs now, after B subscribed. It must not clear B's live
+  // markers — a stray `release()` here would leave no live attempt for B.
+  updater.__downloadGenerationReleaseForTests(genA)
+  live.emit('download-progress', { percent: 37 })
+  ok(
+    call(Ipc.UPDATE_STATE_GET).percent === 37,
+    "the current attempt's progress still updates after the superseded attempt's teardown"
+  )
+  ok(call(Ipc.UPDATE_STATE_GET).status === 'downloading', 'the newer transfer is still live')
+
+  // A's late update-downloaded is ignored: genA !== downloadGeneration, so the
+  // update-downloaded gate (isCurrentGeneration) keeps it off the state.
+  live.emit('update-downloaded', { version: '0.9.8' })
+  ok(
+    call(Ipc.UPDATE_STATE_GET).status === 'downloading',
+    "the superseded attempt's late update-downloaded is still ignored after its teardown"
+  )
+
+  // When the CURRENT attempt tears down, the markers are cleared for real.
+  updater.__downloadGenerationReleaseForTests(genB)
+  live.emit('download-progress', { percent: 50 })
+  ok(call(Ipc.UPDATE_STATE_GET).percent === 37, 'with no live attempt, stray progress no longer paints')
 }
 
 stub.__setWindows([])
