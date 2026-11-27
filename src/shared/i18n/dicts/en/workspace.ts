@@ -36,6 +36,7 @@ const workspace: Record<string, string> = {
   'workspace.template.deleteConfirm': 'Delete this template?',
   'workspace.template.applyFailed': 'Failed to apply the layout template',
   'workspace.template.applyFailedRestored': 'Failed to apply the layout template; your previous layout was restored',
+  'workspace.template.applyFailedNoRestore': 'Failed to apply the layout template, and the previous layout could not be restored',
   'workspace.broadcast.toggle': 'Broadcast input',
   'workspace.broadcast.activeTitle': 'Broadcasting ({count} targets)',
   'workspace.broadcast.popoverTerminal': 'Broadcast input (Terminal)',

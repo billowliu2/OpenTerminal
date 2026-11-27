@@ -35,10 +35,11 @@ import { ConnectFlow } from './ConnectFlow'
 import { HostKeyModal } from './HostKeyModal'
 import { TerminalPanel } from './TerminalPanel'
 import { ApplyTemplateModal, SaveTemplateModal, TerminalTab } from './TerminalTab'
+import { applyTemplatePayload, type DockviewLike } from './templateApply'
 import { useBroadcastStore, writeBroadcast } from './broadcastStore'
 import { forgetSessionCwd, getSessionCwd, onSessionCwdChange, setSessionCwd } from './sessionCwdStore'
 import { useSettingsStore } from '@renderer/settings/store'
-import type { SessionSnapshot, SessionPanelState } from '@shared/ipc'
+import { HOST_KEY_PROMPT_TTL_MS, type SessionSnapshot, type SessionPanelState } from '@shared/ipc'
 import type { WorkspaceMode } from './workspaceMode'
 import { useWorkspaceModeStore } from './workspaceModeStore'
 import { decideModeClick } from './modeRailGesture'
@@ -107,11 +108,10 @@ interface QueuedHostKeyPrompt extends HostKeyPromptEvent {
 
 /**
  * How long a queued host-key prompt is worth answering. Mirrors the main
- * process' `DEFAULT_TIMEOUTS.prompt` (src/main/ssh.ts): once that elapses the
- * prompt has already been resolved as a reject and dropped there, so a
- * decision of ours can no longer reach it.
+ * process' timeout (both read the shared `HOST_KEY_PROMPT_TTL_MS` from
+ * `@shared/ipc`): once that elapses the prompt has already been resolved as a
+ * reject and dropped there, so a decision of ours can no longer reach it.
  */
-const HOST_KEY_PROMPT_TTL_MS = 120_000
 
 /** Expired-prompt sweep interval (rendering draws the queue head only). */
 const HOST_KEY_SWEEP_MS = 5_000
@@ -137,13 +137,18 @@ function connectFailureMessage(error: unknown): string {
  * Only used on the error path of a template load, where the dockview has just
  * been wiped: a second throw must not escape into the caller, or it would skip
  * the session cleanup that follows.
+ *
+ * Returns whether the snapshot was applied, so the caller can distinguish "the
+ * previous layout is back" from "even the rollback failed".
  */
-function restoreLayoutSnapshot(api: DockviewApi | undefined, snapshot: SerializedDockview): void {
-  if (!api) return
+function restoreLayoutSnapshot(api: DockviewApi | undefined, snapshot: SerializedDockview): boolean {
+  if (!api) return false
   try {
     api.fromJSON(snapshot)
+    return true
   } catch (error) {
     console.error('[workspace] restoring the layout after a failed template apply failed', error)
+    return false
   }
 }
 
@@ -1114,41 +1119,48 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         const terminalSnapshot = terminalApiRef.current?.toJSON()
         const sshSnapshot = sshApiRef.current?.toJSON()
 
-        // Which dockview the payload reached — a failed load must not put a
-        // snapshot back into one it never touched: restoring a dockview wipes the
-        // panels that are still alive in it (and, through `onDidRemovePanel`,
-        // kills the sessions behind them).
-        let terminalTouched = false
-        let sshTouched = false
-
-        // Dual layout (M6.1+): restore each dockview from its own payload.
-        // Legacy layout (pre-M6.1 single toJSON): restore it wholly into the
-        // terminal dockview.
-        try {
-          if (hasDualLayout) {
-            terminalTouched = true
-            terminalApiRef.current?.fromJSON(payload.terminal as never)
-            sshTouched = true
-            sshApiRef.current?.fromJSON(payload.ssh as never)
-          } else {
-            // Legacy single-dockview layout → restore into the terminal workspace.
-            terminalTouched = true
-            terminalApiRef.current?.fromJSON((payload as unknown) as never)
-          }
-        } catch (error) {
-          console.error('[workspace] template apply failed', meta.id, error)
+        // Which dockview the payload reached — a failing load must not put a
+        // snapshot back into one it never touched: restoring a dockview wipes
+        // the panels that are still alive in it (and, through
+        // `onDidRemovePanel`, kills the sessions behind them).
+        //
+        // dockview validates the payload BEFORE it clears anything (it throws
+        // "root must be of type branch" ahead of `this.clear()`), so a layout
+        // rejected at root validation leaves the dockview untouched — which
+        // means it must NOT be restored. `applyTemplatePayload` judges each side
+        // by *evidence*: it clears the side when the panel-id set changed under
+        // a failed load.
+        const applied = applyTemplatePayload(
+          terminalApiRef.current as unknown as DockviewLike | undefined,
+          sshApiRef.current as unknown as DockviewLike | undefined,
+          payload,
+          hasDualLayout
+        )
+        const terminalFailed = applied.terminal.error !== undefined
+        const sshFailed = applied.ssh.error !== undefined
+        if (terminalFailed || sshFailed) {
+          console.error('[workspace] template apply failed', meta.id, {
+            terminal: applied.terminal.error,
+            ssh: applied.ssh.error
+          })
           // The wipe took the panels down with it — and `onDidRemovePanel` took
           // their sessions, so the user is left with an empty workspace and
-          // nothing to reattach to. Put each touched dockview back from its
-          // snapshot, then give every pane that comes back a fresh session: the
-          // one it used to show is gone.
-          if (terminalTouched && terminalSnapshot) {
-            restoreLayoutSnapshot(terminalApiRef.current, terminalSnapshot)
+          // nothing to reattach to. Put each *cleared* dockview back from its
+          // snapshot, then handle the panels that come back: a terminal pane
+          // gets a fresh local session — the one it used to show is gone — and a
+          // resurrected SSH pane is closed rather than faked as a local terminal
+          // (a killed session never writes `sessionExits`, so `sessionState`
+          // reports it as neither existing nor exited and the pane stays a dead,
+          // unusable ghost; `rebindSessionPanels` with `dropSsh` closes those).
+          // A side that was never cleared keeps its live sessions untouched.
+          let restoredAllSides = true
+          if (applied.terminal.cleared && terminalSnapshot) {
+            if (!restoreLayoutSnapshot(terminalApiRef.current, terminalSnapshot)) restoredAllSides = false
             if (terminalApiRef.current) await rebindRestoredPanels(terminalApiRef.current)
           }
-          if (sshTouched && sshSnapshot) {
-            restoreLayoutSnapshot(sshApiRef.current, sshSnapshot)
-            if (sshApiRef.current) await rebindRestoredPanels(sshApiRef.current)
+          if (applied.ssh.cleared && sshSnapshot) {
+            if (!restoreLayoutSnapshot(sshApiRef.current, sshSnapshot)) restoredAllSides = false
+            if (sshApiRef.current) await rebindSessionPanels(sshApiRef.current, undefined, /* dropSsh */ true)
           }
           // No session may outlive its panels: the dockview the payload never
           // reached still shows its own (they stay), everything else goes.
@@ -1167,7 +1179,9 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
           recomputeLocalPanels()
           const mode = useWorkspaceModeStore.getState().mode
           activePanelRef.current = apiOfMode(mode, terminalApiRef.current, sshApiRef.current)?.activePanel
-          message.error(t('workspace.template.applyFailedRestored'))
+          message.error(
+            t(restoredAllSides ? 'workspace.template.applyFailedRestored' : 'workspace.template.applyFailedNoRestore')
+          )
           return
         }
 
@@ -1175,9 +1189,10 @@ export default function Workspace({ onOpenSettings }: WorkspaceProps): React.JSX
         // payload actually reached may be rebound: `rebindRestoredPanels`
         // rewrites each panel's params to a fresh *local* session, so running it
         // over a legacy template's untouched ssh workspace would demote its live
-        // SSH panes to local terminals.
+        // SSH panes to local terminals. (A legacy layout never reaches the ssh
+        // dockview — `hasDualLayout` is exactly that case.)
         if (terminalApiRef.current) await rebindRestoredPanels(terminalApiRef.current)
-        if (sshTouched && sshApiRef.current) await rebindRestoredPanels(sshApiRef.current)
+        if (hasDualLayout && sshApiRef.current) await rebindRestoredPanels(sshApiRef.current)
 
         // A template carries the tab titles it was saved with, which may be in
         // another language (or written by a build whose language the user has
