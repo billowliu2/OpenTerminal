@@ -97,7 +97,7 @@ type Span = { start: number; end: number; open: string }
  *    the leading bytes of a longer sequence.
  */
 const ESCAPE_RE =
-  /(\x1b\[[0-9;:?<>=]*[ -/]*[A-Za-z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[=>]|\x1b[0-9:;<?@A-OQ-WYZ\\`a-z{|}~])/g
+  /(\x1b\[[0-9;:?<>=]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[PX^_][^\x1b]*(?:\x07|\x1b\\)|\x1b[()][0-9A-B]|\x1b[=>]|\x1b[0-9:;<?@A-OQ-WYZ\\`a-z{|}~])/g
 
 /** Matches a single rule may inject per chunk (bomb guard). */
 const MAX_PER_RULE = 300

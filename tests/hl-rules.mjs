@@ -1238,6 +1238,36 @@ console.log('[restore cost budget]')
   )
 }
 
+console.log('[replay sequence gate]')
+{
+  // The replay budget is counted in SEQUENCES (MAX_REPLAY_SEQUENCES = 3), not
+  // bytes. The cost-budget case above only ever holds ONE sequence before the
+  // span, so it can never fail when the gate is raised or deleted — and this
+  // gate is the one that stopped a 4.30x chunk inflation from freezing the
+  // render thread for 18.4s.
+  const warn = compile([{ id: 'w', pattern: 'WARNING', priority: 1, color: { fg: '#ff0000' } }])
+  const countOf = (hay, needle) => hay.split(needle).length - 1
+
+  const state3 = '\x1b[33m\x1b[1m\x1b[4m'
+  const state4 = state3 + '\x1b[7m'
+
+  const three = applyHighlights(`${state3}WARNING tail`, warn)
+  ok(
+    countOf(three, state3) === 2,
+    `a state of three sequences is still replayed after the span (got ${countOf(three, state3)})`
+  )
+
+  const four = applyHighlights(`${state4}WARNING tail`, warn)
+  ok(
+    countOf(four, state4) === 1,
+    `a state of four sequences is NOT replayed (got ${countOf(four, state4)})`
+  )
+  ok(
+    countOf(four, state3) === 1,
+    'the four-sequence state is dropped whole — no truncated three-sequence copy is replayed'
+  )
+}
+
 console.log('[reset spellings and CSI parameters]')
 {
   // ECMA-48 has many spellings of "reset everything". Recognising only the two
@@ -1266,7 +1296,17 @@ console.log('[reset spellings and CSI parameters]')
   for (const [label, seq] of [
     ['ESC[>4;1m (modifyOtherKeys)', '\x1b[>4;1m'],
     ['ESC[<0;1;2M (SGR mouse)', '\x1b[<0;1;2M'],
-    ['ESC[=1;1$y (DECRQM)', '\x1b[=1;1$y']
+    ['ESC[=1;1$y (DECRQM)', '\x1b[=1;1$y'],
+    // ECMA-48 puts the CSI final byte in 0x40-0x7E, so it is not limited to
+    // the letters: `~` (key reports), `@` (insert characters), `{` (REP) and
+    // friends all end a CSI. A sequence the tokenizer does not recognise
+    // leaves a raw ESC in the text run, and a text run with a raw ESC is
+    // emitted raw — the WHOLE line loses its highlighting.
+    ['ESC[1~ (key report)', '\x1b[1~'],
+    ['ESC[3~ (delete key)', '\x1b[3~'],
+    ['ESC[200~ (bracketed paste)', '\x1b[200~'],
+    ['ESC[2@ (insert characters)', '\x1b[2@'],
+    ['ESC[3{ (REP)', '\x1b[3{']
   ]) {
     ok(applyHighlights(`${seq}WARNING after\n`, warn).includes('255;0;0'), `${label} keeps the rest of the line highlighted`)
   }
