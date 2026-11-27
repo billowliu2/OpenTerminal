@@ -1,5 +1,5 @@
 import type { ThemeColors } from '@shared/theme'
-import { contrast, darkenToRatio, isLightTheme, mix, semanticVars } from './semantic'
+import { contrast, darkenToRatio, isLightTheme, mix, onPrimaryLabel, semanticVars } from './semantic'
 
 // 兼容既有导入方（main.tsx 的 mix）；新代码请直接从 ./semantic 导入。
 export { contrast, luminance, mix } from './semantic'
@@ -71,6 +71,10 @@ export function applyChromeTheme(colors: ThemeColors): void {
   // unset and silently fall back to the dark :root literal); the literal key
   // union type plus tests/ot-var-names.mjs guard it.
   for (const [name, value] of Object.entries(semanticVars(colors, chromeIsLight))) set(name, value)
+  // The label colour for anything drawn on antd's primary fill. Derived
+  // against the fill itself (see semantic.ts) — the tab-accent token is
+  // derived against the chrome background and lands below 2:1 on that fill.
+  style.setProperty('--chrome-on-primary', onPrimaryLabel())
   applyTabAccent(tabAccent)
 }
 

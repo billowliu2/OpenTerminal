@@ -88,6 +88,30 @@ export const SEMANTIC = {
   focusRing: 'rgba(59, 142, 234, 0.2)'
 } as const
 
+/**
+ * antd's primary fill. The app PINS it (main.tsx sets the antd token
+ * `colorPrimary` to this exact value) so the colour of a label drawn on that
+ * fill can be DERIVED against the real fill instead of guessed.
+ *
+ * It is one step darker than antd's own default (#1677ff): the default only
+ * reaches 4.10:1 with a white label, while this reaches 5.37:1. The visual
+ * delta is imperceptible, and every primary button in the app gains the
+ * contrast.
+ */
+export const PRIMARY_COLOR = '#0f66d8'
+
+/**
+ * The readable label colour for text drawn on PRIMARY_COLOR.
+ *
+ * White is used whenever it clears 4.5:1 against the fill; otherwise the dark
+ * ink is. The chrome-background token `--tab-accent-fg` must NOT be used for
+ * this: it is derived against the CHROME BACKGROUND, and reusing it as a
+ * label on the primary fill measured 1.51:1 (light chrome) / 1.92:1 (dark).
+ */
+export function onPrimaryLabel(): string {
+  return contrast('#ffffff', PRIMARY_COLOR) >= 4.5 ? '#ffffff' : '#101418'
+}
+
 /** The CSS custom property names semanticVars() emits. There is exactly ONE
  *  naming system: the keys ARE the final names, so a typo is a type error at
  *  the read site instead of a silently unset variable (custom property names

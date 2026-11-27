@@ -196,16 +196,18 @@
   text-align: center;
 }
 
-/* Selected segment: the filled (primary) background needs a light label —
-   antd's own checked colour loses to our text overrides, so pin it here. */
+/* Selected segment: the filled (primary) background needs a light label.
+   The label colour is derived against the FILL (--chrome-on-primary), not
+   against the chrome background — the tab-accent token landed at 1.5-1.9:1
+   on this blue and made the selected language / renderer-mode unreadable. */
 .settings-radio-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled),
 .settings-language-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled) {
-  color: var(--tab-accent-fg, #fff);
+  color: var(--chrome-on-primary, #fff);
 }
 
 .settings-radio-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover,
 .settings-language-group .ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled):hover {
-  color: var(--tab-accent-fg, #fff);
+  color: var(--chrome-on-primary, #fff);
 }
 
 /* Own positive spacing: the shared `.settings-render-hint` uses a negative

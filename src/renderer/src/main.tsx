@@ -19,7 +19,7 @@ import {
   snapshotPanes
 } from './terminal/perfDiagnostics'
 import { mix } from './theme/chrome'
-import { isLightTheme } from './theme/semantic'
+import { isLightTheme, PRIMARY_COLOR } from './theme/semantic'
 import './global.css'
 
 // Diagnostics: report renderer main-thread freezes after recovery. console.error
@@ -326,6 +326,10 @@ function ThemedConfigProvider({ children }: { children: ReactNode }): React.JSX.
           colorBgContainer: mix(colors.background, colors.foreground, 0.06) ?? (light ? '#f5f5f5' : '#1f1f1f'),
           colorBgElevated: mix(colors.background, colors.foreground, 0.1) ?? (light ? '#f5f5f5' : '#252525'),
           colorTextBase: colors.foreground,
+          // Pinned (not antd's default #1677ff): the settings dialog draws a
+          // label on the primary fill, and the label colour is derived from
+          // this exact value. See semantic.ts PRIMARY_COLOR.
+          colorPrimary: PRIMARY_COLOR,
           borderRadius: 6
         }
       }}

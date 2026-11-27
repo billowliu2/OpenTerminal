@@ -13,6 +13,9 @@
   --chrome-tab-ring-hover: rgba(255, 255, 255, 0.2);
   --chrome-tab-fg: #98a2ab;
   --chrome-tab-fg-hover: #d0d0d0;
+  /* Label colour for anything drawn on antd's primary fill; overwritten per
+     theme by applyChromeTheme(). */
+  --chrome-on-primary: #ffffff;
   /* Semantic layer; overwritten per theme by applyChromeTheme() via
      semanticVars() — these dark values are the pre-JS fallback (and the
      zero-regression dark branch). */
