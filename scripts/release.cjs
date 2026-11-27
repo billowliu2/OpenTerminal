@@ -24,6 +24,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const ROOT = path.join(__dirname, '..')
+const { feedsToGuard } = require('./releaseFeeds.cjs')
 const V = process.argv[2]
 if (!V || !/^\d+\.\d+\.\d+$/.test(V)) {
   console.error('usage: node scripts/release.cjs <x.y.z> [--skip-github] [--skip-gitea-release] [--skip-gitea] [--channel-only]')
@@ -207,9 +208,19 @@ function compareVersions(a, b) {
     publish touches. Same fail-closed rule — a feed that cannot be read aborts
     the publish, only a genuinely empty feed (404) lets it through. */
 async function assertNoDowngrade() {
-  const feeds = []
-  if (!SKIP_GITEA) feeds.push(['update channel', () => channelVersion(CHANNEL_BASE)])
-  if (!SKIP_GH) feeds.push(['GitHub release feed', () => githubLatestVersion()])
+  // Only the feeds THIS run will write are guarded. GitHub is the primary
+  // update channel and the Gitea generic package the domestic fallback, but a
+  // --channel-only run (the repair path for a channel upload that died
+  // halfway) never touches GitHub — probing it would make a GitHub or proxy
+  // outage abort the domestic channel repair, which is exactly the failure
+  // mode the two-feed split exists to avoid.
+  const feeds = feedsToGuard(
+    { skipGitea: SKIP_GITEA, skipGitHub: SKIP_GH, channelOnly: CHANNEL_ONLY },
+    {
+      channel: () => channelVersion(CHANNEL_BASE),
+      github: () => githubLatestVersion()
+    }
+  )
   for (const [label, read] of feeds) {
     const live = await read()
     if (!live) continue
