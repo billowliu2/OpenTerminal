@@ -33,7 +33,7 @@ const WHITELIST = {
   // :root static fallback block for --ot-*/--chrome-* (pre-JS = dark defaults).
   'global.css': new Set([
     '#181818', '#cccccc', '#2d2d2d', '#3b8eea', '#2a2a2a', '#101418', '#98a2ab', '#d0d0d0',
-    '#8a8a8a', '#3fb950', '#f85149', '#d29922', '#58a6ff', '#ff6b6b',
+    '#8a8a8a', '#3fb950', '#f85149', '#d29922', '#58a6ff', '#ff6b6b', '#ffffff',
     'rgba(255, 255, 255, 0.04)', 'rgba(255, 255, 255, 0.07)', 'rgba(255, 255, 255, 0.1)',
     'rgba(255, 255, 255, 0.2)', 'rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.16)',
     'rgba(204, 204, 204, 0.78)', 'rgba(204, 204, 204, 0.05)',
@@ -71,7 +71,22 @@ function walk(dir, out = []) {
   return out
 }
 const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"])\/\/.*$/gm, '$1')
-const COLOR = /#[0-9a-fA-F]{3,8}\b(?![-\w])|rgba?\([^)]*\)/g
+/** hex + the functional colour notations.
+ *  CASE-SENSITIVE on purpose: with an `i` flag `rgb(` also matches
+ *  `Rgb(hex: string)` — a TypeScript type annotation, not a colour. */
+const COLOR =
+  /#[0-9a-fA-F]{3,8}\b(?![-\w])|rgba?\([^)]*\)|hsla?\([^)]*\)|oklch\([^)]*\)|(?:ok)?lab\([^)]*\)|lch\([^)]*\)/g
+/** The CSS named colours. Case-insensitive (CSS keywords are), but ONLY in a
+ *  value position — and never as a property name:
+ *   - the lookbehind puts it after `:` / `,` / `(` or at the start of a
+ *     declaration, so prose in a string is not a hit;
+ *   - the trailing (?![\-\w]) keeps `white-space: nowrap` from matching the
+ *     "white" in the property NAME. Without it that one property alone
+ *     produces 60 false positives across the renderer.
+ *  Measured on this repo: the naive named-colour regex (no guards) reports 183
+ *  hits, of which 86 are `white-space`; with both guards it reports 0. */
+const NAMED_COLOR =
+  /(?<=^|[:(,]\s*|\s)(?:red|green|blue|black|white|gray|grey|yellow|orange|purple|pink|cyan|magenta|brown|silver|gold|beige|ivory|khaki|lime|maroon|navy|olive|teal|tomato|violet|aqua|coral|crimson|indigo|lavender|plum|orchid|salmon|sienna|tan|wheat|azure)\b(?![\-\w])/gi
 
 let violations = 0
 for (const file of walk(ROOT)) {
@@ -79,11 +94,22 @@ for (const file of walk(ROOT)) {
   const wl = WHITELIST[rel]
   if (wl === null) continue
   const raw = stripComments(fs.readFileSync(file, 'utf8'))
-  const outsideVar = raw.replace(/var\([^)]*\)/g, '()').replace(/color-mix\([^)]*\)/g, '()')
+  // A template literal that INTERPOLATES may build a colour from variables
+  // (MonitorPanel's withAlpha constructs rgba() from a resolved hex) and
+  // carries no literal to police. A template literal with no interpolation is
+  // just a string — its contents are still a literal.
+  const outsideVar = raw
+    .replace(/var\([^)]*\)/g, '()')
+    .replace(/`(?:[^`\\]|\\.)*\$\{[^}]*\}(?:[^`\\]|\\.)*`/g, '()')
   const lines = outsideVar.split(/\r?\n/)
   lines.forEach((line, idx) => {
-    if (line.includes('${')) return // template-literal color builder, not a literal
     for (const m of line.matchAll(COLOR)) {
+      const lit = m[0].toLowerCase()
+      if (wl && wl.has(lit)) continue
+      console.error(`RAW ${rel}:${idx + 1}: ${lit}`)
+      violations++
+    }
+    for (const m of line.matchAll(NAMED_COLOR)) {
       const lit = m[0].toLowerCase()
       if (wl && wl.has(lit)) continue
       console.error(`RAW ${rel}:${idx + 1}: ${lit}`)
@@ -103,12 +129,52 @@ for (const file of walk(ROOT)) {
     }
   }
 }
-// negative self-test: the matcher must catch literals incl. 3/4-digit hex
+// Negative self-test: the matcher must catch literals incl. 3/4-digit hex
 {
   const probe = stripComments('.a{color:#fff9;border:#abcd}')
   const hits = [...probe.matchAll(COLOR)].length
   if (hits < 2) {
     console.error('self-test failed: matcher did not catch probe literals')
+    process.exit(1)
+  }
+}
+// Negative self-test: the families that used to pass the scanner.
+{
+  // The named colour is case-insensitive (CSS keywords are), the functional
+  // notations are NOT (see the two-regex split below).
+  const families = [
+    ['a named colour', '.a{color:red}', 'red', 'named'],
+    ['an hsl() colour', '.a{color:hsl(0,100%,50%)}', 'hsl(0,100%,50%)', 'func'],
+    ['an hsla() colour', '.a{color:hsla(0,100%,50%,0.5)}', 'hsla(0,100%,50%,0.5)', 'func'],
+    ['an oklch() colour', '.a{color:oklch(0.7 0.1 200)}', 'oklch(0.7 0.1 200)', 'func'],
+    ['a lab() colour', '.a{color:lab(50% 40 59)}', 'lab(50% 40 59)', 'func'],
+    ['a lch() colour', '.a{color:lch(50% 40 59)}', 'lch(50% 40 59)', 'func']
+  ]
+  for (const [label, source, literal, kind] of families) {
+    const re = kind === 'named' ? NAMED_COLOR : COLOR
+    const hits = [...stripComments(source).matchAll(re)].map((m) => m[0].toLowerCase())
+    if (!hits.includes(literal)) {
+      console.error(`self-test failed: matcher did not catch ${label} (${literal})`)
+      process.exit(1)
+    }
+  }
+}
+// Negative self-test: a color-mix() body must not hide its own literals.
+{
+  const body = 'color-mix(in srgb, #ff0000 50%, transparent)'
+  const hits = [...stripComments(`.a{${body}}`).matchAll(COLOR)].map((m) => m[0].toLowerCase())
+  if (!hits.includes('#ff0000')) {
+    console.error('self-test failed: matcher did not catch a hex inside color-mix()')
+    process.exit(1)
+  }
+}
+// Negative self-test: a functional notation must NOT match a TypeScript type
+// annotation. The `i` flag on a combined regex makes `rgb(` match `Rgb(hex:
+// string)` — which is why the functional notations stay case-sensitive.
+{
+  const hits = [...stripComments('const f = (x: Rgb(hex: string)) => x').matchAll(COLOR)]
+  if (hits.length > 0) {
+    console.error('self-test failed: the matcher caught a TypeScript type annotation')
     process.exit(1)
   }
 }
