@@ -5,6 +5,11 @@
 
 import type { RuleRunState } from './ruleValidation'
 
+/** The host-key prompt's lifetime. The main process stops broadcasting after
+ *  this, and the renderer sweeps the queue on the same clock — the two MUST
+ *  agree, or the renderer either drops a live prompt or keeps a dead one. */
+export const HOST_KEY_PROMPT_TTL_MS = 120_000
+
 export const Ipc = {
   // ---- PTY session lifecycle ----
   // NOTE: since M2 these channels are session-generic: `id` addresses both

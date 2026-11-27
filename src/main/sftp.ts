@@ -1,7 +1,7 @@
 import { dialog } from 'electron'
 import type { Client, SFTPWrapper } from 'ssh2'
 import { randomUUID } from 'crypto'
-import { createWriteStream, promises as fsp } from 'fs'
+import { promises as fsp } from 'fs'
 import { basename } from 'path'
 import { Ipc } from '../shared/ipc'
 import { t } from '../shared/i18n'
@@ -175,7 +175,6 @@ async function sftpOf(sessionId: string): Promise<SFTPWrapper> {
   if (cached) return cached
   const client = clientProvider?.(sessionId)
   if (!client) {
-    console.error(`[sftp-debug] provider=${typeof clientProvider} sessionId=${sessionId} cacheSize=${sftpCache.size}`)
     throw new SessionGoneError(t('main.sftp.sessionGone'))
   }
   const sftp = await new Promise<SFTPWrapper>((resolve, reject) => {
@@ -252,8 +251,6 @@ async function withSftp<T>(sessionId: string, fn: (sftp: SFTPWrapper) => Promise
 export function closeSftp(sessionId: string): void {
   evictSftp(sessionId)
 }
-
-const FAKE_FS = new Set(['tmpfs', 'overlay', 'udev', 'devtmpfs', 'none', 'squashfs', 'shm'])
 
 /** readdir, both shapes ssh2 can yield (plain names or `{filename}` objects). */
 function readdirDetailed(sftp: SFTPWrapper, dir: string): Promise<Array<{ name: string; longname?: string }>> {
@@ -617,16 +614,31 @@ export function uploadRemote(
             } finally {
               await localHandle.close()
             }
-            await Promise.race([
-              // The stall guard owns this wait (10s), so the close itself stays
-              // unbounded-by-`bounded` — otherwise a timeout landing after the
-              // race is decided would reject with nothing listening.
-              rawVoid(cb => sftp.close(handle, cb)),
-              new Promise<void>((r) => setTimeout(r, 10_000))
-            ])
+            let guard: NodeJS.Timeout | undefined
+            try {
+              await Promise.race([
+                // The stall guard owns this wait (10s), so the close itself stays
+                // unbounded-by-`bounded` — otherwise a timeout landing after the
+                // race is decided would reject with nothing listening.
+                rawVoid(cb => sftp.close(handle, cb)),
+                new Promise<void>(resolve => {
+                  guard = setTimeout(resolve, 10_000)
+                })
+              ])
+            } finally {
+              // Race decided (either side): the timer must not linger for 10s
+              // after the upload finished.
+              if (guard) clearTimeout(guard)
+            }
             await Promise.allSettled(inflight)
             if (firstError) throw firstError
           } catch (err) {
+            // The handle was opened before the local file was read, so a
+            // failure in EITHER place would leak it: the SFTP channel is
+            // session-scoped and deliberately cached, so the handle stayed open
+            // for the whole session. Closing it here is idempotent — the
+            // success path already closed it.
+            await pVoid(cb => sftp.close(handle, cb)).catch(() => undefined)
             await pVoid(cb => sftp.unlink(remote, cb)).catch(() => undefined)
             throw err
           }

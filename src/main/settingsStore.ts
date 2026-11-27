@@ -259,7 +259,19 @@ function refreshBuiltinRules(rules: HighlightRule[], warnings: Warnings): Highli
     }
     changed = true
     warnings.push(`highlightRules.${rule.id}: preset pattern updated`)
-    return { ...rule, pattern: preset.pattern, caseInsensitive: preset.caseInsensitive }
+    // The preset's own tags come along with the pattern. `basic` and
+    // `category` were introduced by the same commit that changed these
+    // patterns, so an install older than that carries neither: refreshing the
+    // pattern alone left the rule out of the `basic` highlight mode and out
+    // of the category grouping in the settings page. A tag the preset does not
+    // define is left alone — that is the user's own marking of a rule.
+    return {
+      ...rule,
+      pattern: preset.pattern,
+      caseInsensitive: preset.caseInsensitive,
+      ...(preset.basic === true ? { basic: true } : {}),
+      ...(preset.category !== undefined ? { category: preset.category } : {})
+    }
   })
 
   // Presets added since are appended only while the stored set is *exactly* the
@@ -409,6 +421,14 @@ function deepMerge(raw: unknown): { settings: AppSettings; errors: string[] } {
         }
       }
       terminal = merged as unknown as TerminalSettings
+      // The accent colour reaches setProperty('--tab-accent', …) and antd's
+      // ColorPicker. It is the one colour-bearing terminal setting with no
+      // format check, so a hand-edited "not-a-color" became an invalid CSS
+      // value and a broken picker.
+      if (!/^#[0-9a-f]{6}$/i.test(terminal.tabAccentColor)) {
+        errors.push('terminal.tabAccentColor')
+        terminal.tabAccentColor = DEFAULT_SETTINGS.terminal.tabAccentColor
+      }
       // A bad value in any of these is FATAL rather than cosmetic: xterm's
       // `term.options.x = v` setter (the settings hot-update path) throws with
       // no try/catch, and the throw unmounts the whole dockview pane. The cursor

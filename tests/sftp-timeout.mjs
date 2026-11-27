@@ -509,6 +509,46 @@ console.log('deleting an entry that is already gone succeeds instead of reportin
   }))
 }
 
+// ---- 8. a failed upload must close the remote handle -----------------------
+console.log('[upload handle cleanup]')
+{
+  // The remote handle is opened (sftp.open) BEFORE the local file is read
+  // (fsp.open), so a failure in EITHER place used to leave it open: the SFTP
+  // channel is session-scoped and deliberately cached, so the handle leaked
+  // for the whole session — the server accumulated one open file per failed
+  // upload.
+  //
+  // The trigger is deterministic: the fake's `open` callback deletes the
+  // local file, so the fsp.open that follows fails with ENOENT.
+  const local = join(root, 'upload-src.bin')
+  writeFileSync(local, 'payload')
+  reset((op) => {
+    if (op === 'open') rmSync(local, { force: true })
+    return 'ok'
+  })
+  // The provider registered earlier in this file is replaced by later cases,
+  // so re-register one that hands out a fresh fake wrapper.
+  sftp.registerSftpClientProvider(() => ({
+    sftp: (cb) => {
+      const w = makeWrapper()
+      openedChannels.push(w)
+      cb(null, w)
+    }
+  }))
+  const finished = new Promise((resolve) => {
+    sftp
+      .uploadRemote('s-cleanup', [local], '/remote', (_channel, payload) => {
+        if (payload && payload.state === 'error') resolve(payload)
+      })
+      .catch(() => resolve(null))
+  })
+  await finished
+  const opens = calls.filter((c) => c.op === 'open')
+  const closes = calls.filter((c) => c.op === 'close')
+  ok(opens.length === 1, `the remote file was opened exactly once (got ${opens.length})`)
+  ok(closes.length === 1, `the remote handle was closed exactly once (got ${closes.length})`)
+}
+
 // ---- helpers ----------------------------------------------------------------
 function waitFor(pred, timeoutMs) {
   return new Promise((resolve) => {

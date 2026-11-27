@@ -19,6 +19,7 @@ import { randomUUID } from 'crypto'
 import { readFileSync, realpathSync, statSync } from 'fs'
 import { fingerprintOf, type HostKeyCheckResult } from './knownHosts'
 import type { ConnectionsStore } from './connectionsStore'
+import { HOST_KEY_PROMPT_TTL_MS } from '../shared/ipc'
 import type { Client, ClientChannel, ConnectConfig } from 'ssh2'
 
 /**
@@ -75,8 +76,8 @@ export interface SshServiceDeps {
 }
 
 // Host-key confirmation is a security decision — users may take time to
-// compare fingerprints. 30s timed out on people who merely screenshot it.
-const DEFAULT_TIMEOUTS = { prompt: 120_000, connect: 15_000 }
+// compare fingerprints. 120s timed out on people who merely screenshot it.
+const DEFAULT_TIMEOUTS = { prompt: HOST_KEY_PROMPT_TTL_MS, connect: 15_000 }
 
 /**
  * Open an ssh session (connect + auth + open shell) for `conn`.
@@ -109,6 +110,7 @@ export async function connectSsh(
     connectTimer = setTimeout(() => {
       fail(new Error(t('main.ssh.connectTimeout', { host: conn.host, port: conn.port })))
     }, timeouts.connect)
+    connectTimer.unref?.()
   }
 
   const fail = (err: Error): void => {
@@ -344,6 +346,7 @@ function promptUser(
       pendingPrompts.delete(promptId)
       resolve(false)
     }, timeoutMs)
+    timer.unref?.()
 
     pendingPrompts.set(promptId, { resolve, timer })
     try {

@@ -26,6 +26,11 @@ export function HostKeyModal({ event, onDecision }: HostKeyModalProps): React.JS
   return (
     <Modal
       open
+      // A stray mask click or Esc must NOT decide the prompt: `onCancel` is
+      // the REJECT button, and a mis-click used to abort the SSH handshake
+      // silently (the "changed" fingerprint case with no confirmation).
+      maskClosable={false}
+      keyboard={false}
       title={
         isChanged ? (
           <div className="hostkey-changed-title">{t('ssh.hostKey.changedTitle')}</div>

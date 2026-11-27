@@ -595,6 +595,68 @@ console.log('[warnings log]')
   ok(readFileSync(file, 'utf8').length === size, 'identical warnings are not appended twice')
 }
 
+// ---- 5. preset upgrade keeps the basic / category metadata -----------------
+// The `basic` flag and the `category` came in with the preset overhaul (the
+// same commit that changed the okstate/badstate patterns), so an install older
+// than that has neither. The refresh used to take the pattern from the preset
+// but not the tags — so the upgraded rules dropped out of the `basic` highlight
+// mode and out of the category grouping in the settings page.
+console.log('[preset upgrade metadata]')
+{
+  const legacyOk = {
+    id: 'okstate',
+    pattern: '\\b(SUCCESS|PASS|OK|DONE|PASSED)\\b',
+    enabled: true,
+    priority: 20,
+    color: { fg: '#3fb950' },
+    builtin: true
+  }
+  const legacyBad = {
+    id: 'badstate',
+    pattern: '\\b(FAILED|ERROR|FAIL|FATAL|WARN|WARNING|DENIED)\\b',
+    enabled: true,
+    priority: 21,
+    color: { fg: '#f85149' },
+    builtin: true
+  }
+  writeFileSync(
+    join(userData, 'settings.json'),
+    JSON.stringify({ highlightRules: [legacyOk, legacyBad] }),
+    'utf8'
+  )
+  const loaded = store.loadSettings()
+  const okRule = loaded.highlightRules.find((r) => r.id === 'okstate')
+  const badRule = loaded.highlightRules.find((r) => r.id === 'badstate')
+  ok(okRule !== undefined, 'the legacy okstate rule survived the load')
+  ok(
+    okRule.pattern !== legacyOk.pattern,
+    'the legacy okstate pattern was upgraded to the current preset'
+  )
+  ok(okRule.basic === true, 'the upgraded okstate keeps the basic flag')
+  ok(okRule.category === 'status', `the upgraded okstate keeps the category (got ${okRule.category})`)
+  ok(badRule !== undefined, 'the legacy badstate rule survived the load')
+  ok(badRule.basic === true, 'the upgraded badstate keeps the basic flag')
+  ok(badRule.category === 'status', `the upgraded badstate keeps the category (got ${badRule.category})`)
+  ok(okRule.color.fg === '#3fb950', "the user's own colour survived the upgrade")
+}
+
+// ---- colour-bearing terminal settings are validated ------------------------
+console.log('[tabAccentColor validation]')
+{
+  writeFileSync(
+    join(userData, 'settings.json'),
+    JSON.stringify({ terminal: { tabAccentColor: 'not-a-color' } }),
+    'utf8'
+  )
+  const loaded = store.loadSettings()
+  ok(
+    /^#[0-9a-f]{6}$/i.test(loaded.terminal.tabAccentColor),
+    `an invalid tabAccentColor is repaired to a hex colour (got '${loaded.terminal.tabAccentColor}')`
+  )
+  const good = await roundTrip({ terminal: { ...store.loadSettings().terminal, tabAccentColor: '#ff8800' } })
+  ok(good.terminal.tabAccentColor === '#ff8800', 'a valid tabAccentColor survives')
+}
+
 // The store wrote settings into a temp userData dir; drop it so repeated runs do
 // not litter %TEMP%.
 rmSync(userData, { recursive: true, force: true })

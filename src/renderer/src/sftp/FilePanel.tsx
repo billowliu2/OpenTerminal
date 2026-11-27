@@ -554,15 +554,18 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
   const refreshSeqRef = useRef(0)
   /** Mirrors `dir` for callbacks created before a navigation (upload finish). */
   const dirRef = useRef(dir)
-  /** Unsubscribe for the transfer listener the in-flight upload registered. */
-  const uploadOffRef = useRef<(() => void) | null>(null)
+  /** Unsubscribe handles for the transfer listeners the in-flight uploads
+   *  registered. A Set, not a single ref: a second upload must not orphan the
+   *  first one's handle — it could then never be removed, and its terminal
+   *  event would never refresh the listing. */
+  const uploadOffsRef = useRef<Set<() => void>>(new Set())
 
   useEffect(() => {
     return () => {
       // An upload can still be running — or never deliver a terminal event —
       // when the panel unmounts; without this its IPC listener outlives it.
-      uploadOffRef.current?.()
-      uploadOffRef.current = null
+      for (const off of uploadOffsRef.current) off()
+      uploadOffsRef.current.clear()
     }
   }, [])
 
@@ -619,6 +622,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
       if (settled) return
       settled = true
       off()
+      uploadOffsRef.current.delete(off)
       // `dir` here is the directory the upload was started from; if the user
       // has navigated away since, refreshing it would yank the panel back.
       if (dirRef.current === dir) void refresh(dir)
@@ -631,7 +635,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
       }
       if (e.transferId === targetId) finish()
     })
-    uploadOffRef.current = off
+    uploadOffsRef.current.add(off)
     window.api.uploadRemote(sessionId, files, dir).then(
       (id: string) => {
         targetId = id
@@ -639,6 +643,7 @@ export const FilePanel = memo(function FilePanel({ sessionId }: FilePanelProps):
       },
       (err: unknown) => {
         off()
+        uploadOffsRef.current.delete(off)
         message.error((err as Error).message)
       }
     )
