@@ -136,6 +136,9 @@ try {
   }
   const insideTarget = join(subDir, 'real.txt')
   if (symlink(insideTarget, join(pickedDir, 'inside-link.txt'), 'file')) {
+    // The target must exist: a DANGLING inside link is refused along with a
+    // dangling outside one (neither can be resolved to prove containment).
+    writeFileSync(insideTarget, 'real')
     ok(
       grantedPaths.writeTarget(pickedDir, 'inside-link.txt') === join(pickedDir, 'inside-link.txt'),
       'a link pointing inside the granted tree is still accepted'
@@ -174,6 +177,26 @@ try {
   ok(grantedPaths.readSource(null) === null, 'a null source is refused')
   ok(grantedPaths.readDirectory(undefined) === null, 'an undefined directory is refused')
   ok(true, 'no junk input threw')
+
+  console.log('a dangling symlink must not escape the granted directory')
+  // realpath throws ENOENT for a dangling symlink exactly as it does for a file
+  // that does not exist — so the write used to follow the link out of the
+  // granted directory while still looking like it targeted it.
+  const danglingDir = mkdtempSync(join(tmpdir(), 'ot-grants-dangling-'))
+  const outsideDir = mkdtempSync(join(tmpdir(), 'ot-grants-outside-'))
+  grantPickedDirectory(danglingDir)
+  try {
+    const link = join(danglingDir, 'escape.txt')
+    if (symlink(join(outsideDir, 'nowhere.txt'), link, 'file')) {
+      ok(
+        grantedPaths.writeTarget(danglingDir, 'escape.txt') === null,
+        'a dangling symlink inside the granted dir is refused'
+      )
+    }
+  } finally {
+    rmSync(danglingDir, { recursive: true, force: true })
+    rmSync(outsideDir, { recursive: true, force: true })
+  }
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

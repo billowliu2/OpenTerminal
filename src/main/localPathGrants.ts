@@ -26,7 +26,7 @@
  * only so the offline test harnesses (which have no dialog to grant from) can
  * supply a double; it is never reachable from renderer input.
  */
-import { realpathSync, statSync } from 'fs'
+import { lstatSync, realpathSync, statSync } from 'fs'
 import { basename, join, sep } from 'path'
 
 /**
@@ -148,12 +148,25 @@ export const grantedPaths: LocalPathPolicy = {
     // The join is made against the *resolved* directory, so the containment
     // check and the actual write agree on the target.
     const target = join(dirReal, fileName)
+    // A symlink at this name is followed by the write, so it must be resolved
+    // and containment-checked even when its target does not exist yet: a
+    // DANGLING symlink makes realpath throw ENOENT — exactly like a fresh
+    // file — and the write would then create the link's target wherever it
+    // points, outside the granted directory.
+    let leafIsLink = false
+    try {
+      leafIsLink = lstatSync(target).isSymbolicLink()
+    } catch {
+      // No leaf at all: a fresh file created directly inside the granted dir.
+      return target
+    }
     let resolved: string
     try {
       resolved = realpathSync(target)
     } catch {
-      // Not on disk yet: a fresh file created directly inside the granted dir.
-      return target
+      // The leaf exists but cannot be resolved (a dangling symlink): refuse
+      // it rather than let the write follow it out of the granted directory.
+      return leafIsLink ? null : target
     }
     // Something is already there. Resolve it too: a symlink planted at that
     // name would otherwise land the bytes somewhere else entirely while the

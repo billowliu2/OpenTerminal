@@ -38,8 +38,6 @@ import { loadSettings } from './settingsStore'
 import { LogSanitizer } from './logSanitizer'
 import { writeJson } from './store'
 
-/** Upper bound on recorded history entries when no limit is configured. */
-const HISTORY_CAP = 500
 /** Hard ceiling: the history is also the completion source, so it stays small. */
 export const HISTORY_LIMIT_MAX = 500
 

@@ -154,6 +154,11 @@ interface PendingOpen {
 
 const pendingOpens = new Map<string, PendingOpen>()
 
+/** Concurrent SSH opens. Each one spawns a real handshake, and the renderer can
+ * ask for as many as it likes — bound it so a runaway renderer cannot turn
+ * into a resource exhaustion. The exit map carries the same discipline. */
+const MAX_PENDING_OPENS = 16
+
 function abortPendingOpens(matches: (pending: PendingOpen) => boolean): void {
   for (const pending of pendingOpens.values()) {
     if (!matches(pending)) continue
@@ -325,6 +330,9 @@ export async function openSession(opts: SessionOpenOptions, owner?: number): Pro
   // Register the attempt before the handshake: until it resolves there is no
   // session entry, so this is the only handle an owner-based kill has on it.
   const tempId = randomUUID()
+  if (pendingOpens.size >= MAX_PENDING_OPENS) {
+    throw new Error(t('main.pty.tooManyPendingOpens'))
+  }
   const pending: PendingOpen = { owner, aborted: false }
   pendingOpens.set(tempId, pending)
 

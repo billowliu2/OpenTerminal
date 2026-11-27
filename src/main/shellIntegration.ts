@@ -1,5 +1,4 @@
 import { basename } from 'path'
-import { homedir } from 'os'
 
 /**
  * Shell integration: make the shell announce its working directory so the app
@@ -104,11 +103,3 @@ export function pickAdapter(shellPath: string, platform: NodeJS.Platform = proce
   const name = basename(shellPath)
   return SHELL_ADAPTERS.find((a) => a.matches(name, platform) || a.matches(shellPath, platform)) ?? null
 }
-
-/** The default POSIX shell, used when the setting is on and no shell is given. */
-export function posixFallbackShell(): string {
-  return process.env.SHELL || '/bin/sh'
-}
-
-/** Kept for symmetry with the adapters that need a home directory. */
-export const integrationHome = (): string => homedir()

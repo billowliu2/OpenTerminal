@@ -72,10 +72,6 @@ export function saveSessionSnapshot(next: SessionSnapshot): SessionSnapshot | nu
   return clean
 }
 
-export function clearSessionSnapshot(): void {
-  writeJson(snapshotPath(), { version: 1, savedAt: Date.now(), mode: 'terminal', layouts: {}, panels: [] })
-}
-
 export function registerSessionStateIpc(): void {
   ipcMain.handle(Ipc.SESSION_STATE_GET, () => loadSessionSnapshot())
   ipcMain.handle(Ipc.SESSION_STATE_SET, (_event, snapshot: SessionSnapshot) => saveSessionSnapshot(snapshot))

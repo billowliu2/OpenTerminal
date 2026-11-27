@@ -58,7 +58,14 @@ export function isTrustedRendererUrl(raw: string): boolean {
     const target = new URL(raw)
     const devUrl = devRendererUrl()
     if (devUrl) return target.origin === new URL(devUrl).origin
-    return target.protocol === 'file:' && target.pathname === pathToFileURL(RENDERER_FILE).pathname
+    // `file://evil-host/<same path>` has the same pathname — the host must be
+    // empty for a local file URL, or a frame could pass itself off as the app
+    // page.
+    return (
+      target.protocol === 'file:' &&
+      target.host === '' &&
+      target.pathname === pathToFileURL(RENDERER_FILE).pathname
+    )
   } catch {
     return false
   }

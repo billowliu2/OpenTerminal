@@ -262,10 +262,10 @@ const settings: Record<string, string> = {
   'settings.highlight.statsHits': 'ヒット',
   'settings.highlight.statsMs': '所要時間',
   'settings.highlight.statsReset': '統計をリセット',
-  'settings.highlight.statsEmpty': 'まだ統計がありません。端末で出力を流してください',
+  'settings.highlight.statsEmpty': 'まだ統計がありません。ターミナルで出力を流してください',
   'settings.highlight.themeColors': 'テーマの配色に合わせる',
   'settings.highlight.themeColorsHint':
-    '色相でハイライト色を現在の端末パレットに割り当てます（無彩色はそのまま）',
+    '色相でハイライト色を現在のターミナルパレットに割り当てます（無彩色はそのまま）',
   'settings.highlight.perHost': 'ホスト別ルールセット',
   'settings.highlight.perHostHint':
     'オンにすると、ルールセットを紐付けた SSH 接続はそのサブセットのみ適用されます。オフでは全セッションが全ルールを使います',

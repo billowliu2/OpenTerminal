@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'fs'
-import { dirname, join } from 'path'
+import { dirname } from 'path'
 
 /**
  * Small shared persistence helper for the app's JSON stores (settings,
@@ -73,11 +73,6 @@ export function writeJson(file: string, value: unknown): void {
       Atomics.wait(RENAME_RETRY_WAIT, 0, 0, 5 * (attempt + 1))
     }
   }
-}
-
-/** Convenience for stores whose file lives under a directory. */
-export function jsonFileIn(dir: string, name: string): string {
-  return join(dir, name)
 }
 
 /** Minimal shape guard used by the stores before trusting a parsed value. */

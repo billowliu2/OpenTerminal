@@ -69,6 +69,10 @@ withDevUrl(undefined, () => {
   ok(!isTrustedRendererUrl(pathToFileURL(join(__dirname, '../renderer/other.html')).href), 'a sibling file in the renderer dir is not')
   ok(!isTrustedRendererUrl(pathToFileURL(join(__dirname, '../package.json')).href), 'another local file is not')
   ok(!isTrustedRendererUrl('file:///C:/Windows/System32/drivers/etc/hosts'), 'an unrelated file: URL is not')
+  ok(
+    !isTrustedRendererUrl(`file://evil-host${pathToFileURL(join(__dirname, '../renderer/index.html')).pathname}`),
+    'a file URL with a host is not the app page'
+  )
   ok(!isTrustedRendererUrl('https://evil.example/index.html'), 'a remote origin is not')
   ok(!isTrustedRendererUrl('http://localhost:5173/'), 'the dev server is NOT trusted in a packaged build (env ignored)')
 })
