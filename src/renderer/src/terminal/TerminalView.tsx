@@ -23,6 +23,7 @@ import { publishHighlightStats, unregisterHighlightStats } from './highlightStat
 import { applyThemeColors } from '@renderer/theme/highlightColors'
 import { findUrls } from './urlLinks'
 import { WriteBatcher } from './writeBatcher'
+import { flushPendingOutput } from './sessionFlush'
 import { wheelFallbackSequence } from './wheelFallback'
 import { contrastFloor } from '@shared/contrastFloor'
 import { refitDelay } from './fitThrottle'
@@ -405,11 +406,24 @@ export function TerminalView({
       cursorInactiveStyle: s.settings.terminal.cursorInactiveStyle
     }))
   )
+  // The theme effect assigns `term.options.theme`, and xterm 6.1 builds and
+  // discards a TextureAtlas on EVERY such assignment (xtermjs/xterm.js#6291,
+  // unfixed upstream). So this group carries EXACTLY what the assignment
+  // consumes — the theme id, the custom themes, and whether a background image
+  // is set. The contrast floor and the scrim opacity/dim live in their own
+  // groups: they cannot change the theme, and depending on them would burn an
+  // atlas per slider tick.
   const themeOpts = useSettingsStore(
     useShallow((s) => ({
       themeId: s.settings.terminal.themeId,
       customThemes: s.settings.customThemes,
-      contrastRatio: s.settings.terminal.minimumContrastRatio
+      hasImage: s.settings.terminal.backgroundImage !== ''
+    }))
+  )
+  const contrastOpts = useSettingsStore(
+    useShallow((s) => ({
+      ratio: s.settings.terminal.minimumContrastRatio,
+      hasImage: s.settings.terminal.backgroundImage !== ''
     }))
   )
   const bgOpts = useSettingsStore(
@@ -1175,7 +1189,7 @@ export function TerminalView({
       // the theme's own colours are untouched. A background image keeps its
       // own 4.5 floor (xterm reads a transparent background as black).
       // (Spelled minimumContrastRatio — minContrastRatio is silently ignored.)
-      minimumContrastRatio: contrastFloor(themeOpts.contrastRatio, bgOpts.image !== ''),
+      minimumContrastRatio: contrastFloor(contrastOpts.ratio, contrastOpts.hasImage),
       convertEol: false,
       windowsPty: { backend: 'conpty', buildNumber: 0 }
     })
@@ -1491,10 +1505,13 @@ export function TerminalView({
     // Death state, shared by the PTY_EXIT subscription and the SESSION_STATE
     // query below: the two paths must land identically.
     const markDead = (code: number): void => {
-      // The batcher may still hold the session's final output (PTY_EXIT lands
-      // after the data but before the flush timer); release it before the
-      // dead flag starts dropping writes.
-      batcher.flushNow()
+      // Two buffers may still hold the session's final output: the highlight
+      // stream (it holds every escape-free chunk's trailing text run) and the
+      // batcher (a ~16ms window of what the stream already released). Both must
+      // reach xterm BEFORE the dead flag starts dropping writes — PTY_EXIT
+      // lands right after the last PTY_DATA, so what is still held IS the last
+      // line of output, and a dead session has no replay to re-fetch it from.
+      flushPendingOutput(stream, batcher)
       deadRef.current = true
       setExitCode(code)
       setDead(true)
@@ -1624,8 +1641,12 @@ export function TerminalView({
       if (paneDiagId !== '') unregisterPane(paneDiagId)
       paneDiagIdRef.current = ''
       // Drop the stream with the session; a fresh one is created next bind so no
-      // carry survives across sessions. A mid-session carry is flushed below
-      // (harmless: it is treated as raw text by the resync-aware xterm).
+      // carry survives across sessions. The held bytes are DISCARDED on purpose:
+      // a rebind re-fetches the session replay (which carries the same text),
+      // and an unmount disposes the terminal two lines below — writing them
+      // would be a no-op at best and a write into a dying terminal at worst.
+      // The session-DEATH path does release them (see markDead): that session
+      // is gone, so there is no replay to re-fetch.
       streamRef.current?.flush()
       streamRef.current = null
       term.dispose()
@@ -1683,10 +1704,15 @@ export function TerminalView({
     if (!term) return
     const colors = getThemeById(themeOpts.themeId, themeOpts.customThemes).colors
     const lightTheme = isLightTheme(colors.background)
-    term.options.theme = withChromeColors(colors as ITheme, bgOpts.image !== '', lightTheme)
+    term.options.theme = withChromeColors(colors as ITheme, themeOpts.hasImage, lightTheme)
     term.options.drawBoldTextInBrightColors = !lightTheme
-    term.options.minimumContrastRatio = contrastFloor(themeOpts.contrastRatio, bgOpts.image !== '')
-  }, [themeOpts, bgOpts])
+  }, [themeOpts])
+
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.minimumContrastRatio = contrastFloor(contrastOpts.ratio, contrastOpts.hasImage)
+  }, [contrastOpts])
 
   // ---- renderer mode changes: keep the instance, swap renderer, refit ----
   useEffect(() => {
