@@ -46,6 +46,17 @@ export interface CompiledRule {
   fgSgr: string
   /** full SGR open sequence `\x1b[38;2;…(;48;2;…)?m` incl. optional bg, built once here */
   open: string
+  /**
+   * A rule that alerts on a hit (see `MatchListener`) paints even when the
+   * application coloured the text itself.
+   *
+   * The "don't repaint the program's own colours" policy would otherwise skip
+   * the whole run, and with it the span — so the alert would fire for a hit
+   * nobody can see, or (worse, since the listener only fires for painted
+   * spans) not fire at all. A secret scrolling past inside a coloured line
+   * must still be flagged.
+   */
+  alwaysPaint: boolean
 }
 
 /** Per-rule counters, only filled when a stats sink is passed in (see `StatsSink`). */
@@ -76,6 +87,23 @@ export type StatsSink = Map<string, RuleStat>
  * Undefined on the default path: the engine skips the call entirely.
  */
 export type MatchListener = (ruleId: string, text: string) => void
+
+/**
+ * Optional policy for the highlight pass.
+ *
+ * `respectAppColor` — leave text alone when the application has already
+ * chosen a foreground colour for it. A rule colour is picked for the terminal
+ * canvas, but a full-screen program paints its own palette (a TUI banner, dim
+ * body text, a coloured card); repainting one word inside such a run mixes two
+ * colour systems in one sentence and reads as a rendering glitch. Runs the
+ * application left at the terminal's default colour are highlighted as before.
+ *
+ * Off by default in the engine: the setting decides, and the settings-page
+ * preview has no application colours to respect.
+ */
+export interface HighlightOptions {
+  respectAppColor?: boolean
+}
 
 type Token = { kind: 'seq' | 'text'; value: string }
 /** A claimed span carries its precomputed SGR open sequence, never a hex colour. */
@@ -355,7 +383,8 @@ export function compileRules(rules: HighlightRule[]): CompiledRule[] {
       bands: compileBands(rule.bands, bgPart),
       priority: rule.priority,
       fgSgr,
-      open: `\x1b[38;2;${fgSgr}${bgPart}m`
+      open: `\x1b[38;2;${fgSgr}${bgPart}m`,
+      alwaysPaint: rule.notify === true
     })
   }
   out.sort((a, b) => a.priority - b.priority)
@@ -412,6 +441,28 @@ const MAX_RESTORE_LEN = 256
  */
 const MAX_REPLAY_SEQUENCES = 3
 
+/** SGR parameter separators, as char codes (read in place, never allocated). */
+const SEMICOLON = 59
+const COLON = 58
+
+/**
+ * Read one SGR parameter (`params[from..to)`) as a decimal code.
+ *
+ * An omitted parameter means 0 — a reset (ECMA-48 §8.3.3). A parameter that
+ * is not a plain decimal number (`+1`, ` 1`, `1 `) is not a code the
+ * standard defines; it is reported as NaN and leaves the foreground alone.
+ */
+function readSgrParam(params: string, from: number, to: number): number {
+  if (from >= to) return 0
+  let code = 0
+  for (let i = from; i < to; i++) {
+    const digit = params.charCodeAt(i) - 48
+    if (digit < 0 || digit > 9) return Number.NaN
+    code = code * 10 + digit
+  }
+  return code
+}
+
 /**
  * The application's active SGR state: every `…m` CSI emitted since the last
  * reset, concatenated in order (`''` when the application has set none).
@@ -425,12 +476,28 @@ const MAX_REPLAY_SEQUENCES = 3
 class SgrState {
   private value = ''
   private count = 0
+  /**
+   * Whether the application has chosen a foreground colour of its own.
+   *
+   * Only an explicit foreground counts. Bold, underline, faint and a
+   * background colour are attributes, not a colour choice: treating them as
+   * one would silence highlighting for every program that turns bold on once
+   * and keeps it on for the rest of its output. `39` (default foreground)
+   * clears the flag again, so a program that hands the colour back gets its
+   * text highlighted like uncoloured output.
+   */
+  private fgChosen = false
 
   /** SGR state on entering the next text run (see `wrap`). Empty when the
    *  accumulated chain is too long to replay profitably: every span would pay
    *  for it, and a per-cell repainting TUI emits dozens of spans per line. */
   get restore(): string {
     return this.count > 0 && this.count <= MAX_REPLAY_SEQUENCES ? this.value : ''
+  }
+
+  /** True while the application's own foreground colour is in force. */
+  get hasForeground(): boolean {
+    return this.fgChosen
   }
 
   /** Fold one escape-sequence token in; non-SGR tokens leave the state alone. */
@@ -449,6 +516,9 @@ class SgrState {
     while ((m = SGR_ONLY_RE.exec(token)) !== null) {
       const seq = m[0]
       const params = seq.slice(2, -1)
+      // The foreground flag is derived from the parameters alone, so it
+      // survives the replay chain being dropped for being too long.
+      this.trackForeground(params)
       const resets = params === '' || /^[0;:]*$/.test(params)
       if (resets) {
         this.value = ''
@@ -472,6 +542,101 @@ class SgrState {
         this.count = 0
         return
       }
+    }
+  }
+
+  /**
+   * Fold one SGR parameter list into the foreground flag.
+   *
+   * The parameters are read in order, because ECMA-48 gives them order
+   * meaning: `ESC[0;32m` resets and then picks red, `ESC[39m` hands the
+   * foreground back to the terminal default. Only the foreground is tracked —
+   * see `fgChosen`.
+   *
+   * The list is walked IN PLACE, without splitting it: a per-cell repainting
+   * TUI emits thousands of SGRs a second, and `split(';')` would leave an
+   * array plus a string per parameter for the collector on every one of them
+   * (measured: 16% of the whole highlight pass).
+   */
+  private trackForeground(params: string): void {
+    const len = params.length
+    if (len === 0) {
+      // `ESC[m` — a full reset.
+      this.fgChosen = false
+      return
+    }
+    let i = 0
+    while (i < len) {
+      // The extent of this parameter: up to the next ';'.
+      let end = i
+      while (end < len && params.charCodeAt(end) !== SEMICOLON) end++
+      // The colon form carries the whole extended colour in one parameter
+      // (`38:2::r:g:b`, ITU-T T.416): only its head selects the attribute.
+      let colon = -1
+      for (let k = i; k < end; k++) {
+        if (params.charCodeAt(k) === COLON) {
+          colon = k
+          break
+        }
+      }
+      if (colon >= 0) {
+        // Only the exact head `38` selects the foreground. Any other colon
+        // form is malformed, and a malformed sequence leaves the foreground
+        // alone rather than guessing at it.
+        if (colon - i === 2 && params.charCodeAt(i) === 51 && params.charCodeAt(i + 1) === 56) {
+          this.fgChosen = true
+        }
+        i = end + 1
+        continue
+      }
+      const code = readSgrParam(params, i, end)
+      if (code === 38 || code === 48) {
+        // The extended colour's own parameters follow: `5;n` or `2;r;g;b`.
+        // They are colour COMPONENTS — reading them as foreground codes would
+        // make a dark background look like the application picked a foreground.
+        const next = end + 1
+        let nextEnd = next
+        while (nextEnd < len && params.charCodeAt(nextEnd) !== SEMICOLON) nextEnd++
+        const mode = readSgrParam(params, next, nextEnd)
+        // `5;n` has one value parameter, `2;r;g;b` has three.
+        const values = mode === 5 ? 1 : mode === 2 ? 3 : 0
+        let after = nextEnd + 1
+        for (let v = 0; v < values; v++) {
+          let valueEnd = after
+          while (valueEnd < len && params.charCodeAt(valueEnd) !== SEMICOLON) valueEnd++
+          after = valueEnd + 1
+        }
+        if (code === 38) this.fgChosen = true
+        i = after
+        continue
+      }
+      this.applyForegroundCode(code)
+      i = end + 1
+    }
+  }
+
+  /**
+   * Fold one SGR parameter code into the foreground flag.
+   *
+   * `0` and `39` clear it (a reset, and the default foreground); the plain
+   * colour codes set it; everything else — bold, underline, faint, the
+   * background colours and their defaults — leaves it alone.
+   */
+  private applyForegroundCode(code: number): void {
+    if (!Number.isFinite(code)) return
+    if (code === 0 || code === 39) {
+      this.fgChosen = false
+      return
+    }
+    if (code === 38) {
+      // The extended-colour selector; its own parameters are consumed by the
+      // caller. A bare `ESC[38m` is malformed but still means "a foreground
+      // colour follows".
+      this.fgChosen = true
+      return
+    }
+    if ((code >= 30 && code <= 37) || (code >= 90 && code <= 97)) {
+      this.fgChosen = true
     }
   }
 }
@@ -563,6 +728,9 @@ const now = (): number => (typeof performance !== 'undefined' ? performance.now(
  *    over-long line alone goes through raw while its short neighbours still
  *    highlight. Cross-line matches are given up for that run, which is the
  *    price of never handing a >4KB line to a user pattern.
+ *
+ * `onlyAlwaysPaint` restricts the scan to the rules that alert on a hit — the
+ * mode used for a run the application coloured itself (see `HighlightOptions`).
  */
 function applyRun(
   text: string,
@@ -571,13 +739,16 @@ function applyRun(
   restore: string,
   stats?: StatsSink,
   spent?: { n: number },
-  onMatch?: MatchListener
+  onMatch?: MatchListener,
+  onlyAlwaysPaint = false
 ): string {
   if (text.length === 0) {
     if (spent !== undefined) spent.n = 0
     return ''
   }
-  if (!hasLongLine(text)) return applyShortRun(text, rules, budgets, restore, stats, spent, onMatch)
+  if (!hasLongLine(text)) {
+    return applyShortRun(text, rules, budgets, restore, stats, spent, onMatch, onlyAlwaysPaint)
+  }
 
   let made = 0
   let out = ''
@@ -592,7 +763,7 @@ function applyRun(
       continue
     }
     const runSpent = { n: 0 }
-    out += applyShortRun(line, rules, budgets, restore, stats, runSpent, onMatch)
+    out += applyShortRun(line, rules, budgets, restore, stats, runSpent, onMatch, onlyAlwaysPaint)
     made += runSpent.n
   }
   if (spent !== undefined) spent.n = made
@@ -602,6 +773,10 @@ function applyRun(
 /**
  * Scan one run that is known to be free of over-long lines. `restore` is the
  * application's SGR state on entering the run (see `wrap`).
+ *
+ * `onlyAlwaysPaint` restricts the scan to the rules that alert on a hit (see
+ * `CompiledRule.alwaysPaint`) — the mode used for a run the application
+ * coloured itself.
  */
 function applyShortRun(
   text: string,
@@ -610,7 +785,8 @@ function applyShortRun(
   restore: string,
   stats?: StatsSink,
   spent?: { n: number },
-  onMatch?: MatchListener
+  onMatch?: MatchListener,
+  onlyAlwaysPaint = false
 ): string {
   if (text.length === 0) {
     if (spent !== undefined) spent.n = 0
@@ -621,6 +797,7 @@ function applyShortRun(
   for (let ri = 0; ri < rules.length; ri++) {
     const rule = rules[ri]
     if (budgets[ri] <= 0) continue
+    if (onlyAlwaysPaint && !rule.alwaysPaint) continue
     const started = stats === undefined ? 0 : now()
     rule.regex.lastIndex = 0
     let m: RegExpExecArray | null
@@ -712,7 +889,8 @@ export function applyHighlights(
   rules: CompiledRule[],
   stats?: StatsSink,
   sgr: SgrState = new SgrState(),
-  onMatch?: MatchListener
+  onMatch?: MatchListener,
+  options?: HighlightOptions
 ): string {
   if (!chunk || rules.length === 0) return chunk
   if (chunk.length > MAX_CHUNK) return chunk
@@ -720,6 +898,9 @@ export function applyHighlights(
   const budgets = rules.map(() => MAX_PER_RULE)
   let usedBudget = false
   let out = ''
+  // Does any rule alert on a hit? Only then is a run the application coloured
+  // worth scanning at all — otherwise the whole run is skipped untouched.
+  const hasAlertingRule = rules.some((rule) => rule.alwaysPaint)
   // applyRun reports how many matches it claimed, replacing the old two
   // budgets.reduce() passes per text token.
   const spent = { n: 0 }
@@ -733,6 +914,21 @@ export function applyHighlights(
     // never highlighted (it is a partial/unknown escape, do not corrupt it).
     if (token.value.includes('\x1b')) {
       out += token.value
+      continue
+    }
+    // The application painted this run itself — leave it alone. Repainting a
+    // word inside a program's own palette mixes two colour systems in one
+    // sentence; the program knows what its text means. The exception is a rule
+    // that alerts on a hit: it has to paint, or the alert would fire for
+    // something nobody can see.
+    if (options?.respectAppColor === true && sgr.hasForeground) {
+      if (!hasAlertingRule) {
+        out += token.value
+        continue
+      }
+      spent.n = 0
+      out += applyRun(token.value, rules, budgets, sgr.restore, stats, spent, onMatch, true)
+      if (spent.n > 0) usedBudget = true
       continue
     }
     spent.n = 0
@@ -856,15 +1052,23 @@ export class HighlightStream {
    * same sequences as single-chunk output.
    */
   private sgr = new SgrState()
+  /** The highlight policy (see `HighlightOptions`). */
+  private options: HighlightOptions = {}
 
-  constructor(rules: CompiledRule[], onMatch?: MatchListener) {
+  constructor(rules: CompiledRule[], onMatch?: MatchListener, options?: HighlightOptions) {
     this.rules = rules
     this.onMatch = onMatch
+    if (options !== undefined) this.options = options
   }
 
   /** Swap the active rules without touching any buffered content. */
   setRules(rules: CompiledRule[]): void {
     this.rules = rules
+  }
+
+  /** Swap the highlight policy (see `HighlightOptions`). */
+  setOptions(options: HighlightOptions): void {
+    this.options = options
   }
 
   /** Attach or drop the optional stats sink (see `highlightStats`). */
@@ -902,7 +1106,7 @@ export class HighlightStream {
       if (this.buffer.length > MAX_CHUNK) {
         const raw = this.buffer
         this.buffer = ''
-        return applyHighlights(raw, this.rules, this.stats, this.sgr, this.onMatch)
+        return applyHighlights(raw, this.rules, this.stats, this.sgr, this.onMatch, this.options)
       }
       return ''
     }
@@ -918,11 +1122,11 @@ export class HighlightStream {
         // the fragment raw (applyHighlights skips raw \x1b in text runs).
         this.buffer = ''
         this.bufferHasEsc = false
-        return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch) + tail
+        return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch, this.options) + tail
       }
       this.buffer = tail
       this.bufferHasEsc = true // the held tail starts at the dangling ESC
-      return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch)
+      return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch, this.options)
     }
 
     // (b) no incomplete escape -> find the last *closed* escape and emit only
@@ -935,7 +1139,7 @@ export class HighlightStream {
         const raw = this.buffer
         this.buffer = ''
         this.bufferHasEsc = false
-        return applyHighlights(raw, this.rules, this.stats, this.sgr, this.onMatch)
+        return applyHighlights(raw, this.rules, this.stats, this.sgr, this.onMatch, this.options)
       }
       // The buffer (or the chunk that just joined it) brought the ESC in.
       this.bufferHasEsc = true
@@ -944,7 +1148,7 @@ export class HighlightStream {
     const head = this.buffer.slice(0, lastEnd)
     this.buffer = this.buffer.slice(lastEnd)
     this.bufferHasEsc = this.buffer.includes('\x1b')
-    return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch)
+    return applyHighlights(head, this.rules, this.stats, this.sgr, this.onMatch, this.options)
   }
 
   /** Flush any held content (session end) — highlighted as a final run. */
@@ -952,7 +1156,7 @@ export class HighlightStream {
     const b = this.buffer
     this.buffer = ''
     this.bufferHasEsc = false
-    return applyHighlights(b, this.rules, this.stats, this.sgr, this.onMatch)
+    return applyHighlights(b, this.rules, this.stats, this.sgr, this.onMatch, this.options)
   }
 }
 

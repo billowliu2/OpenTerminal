@@ -15,6 +15,7 @@ interface ThemeLike {
 }
 
 function parseHex(color: string): [number, number, number] | null {
+  if (typeof color !== 'string') return null
   const m = /^#([0-9a-f]{6})$/i.exec(color.trim())
   if (!m) return null
   const n = parseInt(m[1], 16)
@@ -70,6 +71,38 @@ export function darkenToRatio(color: string, bg: string, ratio: number): string 
     if (contrast(cur, bg) >= ratio) return cur
   }
   return cur
+}
+
+/** Lighten `color` toward white in 0.05 steps until contrast vs `bg` >= ratio.
+ *  The mirror of darkenToRatio: a colour that is too DARK for a dark surface
+ *  (a near-black rule colour on the settings panel) has to be lifted, not
+ *  pressed further into the background. */
+export function lightenToRatio(color: string, bg: string, ratio: number): string {
+  if (contrast(color, bg) >= ratio) return color
+  let t = 0
+  let cur = color
+  while (t < 0.85) {
+    t = Math.round((t + 0.05) * 100) / 100
+    const next = mix(color, '#ffffff', t)
+    if (!next) return color
+    cur = next
+    if (contrast(cur, bg) >= ratio) return cur
+  }
+  return cur
+}
+
+/**
+ * Bring `color` to at least `ratio` contrast against `bg`, whichever way that
+ * has to go: a light surface needs the colour pressed DOWN, a dark surface
+ * needs it lifted UP. Used wherever a colour chosen for one theme is shown on
+ * another surface (the highlight rules table previews its rule colours on the
+ * settings panel, whose own background follows the active theme).
+ */
+export function ensureContrast(color: string, bg: string, ratio: number): string {
+  if (contrast(color, bg) >= ratio) return color
+  return isLightTheme(bg)
+    ? darkenToRatio(color, bg, ratio)
+    : lightenToRatio(color, bg, ratio)
 }
 
 /** Historical dark-chrome literals. The dark branch MUST keep these values. */

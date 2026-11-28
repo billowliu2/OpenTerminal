@@ -1435,5 +1435,202 @@ console.log('[proof gate]')
   }
 }
 
+// ---- 25. the application's own colour is respected ----------------------------
+console.log('[respect app colour]')
+{
+  // A rule colour is chosen for the terminal canvas, but a full-screen program
+  // paints its own palette. Repainting one word inside such a run mixes two
+  // colour systems in one sentence — the "created" in a dim sentence going
+  // green while the rest of it stays grey. With the policy on, a run whose
+  // foreground the application chose is left alone.
+  const respect = { respectAppColor: true }
+  // "created" is claimed by the createop rule (priority 5).
+  const CREATE_GREEN = '#56d364'
+  const grey = '\x1b[38;2;140;140;140m'
+  const sentence = 'No session yet - one will be created on your first message.'
+
+  const kept = applyHighlights(`${grey}${sentence}\x1b[0m`, rules, undefined, undefined, undefined, respect)
+  ok(
+    kept === `${grey}${sentence}\x1b[0m`,
+    'a run the application coloured keeps its own colour (nothing is repainted)'
+  )
+  ok(
+    !kept.includes(sgr(CREATE_GREEN)),
+    "the program's own colour does not get a rule colour injected"
+  )
+
+  // The policy is opt-in: with it off the run is repainted exactly as before.
+  const repainted = applyHighlights(`${grey}${sentence}\x1b[0m`, rules)
+  ok(
+    repainted.includes(sgr(CREATE_GREEN)),
+    'without the policy the run is still repainted (old behaviour)'
+  )
+
+  // Uncoloured output is highlighted either way — the policy only ever steps
+  // aside for a colour the application chose.
+  ok(
+    applyHighlights(sentence, rules, undefined, undefined, undefined, respect).includes(sgr(CREATE_GREEN)),
+    'uncoloured output is still highlighted with the policy on'
+  )
+
+  // Only an explicit FOREGROUND counts as "the application coloured this".
+  // Bold, underline and a background colour are attributes: treating them as
+  // a colour choice would silence highlighting for every program that turns
+  // bold on once and keeps it on.
+  ok(
+    applyHighlights(`\x1b[1m${sentence}`, rules, undefined, undefined, undefined, respect).includes(
+      sgr(CREATE_GREEN)
+    ),
+    'bold alone does not count as the application choosing a colour'
+  )
+  ok(
+    applyHighlights(`\x1b[48;2;30;30;30m${sentence}`, rules, undefined, undefined, undefined, respect).includes(
+      sgr(CREATE_GREEN)
+    ),
+    'a background colour alone does not count as the application choosing a colour'
+  )
+
+  // The foreground forms an application may use: the 8/16-colour codes, the
+  // 256-colour and the truecolor selector, and the colon spelling of the
+  // latter. All of them are "the application picked a colour".
+  for (const seq of [
+    '\x1b[31m',
+    '\x1b[91m',
+    '\x1b[38;5;196m',
+    '\x1b[38;2;140;140;140m',
+    '\x1b[38:2::140:140:140m'
+  ]) {
+    ok(
+      applyHighlights(`${seq}${sentence}`, rules, undefined, undefined, undefined, respect) === `${seq}${sentence}`,
+      `${JSON.stringify(seq)} counts as the application choosing a colour`
+    )
+  }
+
+  // Handing the colour back (`39`) puts the run under the terminal default
+  // again, so it is highlighted like plain output.
+  ok(
+    applyHighlights(`\x1b[39m${sentence}`, rules, undefined, undefined, undefined, respect).includes(
+      sgr(CREATE_GREEN)
+    ),
+    'the default foreground (39) hands the text back to the highlighter'
+  )
+
+  // `ESC[0;32m` is a reset plus a colour: the colour wins, so the run belongs
+  // to the application.
+  ok(
+    applyHighlights(`\x1b[0;32m${sentence}`, rules, undefined, undefined, undefined, respect) ===
+      `\x1b[0;32m${sentence}`,
+    'a reset followed by a colour still leaves the run to the application'
+  )
+
+  // The flag survives a chunk boundary: the colour set in one push is still in
+  // force for the text that arrives in the next one.
+  const stream = new HighlightStream(rules, undefined, respect)
+  const streamed = stream.push(`${grey}`) + stream.push(sentence) + stream.flush()
+  ok(
+    !streamed.includes(sgr(CREATE_GREEN)),
+    'the application colour carries across stream pushes (split == single chunk)'
+  )
+
+  // The policy is a stream-level switch, so it can be flipped at runtime. The
+  // text has to be one the application coloured, or there is nothing for the
+  // policy to step aside for.
+  const flip = new HighlightStream(rules)
+  const before = flip.push(`${grey}${sentence}`) + flip.flush()
+  flip.setOptions(respect)
+  const after = flip.push(`${grey}${sentence}`) + flip.flush()
+  ok(before.includes(sgr(CREATE_GREEN)), 'the stream highlights before the policy is set')
+  ok(!after.includes(sgr(CREATE_GREEN)), 'the stream honours the policy set at runtime')
+
+  // A rule that alerts on a hit must still paint inside a run the application
+  // coloured: the alert fires for painted spans only, so skipping the run
+  // would silence it — a leaked secret scrolling past in a coloured line would
+  // go unnoticed.
+  {
+    const alerting = compile([
+      {
+        id: 'alert',
+        pattern: 'created',
+        enabled: true,
+        priority: 1,
+        color: { fg: '#ff7b72' },
+        notify: true
+      }
+    ])
+    const quiet = compile([
+      {
+        id: 'quiet',
+        pattern: 'created',
+        enabled: true,
+        priority: 1,
+        color: { fg: '#ff7b72' }
+      }
+    ])
+    const RED = sgr('#ff7b72')
+    ok(
+      applyHighlights(`${grey}${sentence}`, alerting, undefined, undefined, undefined, respect).includes(RED),
+      'a rule that alerts on a hit paints even in a run the application coloured'
+    )
+    ok(
+      !applyHighlights(`${grey}${sentence}`, quiet, undefined, undefined, undefined, respect).includes(RED),
+      'a rule that does not alert still steps aside for the application colour'
+    )
+    // The alert has to reach the consumer, not just the screen.
+    const events = []
+    applyHighlights(
+      `${grey}${sentence}`,
+      alerting,
+      undefined,
+      undefined,
+      (id, text) => events.push([id, text]),
+      respect
+    )
+    ok(
+      events.length === 1 && events[0][0] === 'alert',
+      'the alert fires for the span painted inside an application-coloured run'
+    )
+    // …and the shipped secret preset is one of those rules.
+    const secret = DEFAULT_HIGHLIGHT_RULES.find((r) => r.id === 'secret')
+    ok(secret !== undefined && secret.notify === true, 'the secret preset alerts on a hit')
+  }
+
+  // The SGR spellings an application may use, and what each of them means.
+  // `skip` = the run belongs to the application (its colour is kept);
+  // `highlight` = the run is the terminal's default colour and is highlighted
+  // as before. A wrong verdict in either direction is a bug: a false "skip"
+  // silently switches highlighting off, a false "highlight" is the glitch
+  // this policy exists to remove.
+  const spellings = [
+    ['\x1b[0;32m', 'skip', 'a reset plus a colour ends with the colour'],
+    ['\x1b[;31m', 'skip', 'an omitted parameter means 0 (reset), then the colour'],
+    ['\x1b[1;;31m', 'skip', 'an omitted parameter in the middle is a reset too'],
+    ['\x1b[38;5;31m', 'skip', 'a 256-colour foreground'],
+    ['\x1b[38;5;31;1m', 'skip', 'a 256-colour foreground followed by bold'],
+    ['\x1b[38;2;30;40;50m', 'skip', 'a truecolor foreground'],
+    ['\x1b[38;2;30;40;50;4m', 'skip', 'a truecolor foreground followed by underline'],
+    ['\x1b[0;38;2;1;2;3m', 'skip', 'a reset followed by a truecolor foreground'],
+    ['\x1b[38:2::140:140:140m', 'skip', 'the colon spelling of truecolor'],
+    ['\x1b[m', 'highlight', 'a bare reset hands the text back'],
+    ['\x1b[0m', 'highlight', 'a plain reset hands the text back'],
+    ['\x1b[39m', 'highlight', 'the default foreground hands the text back'],
+    ['\x1b[39;1m', 'highlight', 'the default foreground followed by bold'],
+    ['\x1b[38;5;196m\x1b[0m', 'highlight', 'a colour that is reset again'],
+    ['\x1b[38;2;1;2;3m\x1b[39m', 'highlight', 'a colour handed back with 39'],
+    ['\x1b[1m', 'highlight', 'bold alone is not a colour choice'],
+    ['\x1b[4m', 'highlight', 'underline alone is not a colour choice'],
+    ['\x1b[2m', 'highlight', 'faint alone is not a colour choice'],
+    ['\x1b[7m', 'highlight', 'reverse alone is not a colour choice'],
+    ['\x1b[48;5;31m', 'highlight', 'a 256-colour background is not a foreground'],
+    ['\x1b[48;2;30;40;50m', 'highlight', 'a truecolor background is not a foreground'],
+    ['\x1b[48;2;30;40;50;1m', 'highlight', 'a truecolor background followed by bold']
+  ]
+  for (const [seq, verdict, why] of spellings) {
+    const out = applyHighlights(`${seq}${sentence}`, rules, undefined, undefined, undefined, respect)
+    const skipped = !out.includes(sgr(CREATE_GREEN))
+    const actual = skipped ? 'skip' : 'highlight'
+    ok(actual === verdict, `${JSON.stringify(seq)} → ${actual} (${why})`)
+  }
+}
+
 console.log(failed === 0 ? '\n[hl-rules] ALL CHECKS PASSED' : `\n[hl-rules] ${failed} CHECK(S) FAILED`)
 process.exit(failed === 0 ? 0 : 1)

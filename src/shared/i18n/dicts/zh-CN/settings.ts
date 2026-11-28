@@ -255,6 +255,9 @@ const settings: Record<string, string> = {
   'settings.highlight.statsEmpty': '还没有统计数据，先去终端里跑点输出',
   'settings.highlight.themeColors': '跟随主题配色',
   'settings.highlight.themeColorsHint': '按色相把高亮颜色映射到当前终端主题的调色板（灰阶色保持原样）',
+  'settings.highlight.respectAppColor': '不覆盖程序配色',
+  'settings.highlight.respectAppColorHint':
+    '程序自己给文字上过色时不再改色，避免与 TUI 自身的配色打架；程序没上色的输出照常高亮',
   'settings.highlight.perHost': '按主机规则集',
   'settings.highlight.perHostHint': '开启后，绑定了规则集的 SSH 连接只跑该子集；关闭时所有会话都用全部规则',
   'settings.highlight.profiles': '主机规则集',

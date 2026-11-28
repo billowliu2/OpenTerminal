@@ -255,6 +255,9 @@ const settings: Record<string, string> = {
   'settings.highlight.statsEmpty': '還沒有統計資料，先去終端機跑點輸出',
   'settings.highlight.themeColors': '跟隨主題配色',
   'settings.highlight.themeColorsHint': '依色相把高亮顏色對應到目前終端機主題的調色盤（灰階色保持原樣）',
+  'settings.highlight.respectAppColor': '不覆寫程式配色',
+  'settings.highlight.respectAppColorHint':
+    '程式自己替文字上過色時不再改色，避免與 TUI 自身的配色打架；程式沒上色的輸出照常高亮',
   'settings.highlight.perHost': '依主機規則集',
   'settings.highlight.perHostHint': '開啟後，綁定了規則集的 SSH 連線只跑該子集；關閉時所有工作階段都用全部規則',
   'settings.highlight.profiles': '主機規則集',

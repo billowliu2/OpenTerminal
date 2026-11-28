@@ -266,6 +266,9 @@ const settings: Record<string, string> = {
   'settings.highlight.themeColors': 'テーマの配色に合わせる',
   'settings.highlight.themeColorsHint':
     '色相でハイライト色を現在のターミナルパレットに割り当てます（無彩色はそのまま）',
+  'settings.highlight.respectAppColor': 'プログラムの色を上書きしない',
+  'settings.highlight.respectAppColorHint':
+    'プログラム自身が文字に付けた色はそのまま残し、TUI の配色と混ざらないようにします。プログラムが色付けしていない出力は通常どおりハイライトされます',
   'settings.highlight.perHost': 'ホスト別ルールセット',
   'settings.highlight.perHostHint':
     'オンにすると、ルールセットを紐付けた SSH 接続はそのサブセットのみ適用されます。オフでは全セッションが全ルールを使います',

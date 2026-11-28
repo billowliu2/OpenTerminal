@@ -447,7 +447,8 @@ export function TerminalView({
       profiles: s.settings.highlightProfiles,
       perHost: s.settings.terminal.highlightPerHost,
       themeColors: s.settings.terminal.highlightThemeColors,
-      stats: s.settings.terminal.highlightStats
+      stats: s.settings.terminal.highlightStats,
+      respectAppColor: s.settings.terminal.highlightRespectAppColor !== false
     }))
   )
   // Clickable link rules: one field, its own subscription, so an unrelated
@@ -692,6 +693,11 @@ export function TerminalView({
   useEffect(() => {
     streamRef.current?.setOnMatch(notifyMatch)
   }, [notifyMatch])
+  // And the highlight policy: flipping "don't repaint the program's own
+  // colours" must take effect without reopening the session.
+  useEffect(() => {
+    streamRef.current?.setOptions({ respectAppColor: highlightOpts.respectAppColor })
+  }, [highlightOpts.respectAppColor])
 
   // M5: load completion candidates once per session (history + library cached).
   const ensureCompletionCache = useCallback((): void => {
@@ -1288,7 +1294,9 @@ export function TerminalView({
     // unsubscribe functions — keep the two shapes apart or cleanup throws.
     // A fresh HighlightStream is created per session so carry data never leaks
     // across a sessionId rebind (e.g. template apply).
-    const stream = new HighlightStream(compiledRules, notifyMatch)
+    const stream = new HighlightStream(compiledRules, notifyMatch, {
+      respectAppColor: highlightOpts.respectAppColor
+    })
     streamRef.current = stream
     // A session created while stats are on keeps collecting into the same map.
     stream.setStats(statsRef.current ?? undefined)

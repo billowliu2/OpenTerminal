@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -51,6 +51,7 @@ import {
   subscribeHighlightStats
 } from '../terminal/highlightStats'
 import { applyThemeColors } from '../theme/highlightColors'
+import { ensureContrast, mix } from '../theme/semantic'
 import './highlight.css'
 
 /** preset color swatches for the highlighting editor. */
@@ -152,6 +153,35 @@ interface EditorState {
   id?: string
 }
 
+/**
+ * The surface the highlight samples are painted on: the settings dialog's own
+ * background, which follows the active theme (antd's colorBgElevated — the
+ * same mix main.tsx hands the ConfigProvider).
+ */
+function usePanelBackground(): string {
+  const theme = useResolvedTheme()
+  return useMemo(
+    () => mix(theme.colors.background, theme.colors.foreground, 0.1) ?? theme.colors.background,
+    [theme]
+  )
+}
+
+/**
+ * Repair a rule colour so it stays legible on the given surface. A rule
+ * colour is chosen for the TERMINAL canvas; the settings panel is a different
+ * background (a light theme's rule colours land at 1.4–2.4:1 there), and the
+ * terminal repairs the same mismatch at render time through its own
+ * minimum-contrast floor. Pressing the colour down on a light surface and
+ * lifting it on a dark one mirrors that repair, so the preview shows what the
+ * terminal actually paints.
+ */
+function useReadableOn(panelBg: string): (color: string, against?: string) => string {
+  return useCallback(
+    (color: string, against: string = panelBg): string => ensureContrast(color, against, 4.5),
+    [panelBg]
+  )
+}
+
 export function HighlightTab(): React.JSX.Element {
   const highlightRules = useSettingsStore((s) => s.settings.highlightRules)
   const setHighlightRules = useSettingsStore((s) => s.setHighlightRules)
@@ -159,10 +189,26 @@ export function HighlightTab(): React.JSX.Element {
   const groupByCategory = useSettingsStore((s) => s.settings.terminal.highlightGroupByCategory)
   const statsOn = useSettingsStore((s) => s.settings.terminal.highlightStats)
   const themeColorsOn = useSettingsStore((s) => s.settings.terminal.highlightThemeColors)
+  const respectAppColor = useSettingsStore(
+    (s) => s.settings.terminal.highlightRespectAppColor !== false
+  )
   const ruleValidation = useSettingsStore((s) => s.ruleValidation)
   const updateTerminal = useSettingsStore((s) => s.updateTerminal)
   const [editor, setEditor] = useState<EditorState>({ open: false })
   const [ioOpen, setIoOpen] = useState(false)
+
+  /**
+   * The panel the preview is painted on: the settings dialog's own surface,
+   * which follows the active theme (antd's colorBgElevated — the same mix
+   * main.tsx hands the ConfigProvider). A rule colour is picked for the
+   * TERMINAL canvas, not for this panel, so on a light theme the shipped
+   * colours land at 1.4–2.4:1 here and the sample text is unreadable. Lift
+   * or press the colour until it clears the floor against THIS background —
+   * the terminal does the same repair at render time through its own
+   * minimum-contrast floor.
+   */
+  const panelBg = usePanelBackground()
+  const readableOn = useReadableOn(panelBg)
 
   const sorted = useMemo(() => {
     const rows = [...highlightRules].sort((a, b) => a.priority - b.priority)
@@ -287,7 +333,7 @@ export function HighlightTab(): React.JSX.Element {
           <div className="hl-band-preview">
             {record.bands.map((band, index) => (
               <Tooltip key={index} title={`≥ ${band.min}`}>
-                <span className="hl-preview-text" style={{ color: band.fg }}>
+                <span className="hl-preview-text" style={{ color: readableOn(band.fg) }}>
                   ≥{band.min}
                 </span>
               </Tooltip>
@@ -297,7 +343,7 @@ export function HighlightTab(): React.JSX.Element {
           <span
             className="hl-preview-text"
             style={{
-              color: color.fg,
+              color: readableOn(color.fg, color.bg),
               ...(color.bg ? { background: color.bg, borderRadius: 3, padding: '0 4px' } : {})
             }}
           >
@@ -418,6 +464,16 @@ export function HighlightTab(): React.JSX.Element {
                 onChange={(checked) => void updateTerminal({ highlightThemeColors: checked })}
               />
               <span className="hl-editor-sub-label">{t('settings.highlight.themeColors')}</span>
+            </span>
+          </Tooltip>
+          <Tooltip title={t('settings.highlight.respectAppColorHint')}>
+            <span className="hl-master">
+              <Switch
+                size="small"
+                checked={respectAppColor}
+                onChange={(checked) => void updateTerminal({ highlightRespectAppColor: checked })}
+              />
+              <span className="hl-editor-sub-label">{t('settings.highlight.respectAppColor')}</span>
             </span>
           </Tooltip>
         </div>
@@ -793,6 +849,17 @@ function HighlightEditor({
     [highlightRules, ruleId]
   )
 
+  /**
+   * The live preview line sits on the editor's own surface: the dialog panel
+   * plus the faint foreground overlay `.hl-preview-line` paints on it.
+   */
+  const panelBg = usePanelBackground()
+  const previewBg = useMemo(
+    () => mix(panelBg, theme.colors.foreground, 0.06) ?? panelBg,
+    [panelBg, theme]
+  )
+  const readableOn = useReadableOn(previewBg)
+
   const [draft, setDraft] = useState<RuleDraft>({
     pattern: '',
     priority: 1,
@@ -1106,7 +1173,13 @@ function HighlightEditor({
             />
             <div className="hl-preview-line">
               {preview.map((span, index) => (
-                <span key={index} style={{ color: span.fg, background: span.bg }}>
+                <span
+                  key={index}
+                  style={{
+                    color: span.fg ? readableOn(span.fg, span.bg ?? previewBg) : undefined,
+                    background: span.bg
+                  }}
+                >
                   {span.text}
                 </span>
               ))}

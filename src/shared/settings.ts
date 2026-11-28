@@ -150,6 +150,17 @@ export interface TerminalSettings {
    * runs the full rule set, exactly as before.
    */
   highlightPerHost: boolean
+  /**
+   * Never repaint text the application has already coloured.
+   *
+   * A rule colour is chosen for the terminal canvas, but a full-screen program
+   * paints its own palette (a TUI's banner, dim body text, a coloured card).
+   * Repainting a word inside such a run mixes two colour systems in one
+   * sentence and reads as a rendering glitch. With this on, a text run whose
+   * foreground colour the application set is left alone; runs the application
+   * left at the default colour are still highlighted as before.
+   */
+  highlightRespectAppColor: boolean
   /** absolute path to an image rendered behind the terminal; '' = none */
   backgroundImage: string
   /** background image layer opacity, 10..100 (%) */
@@ -621,6 +632,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     highlightStats: false,
     highlightThemeColors: false,
     highlightPerHost: false,
+    highlightRespectAppColor: true,
     backgroundImage: '',
     backgroundImageOpacity: 30,
     backgroundImageDim: 0

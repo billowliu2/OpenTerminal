@@ -271,6 +271,9 @@ const settings: Record<string, string> = {
   'settings.highlight.themeColors': 'Follow theme colours',
   'settings.highlight.themeColorsHint':
     'Map highlight colours onto the active terminal palette by hue (neutral greys are kept as-is)',
+  'settings.highlight.respectAppColor': "Don't repaint app colours",
+  'settings.highlight.respectAppColorHint':
+    "Leave text the program coloured itself alone, so a TUI's own palette is not mixed with the rule colours; output the program left uncoloured is highlighted as usual",
   'settings.highlight.perHost': 'Per-host rule sets',
   'settings.highlight.perHostHint':
     'When on, an SSH connection bound to a rule set runs only that subset; when off every session uses all rules',

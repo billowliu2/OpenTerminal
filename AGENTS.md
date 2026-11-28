@@ -147,6 +147,10 @@ Electron + electron-vite + React 终端工具（本地终端 / SSH / SFTP）。�
 - 开关键名：`highlightStats` / `highlightThemeColors` / `highlightPerHost`（均默认关）与 `highlightGroupByCategory`（只影响设置页分组展示，热路径不涉及）；分类集合 `safety|status|file|net|text|metric` 单表在 `PRESET_CATEGORIES`
 - 按主机绑定：`HighlightProfile` 存 `AppSettings.highlightProfiles`（清洗在 `shared/highlightProfiles.ts`），`ruleIds` 空 = 全部规则；绑定存在 **connections.json**（`SshConnection.highlightProfileId`），`TerminalView` 只在 mount 查一次，改绑定要重开会话。**新增连接字段必须同时改三处**：`PUBLIC_KEYS`、`toPublic()`、`saveConnection()` 新记录字面量，漏一处该字段在某条路径静默丢失
 - 跟随主题 `highlightColors.ts`：按**色相分桶**映射到当前主题 ANSI 调色板（不用最近色，防语义漂移），亮度决定普通/bright 色，饱和度 <0.15 中性色保持原样，**背景色不映射**；编译期一次完成，编辑器预览走同一函数
+- **规则色是给终端画布选的**：程序自己给文字上过色时（`SgrState` 追踪到显式前景色：`30-37`/`90-97`/`38;5;n`/`38;2;r;g;b`/`38:2::r:g:b`），高亮**不再改色** —— 否则一句程序自己配色的话里会混进两套颜色（截图里 TUI 的灰句子里冒出绿色的 "created"）。设置项 `settings.terminal.highlightRespectAppColor`（默认开）。**只认显式前景色**：粗体/下划线/背景色不算（否则程序开一次粗体就再没高亮）；`39`（默认前景）把文字交还给高亮；`48` 的扩展参数要跳过，否则背景的分量值会被当成前景色码
+- **告警规则永远照画**：带 `notify` 的规则（出厂只有 `secret`）即使在程序配色段里也必须上色 —— `MatchListener` 只对**画出来的** span 触发，跳过它等于「密钥滚过去了但没人收到告警」。`CompiledRule.alwaysPaint` 就是这条（= `rule.notify === true`）；引擎在该段只扫 `alwaysPaint` 的规则，其余规则整段让位
+- **前景色追踪零分配**：`SgrState.trackForeground` 逐字符扫参数串，**不要用 `split(';')`** —— per-cell 重绘的 TUI 每秒几千条 SGR，每次 split 留下的数组和字符串全成垃圾（实测占整个高亮 pass 的 16%）。改写后 5.5%。`readSgrParam` 读不出纯十进制就返回 NaN（畸形参数不动前景色）
+- **设置页预览要自己修对比度**：规则色是给终端画布选的，设置面板是另一个底色（antd `colorBgElevated` = `mix(bg,fg,0.1)`），浅色主题下 21 条出厂色全部只有 1.4–3.2:1 → 示例文字看不清；终端靠 xterm `minimumContrastRatio` 兜底，设置页没有这层。`theme/semantic.ts` 的 `ensureContrast`（浅底压暗 `darkenToRatio`／深底提亮 `lightenToRatio`，目标 4.5:1）在画之前修色，规则表「预览」列与编辑器实时预览都过它。守门 `tests/highlight-preview-contrast.mjs`（19 主题 × 出厂规则色 + band 色全 ≥4.5:1）
 - 统计按 pane 实例聚合（`crypto.randomUUID()` 的 pane id，**不是 sessionId**）；sink 只在开关开时挂（默认路径不插桩），**每秒发一次快照**不是每块；卸载与关开关都注销，重绑定不注销；编辑器预览输入截断 2000 字符
 - 导入/导出：`shared/highlightIO.ts` 管 JSON 信封（kind/version，外来 JSON 拒绝）；渲染层用剪贴板 + FileReader + Blob 下载，**不新增 IPC**；预览走 `previewSpans` 且带上当前其它规则（span 被抢走能看出来）
 - `caseInsensitive: true` 编译成 `gi`；`okstate` 带 `(?<!not\s)` 把 `not ok` 让给 badstate
