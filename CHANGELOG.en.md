@@ -1,5 +1,21 @@
 # OpenTerminal Changelog
 
+## v1.0.37 - 2026-11-28
+
+This release adds 7 new themes with real card previews, and fixes highlights repainting colours chosen by the program itself.
+
+### Added: more themes and real previews
+- Adds Catppuccin Mocha / Frappé / Latte, Tokyo Night, Everforest Dark Soft, One Dark Two and Gruvbox Light, bringing the built-in collection to 19 themes
+- Theme cards now show real text, terminal colours and a status-bar sample, so you can compare them before applying
+
+### Fixed: highlights overwriting the program’s own colours
+- Symptom: a TUI’s carefully chosen colours were replaced by keyword-highlight colours, producing conspicuous boxes or green text that clashed with the rest of the interface
+- Fix: by default, only text the program left uncoloured is highlighted. Text the program coloured itself keeps its original appearance; rules configured to notify you about errors or leaked secrets still work
+- Tunable: turn off “Settings → Highlight → Don’t repaint app colours” to restore the old behaviour
+
+### Fixed: hard-to-read highlight previews
+- Improves text contrast against the settings panel in light themes, including rule colours, sample text and the editor’s live preview
+
 ## v1.0.36 - 2026-11-26
 
 This release fixes two problems in full-screen terminal programs: the wheel does nothing, and text painted on the program’s own light background is unreadable.
