@@ -353,6 +353,32 @@
   display: inline-block;
 }
 
+.theme-card-preview {
+  margin: 0 0 8px;
+  overflow: hidden;
+}
+
+.theme-preview {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.theme-preview-line {
+  white-space: pre;
+  line-height: 1.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-preview-compact {
+  height: 36px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-family: 'Cascadia Mono', Consolas, 'JetBrains Mono', monospace;
+  font-size: 8px;
+  line-height: 12px;
+}
+
 .theme-card-actions {
   display: flex;
   gap: 6px;
@@ -474,12 +500,6 @@
   font-size: 12px;
 }
 
-.theme-editor-preview-line {
-  white-space: pre;
-  line-height: 1.6;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 /* ---- about / updater tab ---- */
 .about-header {
   display: flex;

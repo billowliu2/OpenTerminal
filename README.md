@@ -81,7 +81,7 @@ npm test           # 先自动跑 typecheck，再重建测试 bundle 并跑 43 �
 - 锁定期间吞掉 F5 / Ctrl+R / Ctrl+±0 / Ctrl+Shift+I/J/C，并整块摘除应用菜单，防止菜单键绕过遮罩
 
 **外观与窗口**
-- 11 款内置主题（Dracula / One Half / Solarized / Gruvbox / Nord / Monokai / GitHub 等）
+- 19 款内置主题（Dracula / One Half / Solarized / Gruvbox / Nord / Monokai / GitHub 等）
 - 自定义主题编辑器：16 色 ANSI 调色板 + 前景/背景/光标/选区色，实时预览
 - 窗口标题栏与背景跟随终端主题
 - 系统托盘：关闭按钮可设「每次询问 / 最小化到托盘 / 直接退出」，托盘菜单可切换

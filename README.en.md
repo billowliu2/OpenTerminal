@@ -81,7 +81,7 @@ npm test           # runs typecheck first, then rebuilds test bundles and runs 4
 - While locked, F5 / Ctrl+R / Ctrl+±0 / Ctrl+Shift+I/J/C are swallowed and the app menu is removed entirely, preventing menu-key bypass of the mask
 
 **Appearance & window**
-- 11 built-in themes (Dracula / One Half / Solarized / Gruvbox / Nord / Monokai / GitHub, etc.)
+- 19 built-in themes (Dracula / One Half / Solarized / Gruvbox / Nord / Monokai / GitHub, etc.)
 - Custom theme editor: 16-color ANSI palette + foreground/background/cursor/selection colors with live preview
 - Window title bar and background follow the terminal theme
 - System tray: close button can be set to "ask every time / minimize to tray / quit"; switchable from the tray menu

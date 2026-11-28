@@ -4,6 +4,7 @@ import { t } from '@shared/i18n'
 import type { ThemeColors, TerminalTheme } from '@shared/theme'
 import { BUILTIN_THEMES, DEFAULT_DARK, getThemeById } from '@shared/theme'
 import { useSettingsStore } from '../../settings/store'
+import { ThemePreview } from '../ThemePreview'
 
 export interface ThemeEditorProps {
   open: boolean
@@ -172,7 +173,7 @@ export function ThemeEditor({ open, onClose, themeId }: ThemeEditorProps): React
 
         <div className="theme-editor-preview">
           <span className="theme-editor-preview-label">{t('settings.preview')}</span>
-          <ThemePreviewSnippet colors={colors} />
+          <ThemePreview colors={colors} />
         </div>
       </div>
     </Modal>
@@ -197,24 +198,6 @@ function ColorField({
         value={value}
         onChange={(e) => onChange(spec.key, e.target.value)}
       />
-    </div>
-  )
-}
-
-function ThemePreviewSnippet({ colors }: { colors: ThemeColors }): React.JSX.Element {
-  const lines: ReadonlyArray<readonly [string, string]> = [
-    ['drwxr-xr-x  12 bill  users   4096 Sep  5 10:02 node_modules', colors.brightBlue],
-    ['-rw-r--r--   1 bill  users    890 Sep  5 09:41 package.json', colors.brightBlack],
-    ['-rw-r--r--   1 bill  users     42 Sep  5 09:41 index.ts', colors.brightBlack],
-    ['OpenTerminal v0.1.0', colors.brightCyan]
-  ]
-  return (
-    <div className="theme-editor-preview-box" style={{ background: colors.background }}>
-      {lines.map(([text, color], i) => (
-        <div key={i} className="theme-editor-preview-line" style={{ color }}>
-          {text}
-        </div>
-      ))}
     </div>
   )
 }

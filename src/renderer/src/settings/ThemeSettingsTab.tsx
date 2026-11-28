@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS } from '@shared/settings'
 import type { TerminalTheme, ThemeColors } from '@shared/theme'
 import { BUILTIN_THEMES } from '@shared/theme'
 import { useSettingsStore, useResolvedTheme } from './store'
+import { ThemePreview } from '../theme/ThemePreview'
 
 export interface ThemeSettingsTabProps {
   onCreateTheme: () => void
@@ -147,13 +148,16 @@ export function ThemeSettingsTab({
                 {isCustom && <span className="theme-card-badge">{t('settings.theme.customBadge')}</span>}
               </div>
               <div className="theme-card-dots">
-{ANSI_KEYS.map((k) => (
+                {ANSI_KEYS.map((k) => (
                   <span
                     key={k}
                     className="theme-card-dot"
                     style={{ background: theme.colors[k] }}
                   />
                 ))}
+              </div>
+              <div className="theme-card-preview">
+                <ThemePreview colors={theme.colors} compact />
               </div>
               <div className="theme-card-actions">
                 {isCustom ? (
